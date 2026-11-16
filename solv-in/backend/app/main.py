@@ -144,34 +144,59 @@ def _load_claims_analytics(
 ):
     if from_date and to_date and from_date > to_date:
         raise HTTPException(status_code=422, detail="From date must be on or before to date.")
-    query = {}
+
+    common_filters = []
     date_filter = {}
     if from_date:
         date_filter["$gte"] = from_date.isoformat()
     if to_date:
         date_filter["$lte"] = to_date.isoformat()
     if date_filter:
-        query["incident_date"] = date_filter
+        common_filters.append({"incident_date": date_filter})
     if country_code:
-        query["country_code"] = country_code.upper()
+        common_filters.append({"country_code": country_code.upper()})
     if currency:
-        query["currency"] = currency.upper()
+        common_filters.append({"currency": currency.upper()})
+
+    scope_filter = {"$or": [
+        {"claim_type": "Property"},
+        {"claim_type": "Casualty", "casualty_segment": "Commercial"}
+    ]}
+    if portfolio == "Property":
+        scope_filter = {"claim_type": "Property"}
+    elif portfolio == "Commercial Casualty":
+        scope_filter = {"claim_type": "Casualty", "casualty_segment": "Commercial"}
+
+    query_parts = [scope_filter, *common_filters]
+    query = {"$and": query_parts}
+    db = get_database()
     try:
-        claims = list(get_database()["claims"].find(query, {"_id": 0}).sort("incident_date", 1).limit(50000))
-        if portfolio == "Property":
-            claims = [claim for claim in claims if claim.get("claim_type") == "Property"]
-        elif portfolio == "Commercial Casualty":
-            claims = [
-                claim for claim in claims
-                if claim.get("claim_type") == "Casualty" and claim.get("casualty_segment") == "Commercial"
-            ]
+        claims_collection = db["claims"]
+        matching_count = claims_collection.count_documents(query)
+        if matching_count > 50000:
+            raise HTTPException(
+                status_code=413,
+                detail="This report matches more than 50,000 claims. Narrow the date, country or currency filters; no partial report was generated."
+            )
+        claims = list(claims_collection.find(query, {"_id": 0}).sort("incident_date", 1))
         claim_ids = [claim.get("claim_id") for claim in claims if claim.get("claim_id")]
         estimates = []
         if claim_ids:
-            estimates = list(get_database()["financial_estimates"].find(
-                {"claim_id": {"$in": claim_ids}}, {"_id": 0}
-            ).sort("created_at", 1).limit(100000))
+            estimates = list(db["financial_estimates"].aggregate([
+                {"$match": {"claim_id": {"$in": claim_ids}}},
+                {"$sort": {"created_at": -1}},
+                {"$group": {"_id": "$claim_id", "latest": {"$first": "$$ROOT"}}},
+                {"$replaceRoot": {"newRoot": "$latest"}}
+            ]))
+
         result = build_claims_analytics(claims, estimates)
+        unclassified_query_parts = [
+            {"claim_type": "Casualty", "casualty_segment": {"$ne": "Commercial"}},
+            *common_filters
+        ]
+        result["summary"]["unclassified_legacy_casualty_claims"] = claims_collection.count_documents(
+            {"$and": unclassified_query_parts}
+        )
         result["filters"] = {
             "from_date": from_date.isoformat() if from_date else None,
             "to_date": to_date.isoformat() if to_date else None,
@@ -179,10 +204,13 @@ def _load_claims_analytics(
             "currency": currency.upper() if currency else None,
             "portfolio": portfolio
         }
+        result["data_complete"] = True
+        result["claim_count_checked"] = matching_count
         return result
+    except HTTPException:
+        raise
     except PyMongoError as exc:
         raise HTTPException(status_code=503, detail="Unable to build claims analytics.") from exc
-
 
 @app.get("/api/reports/claims-analytics")
 def claims_analytics(
