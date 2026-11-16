@@ -446,3 +446,133 @@ def list_financial_estimates(
     for row in rows:
         row["estimate_id"] = str(row.pop("_id"))
     return {"items": rows, "count": len(rows)}
+
+
+# Phase 7: verified global tax rules and jurisdiction profiles
+from datetime import date
+from .tax_rules import TaxRuleCreate, TaxRuleStatusUpdate, rule_is_applicable, rule_specificity
+
+TAX_RULE_READ_ROLES = (
+    "Super Administrator", "Insurance Company Administrator", "Claims Manager",
+    "Property Adjuster", "Casualty Adjuster", "Surveyor", "Actuarial Analyst", "Approver", "Auditor"
+)
+TAX_RULE_ADMIN_ROLES = ("Super Administrator", "Insurance Company Administrator")
+
+@app.get("/api/tax-rules")
+def list_tax_rules(
+    country_code: str | None = Query(default=None, min_length=2, max_length=2),
+    status: str | None = Query(default=None, pattern="^(Draft|Active|Inactive)$"),
+    user: dict = Depends(require_roles(*TAX_RULE_READ_ROLES))
+):
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    query = {}
+    if country_code:
+        query["country_code"] = country_code.upper()
+    if status:
+        query["status"] = status
+    rows = list(get_database()["tax_rules"].find(query).sort([("country_code", 1), ("admin_area", 1), ("tax_name", 1)]).limit(500))
+    for row in rows:
+        row["rule_id"] = str(row.pop("_id"))
+    return {"items": rows, "count": len(rows)}
+
+@app.post("/api/tax-rules", status_code=201)
+def create_tax_rule(payload: TaxRuleCreate, user: dict = Depends(require_roles(*TAX_RULE_ADMIN_ROLES))):
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    now = datetime.now(timezone.utc).isoformat()
+    record = payload.model_dump(mode="json")
+    record.update({
+        "status": "Draft", "created_at": now, "created_by": user["email"],
+        "verified_by": None, "verified_at": None, "activated_at": None,
+        "version": 1
+    })
+    try:
+        saved = get_database()["tax_rules"].insert_one(record)
+    except PyMongoError as exc:
+        raise HTTPException(status_code=503, detail="Unable to save tax rule.") from exc
+    record["rule_id"] = str(saved.inserted_id)
+    record.pop("_id", None)
+    return record
+
+@app.patch("/api/tax-rules/{rule_id}/status")
+def change_tax_rule_status(
+    rule_id: str,
+    payload: TaxRuleStatusUpdate,
+    user: dict = Depends(require_roles(*TAX_RULE_ADMIN_ROLES))
+):
+    try:
+        object_id = ObjectId(rule_id)
+    except InvalidId as exc:
+        raise HTTPException(status_code=400, detail="Invalid tax rule ID.") from exc
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    collection = get_database()["tax_rules"]
+    existing = collection.find_one({"_id": object_id})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Tax rule not found.")
+    if existing.get("status") == "Active" and payload.status == "Active":
+        raise HTTPException(status_code=409, detail="Active tax rules are immutable. Create a new version for any change.")
+    now = datetime.now(timezone.utc).isoformat()
+    changes = {"status": payload.status, "status_updated_at": now, "status_updated_by": user["email"]}
+    if payload.status == "Active":
+        if not existing.get("authority_reference") or not existing.get("authority_name"):
+            raise HTTPException(status_code=422, detail="An official authority and reference are required before activation.")
+        if not existing.get("source_url") and len(existing.get("authority_reference", "")) < 3:
+            raise HTTPException(status_code=422, detail="A source reference is required before activation.")
+        changes.update({"verified_by": user["email"], "verified_at": now, "activated_at": now})
+    updated = collection.find_one_and_update(
+        {"_id": object_id, "status": existing.get("status")},
+        {"$set": changes}, return_document=ReturnDocument.AFTER, projection={"_id": 0}
+    )
+    if not updated:
+        raise HTTPException(status_code=409, detail="Tax rule changed concurrently. Refresh and retry.")
+    updated["rule_id"] = rule_id
+    return updated
+
+@app.get("/api/claims/{claim_id}/applicable-tax-rules")
+def applicable_tax_rules(
+    claim_id: str,
+    tax_point_date: str = Query(..., min_length=10, max_length=10),
+    user: dict = Depends(require_roles(*TAX_RULE_READ_ROLES))
+):
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    claim = get_database()["claims"].find_one({"claim_id": claim_id}, {"_id": 0})
+    if not claim:
+        raise HTTPException(status_code=404, detail="Claim not found.")
+    try:
+        point_date = date.fromisoformat(tax_point_date)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Tax point date must use YYYY-MM-DD.") from exc
+    candidates = list(get_database()["tax_rules"].find({
+        "country_code": (claim.get("country_code") or "").upper(),
+        "currency": (claim.get("currency") or "").upper(),
+        "status": "Active"
+    }))
+    applicable = [r for r in candidates if rule_is_applicable(
+        r, country_code=claim.get("country_code", ""), currency=claim.get("currency", ""),
+        admin_area=claim.get("state_or_jurisdiction", "") or claim.get("region", ""),
+        region=claim.get("region", ""), locality=claim.get("locality", ""), tax_point_date=point_date
+    )]
+    applicable.sort(key=rule_specificity, reverse=True)
+    # A broad country-level rule and a more specific local rule for the same tax are ambiguous;
+    # return the most specific match for each tax name, and flag duplicate same-specificity matches.
+    selected, ambiguous = [], []
+    for name in sorted({r["tax_name"].casefold() for r in applicable}):
+        group = [r for r in applicable if r["tax_name"].casefold() == name]
+        top = rule_specificity(group[0])
+        best = [r for r in group if rule_specificity(r) == top]
+        if len(best) > 1:
+            ambiguous.append(group[0]["tax_name"])
+            continue
+        selected.append(best[0])
+    for row in selected:
+        row["rule_id"] = str(row.pop("_id"))
+    return {
+        "claim_id": claim_id, "country_code": claim.get("country_code"),
+        "currency": claim.get("currency"), "tax_point_date": tax_point_date,
+        "items": selected, "count": len(selected), "ambiguous_tax_names": ambiguous,
+        "profile_status": "Ambiguous" if ambiguous else ("Configured" if selected else "No verified matching tax profile"),
+        "message": "Only active, verified, effective-dated rules are returned. This lookup is advisory; confirm the applicable tax treatment with the authorised tax/legal source."
+    }
