@@ -54,6 +54,9 @@ export class AppComponent implements OnInit {
   damageClaimId = '';
   damageBusy = false;
   damageAssessment: DamageAssessment | null = null;
+  damageAssessments: DamageAssessment[] = [];
+  damageReviewNotes = '';
+  damageReviewBusyId = '';
   newUser = { full_name: '', email: '', password: '', role: 'Claims Manager' };
   totalClaims = 0;
   newClaims = 0;
@@ -150,6 +153,7 @@ export class AppComponent implements OnInit {
     this.errorMessage = '';
     this.successMessage = '';
     if (page === 'Claims') this.loadClaims();
+    if (page === 'AI Damage Analysis' && this.damageClaimId.trim()) this.loadDamageAssessments();
     if (page === 'Users') this.loadUsers();
   }
 
@@ -235,6 +239,56 @@ export class AppComponent implements OnInit {
     this.damageImagePreview = URL.createObjectURL(file);
   }
 
+  canReviewDamage(): boolean {
+    return ['Super Administrator', 'Insurance Company Administrator', 'Claims Manager', 'Property Adjuster', 'Casualty Adjuster', 'Surveyor'].includes(this.currentUser?.role || '');
+  }
+
+  canApproveDamage(): boolean {
+    return ['Super Administrator', 'Insurance Company Administrator', 'Claims Manager', 'Approver'].includes(this.currentUser?.role || '');
+  }
+
+  loadDamageAssessments(): void {
+    const claimId = this.damageClaimId.trim();
+    if (!claimId) {
+      this.errorMessage = 'Enter a Claim ID to retrieve its saved assessments.';
+      return;
+    }
+    this.http.get<{items: DamageAssessment[]; count: number}>(`${environment.apiBaseUrl}/claims/${encodeURIComponent(claimId)}/damage-assessments`, { headers: this.authHeaders() }).subscribe({
+      next: result => {
+        this.damageAssessments = result.items;
+        this.errorMessage = '';
+      },
+      error: error => {
+        this.damageAssessments = [];
+        this.handleApiError(error);
+      }
+    });
+  }
+
+  reviewDamageAssessment(item: DamageAssessment, status: string): void {
+    if (['More Evidence Required', 'Rejected'].includes(status) && !this.damageReviewNotes.trim()) {
+      this.errorMessage = 'Add reviewer notes before requesting evidence or rejecting the assessment.';
+      return;
+    }
+    this.damageReviewBusyId = item.assessment_id;
+    this.errorMessage = '';
+    this.http.patch<DamageAssessment>(`${environment.apiBaseUrl}/damage-assessments/${encodeURIComponent(item.assessment_id)}/review`, {
+      status, notes: this.damageReviewNotes.trim()
+    }, { headers: this.authHeaders() }).subscribe({
+      next: updated => {
+        this.damageAssessments = this.damageAssessments.map(row => row.assessment_id === updated.assessment_id ? updated : row);
+        if (this.damageAssessment?.assessment_id === updated.assessment_id) this.damageAssessment = updated;
+        this.damageReviewNotes = '';
+        this.damageReviewBusyId = '';
+        this.successMessage = `Assessment marked: ${updated.status}.`;
+      },
+      error: error => {
+        this.damageReviewBusyId = '';
+        this.handleApiError(error);
+      }
+    });
+  }
+
   analyseDamage(): void {
     if (!this.selectedDamageImage) {
       this.errorMessage = 'Select a damage image before starting the analysis.';
@@ -250,6 +304,7 @@ export class AppComponent implements OnInit {
       next: result => {
         this.damageAssessment = result;
         this.damageBusy = false;
+        if (result.claim_id) this.loadDamageAssessments();
         this.successMessage = 'Preliminary visual assessment saved. An authorised adjuster must review the findings.';
       },
       error: error => {
@@ -264,6 +319,8 @@ export class AppComponent implements OnInit {
     this.selectedDamageImage = null;
     this.damageImagePreview = '';
     this.damageAssessment = null;
+    this.damageAssessments = [];
+    this.damageReviewNotes = '';
     this.damageClaimId = '';
   }
 
