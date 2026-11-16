@@ -193,10 +193,10 @@ def graph_validation(validationToken: str | None = Query(default=None)):
 
 
 @router.post("/api/email-connectors/microsoft365/notifications")
-def graph_notifications(payload: dict, validationToken: str | None = Query(default=None)):
+def graph_notifications(payload: dict | None = None, validationToken: str | None = Query(default=None)):
     if validationToken:
         return Response(content=validationToken, media_type="text/plain")
-    notifications = payload.get("value", [])
+    notifications = (payload or {}).get("value", [])
     if not notifications:
         return {"status": "accepted", "processed": 0}
     if not microsoft_configured() or not database_is_available():
