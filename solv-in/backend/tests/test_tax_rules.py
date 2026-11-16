@@ -47,3 +47,15 @@ def test_select_applicable_rules_flags_same_specificity_duplicates():
     )
     assert selected == []
     assert ambiguous == ["Sales tax"]
+
+
+def test_selected_tax_rules_follow_configured_calculation_order():
+    from app.tax_rules import select_applicable_tax_rules
+    later = base_rule(tax_name="Local tax", calculation_order=200)
+    earlier = base_rule(tax_name="State tax", calculation_order=100)
+    selected, ambiguous = select_applicable_tax_rules(
+        [later, earlier], country_code="US", currency="USD", admin_area="California",
+        region="", locality="", tax_point_date=date(2026, 6, 1)
+    )
+    assert [rule["tax_name"] for rule in selected] == ["State tax", "Local tax"]
+    assert ambiguous == []
