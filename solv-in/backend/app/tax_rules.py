@@ -70,3 +70,23 @@ def rule_is_applicable(rule: dict, *, country_code: str, currency: str, admin_ar
 
 def rule_specificity(rule: dict) -> int:
     return sum(bool(rule.get(field)) for field in ("admin_area", "region", "locality"))
+
+
+def select_applicable_tax_rules(rules: list[dict], *, country_code: str, currency: str,
+                                admin_area: str, region: str, locality: str,
+                                tax_point_date: date) -> tuple[list[dict], list[str]]:
+    applicable = [rule for rule in rules if rule_is_applicable(
+        rule, country_code=country_code, currency=currency, admin_area=admin_area,
+        region=region, locality=locality, tax_point_date=tax_point_date
+    )]
+    applicable.sort(key=rule_specificity, reverse=True)
+    selected, ambiguous = [], []
+    for name in sorted({str(rule.get("tax_name", "")).casefold() for rule in applicable}):
+        group = [rule for rule in applicable if str(rule.get("tax_name", "")).casefold() == name]
+        top_specificity = rule_specificity(group[0])
+        best = [rule for rule in group if rule_specificity(rule) == top_specificity]
+        if len(best) > 1:
+            ambiguous.append(str(group[0].get("tax_name", name)))
+        else:
+            selected.append(best[0])
+    return selected, ambiguous
