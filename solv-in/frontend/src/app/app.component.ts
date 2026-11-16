@@ -8,7 +8,7 @@ interface User { full_name: string; email: string; role: string; is_active?: boo
 interface Claim {
   claim_id: string; customer_name: string; email?: string; phone?: string;
   policy_number: string; claim_type: 'Property' | 'Casualty'; incident_date: string;
-  incident_description: string; loss_location: string; estimated_loss?: number | null;
+  incident_description: string; loss_location: string; country_code: string; region?: string; locality?: string; postal_code?: string; estimated_loss?: number | null;
   currency: string; status: string; created_at?: string; updated_at?: string;
 }
 interface DamageAssessment {
@@ -22,7 +22,7 @@ interface FinancialEstimate { estimate_id: string; claim_id: string; currency: s
 interface ClaimDraft {
   customer_name: string; email: string; phone: string; policy_number: string;
   claim_type: 'Property' | 'Casualty'; incident_date: string; incident_description: string;
-  loss_location: string; estimated_loss: number | null; currency: string;
+  loss_location: string; country_code: string; region: string; locality: string; postal_code: string; estimated_loss: number | null; currency: string;
 }
 
 @Component({
@@ -174,7 +174,7 @@ export class AppComponent implements OnInit {
     return {
       customer_name: '', email: '', phone: '', policy_number: '',
       claim_type: 'Property', incident_date: '', incident_description: '',
-      loss_location: '', estimated_loss: null, currency: 'INR'
+      loss_location: '', country_code: '', region: '', locality: '', postal_code: '', estimated_loss: null, currency: ''
     };
   }
 
@@ -218,7 +218,7 @@ export class AppComponent implements OnInit {
     this.successMessage = '';
     if (!this.draft.customer_name.trim() || !this.draft.policy_number.trim() ||
         !this.draft.incident_date || !this.draft.incident_description.trim() ||
-        !this.draft.loss_location.trim()) {
+        !this.draft.loss_location.trim() || !this.draft.country_code.trim() || !/^[A-Z]{3}$/i.test(this.draft.currency.trim())) {
       this.errorMessage = 'Complete all required fields before submitting the FNOL.';
       return;
     }
@@ -250,9 +250,10 @@ export class AppComponent implements OnInit {
     const d = this.estimateDraft;
     const claim = this.claims.find(x => x.claim_id === this.estimateClaimId.trim());
     const currency = (claim?.currency || d.currency || '').toUpperCase();
-    if (!this.estimateClaimId.trim() || !d.description.trim() || !d.country_code.trim() ||
+    const countryCode = (claim?.country_code || d.country_code || '').toUpperCase();
+    if (!this.estimateClaimId.trim() || !d.description.trim() || !countryCode ||
         !d.state_or_jurisdiction.trim() || !currency || !/^[A-Z]{3}$/.test(currency) ||
-        !/^\d{2}$/.test(d.country_code.trim()) || !d.loss_date || !d.tax_point_date ||
+        !/^\d{2}$/.test(countryCode) || !d.loss_date || !d.tax_point_date ||
         !d.pricing_source.trim() || !d.pricing_effective_date ||
         Number(d.quantity) <= 0 || Number(d.unit_rate) < 0) {
       this.errorMessage = 'Enter a Claim ID, repair details, ISO country and currency codes, loss/tax dates, jurisdiction and verified pricing source.';
@@ -268,9 +269,9 @@ export class AppComponent implements OnInit {
       return;
     }
     const body: any = {
-      currency, country_code: d.country_code.trim().toUpperCase(),
-      state_or_jurisdiction: d.state_or_jurisdiction, region: d.region, locality: d.locality,
-      postal_code: d.postal_code, loss_date: d.loss_date, tax_point_date: d.tax_point_date,
+      currency, country_code: countryCode,
+      state_or_jurisdiction: d.state_or_jurisdiction, region: claim?.region || d.region, locality: claim?.locality || d.locality,
+      postal_code: claim?.postal_code || d.postal_code, loss_date: claim?.incident_date || d.loss_date, tax_point_date: d.tax_point_date,
       line_items: [{ description: d.description, quantity: Number(d.quantity), unit: d.unit, unit_rate: Number(d.unit_rate), taxable: !!d.taxable, depreciation_rate: Number(d.depreciation_rate) }],
       taxes: d.taxes.filter((tax: any) => Number(tax.rate_percent) > 0).map((tax: any) => ({
         ...tax, rate_percent: Number(tax.rate_percent), effective_from: tax.effective_from || null,
