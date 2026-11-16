@@ -364,6 +364,10 @@ export class AppComponent implements OnInit {
     return ['Super Administrator', 'Insurance Company Administrator', 'Claims Manager', 'Approver'].includes(this.currentUser?.role || '');
   }
 
+  isFinalEstimateReview(estimate: FinancialEstimate): boolean {
+    return ['Approved', 'Rejected'].includes(estimate.review_status || '');
+  }
+
   reviewFinancialEstimate(estimate: FinancialEstimate, status: string): void {
     if (['More Evidence Required', 'Rejected'].includes(status) && !this.financialReviewNotes.trim()) {
       this.errorMessage = 'Add reviewer notes before requesting evidence or rejecting this estimate.';
