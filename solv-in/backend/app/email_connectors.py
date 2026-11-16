@@ -210,7 +210,6 @@ def microsoft_subscription_payload() -> dict:
     return {
         "changeType": "created",
         "notificationUrl": setting("MS365_NOTIFICATION_URL"),
-        "lifecycleNotificationUrl": setting("MS365_NOTIFICATION_URL"),
         "resource": f"users/{setting('MS365_MAILBOX')}/mailFolders('Inbox')/messages",
         "expirationDateTime": expiry.isoformat().replace("+00:00", "Z"),
         "clientState": setting("MS365_CLIENT_STATE"),
