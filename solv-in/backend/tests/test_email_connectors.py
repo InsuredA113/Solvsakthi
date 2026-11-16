@@ -39,7 +39,7 @@ def test_parse_datetime_normalizes_zulu_timestamp():
 
 def test_gmail_notification_is_scoped_to_configured_mailbox(monkeypatch):
     monkeypatch.setenv("GMAIL_MAILBOX", "claims@example.com")
-    data = base64.b64encode(b'{"emailAddress":"claims@example.com","historyId":"1234"}').decode()
+    data = base64.urlsafe_b64encode(b'{"emailAddress":"claims@example.com","historyId":"1234"}').decode().rstrip('=')
     mailbox, history_id = parse_gmail_notification({"message": {"data": data}})
     assert mailbox == "claims@example.com"
     assert history_id == 1234
