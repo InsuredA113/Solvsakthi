@@ -15,7 +15,9 @@ def sample_payload(**overrides):
             "authority_reference": "Verified schedule reference"
         }],
         "charges": [{"name": "Inspection fee", "amount": "50", "charge_type": "fee", "taxable": False}],
-        "deductible": "100", "currency": "INR", "state_or_jurisdiction": "Example State",
+        "deductible": "100", "currency": "INR", "country_code": "IN", "state_or_jurisdiction": "Example State",
+        "region": "Example Region", "locality": "Example City", "postal_code": "000000",
+        "loss_date": "2026-10-20", "tax_point_date": "2026-10-20",
         "interest": {
             "applicable": True, "annual_rate_percent": "12", "principal": "5000",
             "days": 30, "basis": "simple_actual_365", "authority_reference": "Policy clause 4.2"
@@ -58,3 +60,41 @@ def test_applicable_interest_requires_contract_or_legal_reference():
         FinancialEstimateRequest.model_validate({
             **sample_payload().model_dump(mode="python"), "interest": data
         })
+
+
+
+def test_currency_minor_units_follow_iso_currency_conventions():
+    jpy = sample_payload(currency="JPY", taxes=[], charges=[], deductible="0", interest={"applicable": False, "basis": "simple_actual_365"},
+                         line_items=[{"description": "Repair", "quantity": "1", "unit": "job", "unit_rate": "1200.5", "taxable": False, "depreciation_rate": "0"}])
+    jpy_result = calculate_estimate(jpy)
+    assert jpy_result["currency_minor_units"] == 0
+    assert jpy_result["gross_repair_cost"] == "1201"
+
+    kwd = sample_payload(currency="KWD", taxes=[], charges=[], deductible="0", interest={"applicable": False, "basis": "simple_actual_365"},
+                         line_items=[{"description": "Repair", "quantity": "1", "unit": "job", "unit_rate": "1.2345", "taxable": False, "depreciation_rate": "0"}])
+    kwd_result = calculate_estimate(kwd)
+    assert kwd_result["currency_minor_units"] == 3
+    assert kwd_result["gross_repair_cost"] == "1.235"
+
+
+def test_tax_components_can_compound_when_configured():
+    payload = sample_payload(taxes=[
+        {"name": "Primary tax", "tax_type": "VAT", "jurisdiction": "Country", "rate_percent": "10",
+         "applies_to": "depreciated_repair_subtotal", "compound_on_prior_taxes": False,
+         "authority_reference": "Verified source"},
+        {"name": "Secondary tax", "tax_type": "Local surcharge", "jurisdiction": "Region", "rate_percent": "5",
+         "applies_to": "depreciated_repair_subtotal", "compound_on_prior_taxes": True,
+         "authority_reference": "Verified source"}
+    ])
+    result = calculate_estimate(payload)
+    assert result["taxes"][0]["amount"] == "90.00"
+    assert result["taxes"][1]["taxable_base"] == "990.00"
+    assert result["taxes"][1]["amount"] == "49.50"
+
+
+def test_tax_rule_effective_dates_are_checked_against_tax_point_date():
+    with pytest.raises(ValidationError):
+        sample_payload(taxes=[{
+            "name": "Future tax", "jurisdiction": "Country", "rate_percent": "5",
+            "authority_reference": "Verified source", "effective_from": "2027-01-01"
+        }])
