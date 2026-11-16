@@ -95,7 +95,9 @@ export class AppComponent implements OnInit {
   unclassifiedLegacyCasualtyClaims = 0;
   analyticsData: any = null;
   emailIntakeItems: EmailIntakeItem[] = [];
-  emailIntakeBusy = false;\n  emailConnectorStatus: EmailConnectorStatus | null = null;\n  emailConnectorBusy = false;
+  emailIntakeBusy = false;
+  emailConnectorStatus: EmailConnectorStatus | null = null;
+  emailConnectorBusy = false;
   selectedEmailIntakeId = '';
   analyticsBusy = false;
   analyticsFromDate = '';
