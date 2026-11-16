@@ -1,6 +1,7 @@
 from datetime import date, datetime, timezone
 from typing import Literal
 import re
+import pycountry
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 ClaimType = Literal["Property", "Casualty"]
@@ -31,7 +32,7 @@ class ClaimCreate(BaseModel):
     @classmethod
     def normalize_currency(cls, value: str) -> str:
         value = value.upper()
-        if not re.fullmatch(r"[A-Z]{3}", value):
+        if not re.fullmatch(r"[A-Z]{3}", value) or pycountry.currencies.get(alpha_3=value) is None:
             raise ValueError("Currency must be a three-letter ISO 4217 code.")
         return value
 
@@ -41,7 +42,7 @@ class ClaimCreate(BaseModel):
         if not value.strip():
             raise ValueError("Country code is required.")
         value = value.upper()
-        if not re.fullmatch(r"[A-Z]{2}", value):
+        if not re.fullmatch(r"[A-Z]{2}", value) or pycountry.countries.get(alpha_2=value) is None:
             raise ValueError("Country must be a two-letter ISO 3166-1 alpha-2 code.")
         return value
 
