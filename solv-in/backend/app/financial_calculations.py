@@ -58,6 +58,7 @@ class InterestTerms(BaseModel):
 class FinancialEstimateRequest(BaseModel):
     line_items: list[EstimateLineItem] = Field(min_length=1, max_length=100)
     taxes: list[TaxComponent] = Field(default_factory=list, max_length=20)
+    tax_mode: Literal["automatic", "manual"] = "automatic"
     charges: list[Charge] = Field(default_factory=list, max_length=50)
     deductible: Decimal = Field(default=ZERO, ge=0, max_digits=16, decimal_places=6)
     currency: str = Field(min_length=3, max_length=3)
