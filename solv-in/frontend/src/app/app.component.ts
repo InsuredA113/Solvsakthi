@@ -18,6 +18,7 @@ interface DamageAssessment {
   limitations: string[]; repair_cost_estimate: number | null; status: string; created_at: string;
   review_history?: { status: string; notes: string; reviewed_at: string; reviewed_by: string; reviewer_role: string }[];
 }
+interface FinancialEstimate { estimate_id: string; claim_id: string; currency: string; gross_repair_cost: string; depreciation: string; net_repair_cost: string; total_fees_and_charges: string; total_tax: string; interest: { amount: string }; deductible: string; total_before_deductible: string; preliminary_net_estimate: string; status: string; created_at: string; pricing_source: string; state_or_jurisdiction: string; taxes: any[]; line_items: any[]; }
 interface ClaimDraft {
   customer_name: string; email: string; phone: string; policy_number: string;
   claim_type: 'Property' | 'Casualty'; incident_date: string; incident_description: string;
@@ -58,13 +59,18 @@ export class AppComponent implements OnInit {
   damageAssessments: DamageAssessment[] = [];
   damageReviewNotes = '';
   damageReviewBusyId = '';
+  estimateClaimId = '';
+  estimateBusy = false;
+  financialEstimate: FinancialEstimate | null = null;
+  financialEstimates: FinancialEstimate[] = [];
+  estimateDraft: any = this.emptyEstimateDraft();
   newUser = { full_name: '', email: '', password: '', role: 'Claims Manager' };
   totalClaims = 0;
   newClaims = 0;
   investigatingClaims = 0;
   pendingClaims = 0;
   closedClaims = 0;
-  readonly navigation = ['Dashboard', 'Claims', 'New FNOL', 'AI Damage Analysis', 'Reports', 'Users', 'Settings'];
+  readonly navigation = ['Dashboard', 'Claims', 'New FNOL', 'AI Damage Analysis', 'Financial Estimate', 'Reports', 'Users', 'Settings'];
   readonly statuses = ['FNOL Received', 'Under Review', 'Investigation', 'Assessment', 'Pending Approval', 'Approved', 'Closed'];
   draft: ClaimDraft = this.emptyDraft();
 
@@ -140,6 +146,10 @@ export class AppComponent implements OnInit {
     return ['Super Administrator', 'Insurance Company Administrator', 'Claims Manager', 'Property Adjuster', 'Casualty Adjuster', 'Surveyor', 'Actuarial Analyst', 'Approver'].includes(this.currentUser?.role || '');
   }
 
+  emptyEstimateDraft(): any {
+    return { description: '', quantity: 1, unit: 'item', unit_rate: 0, depreciation_rate: 0, taxable: true, currency: 'INR', state_or_jurisdiction: '', tax_name: 'State tax', tax_jurisdiction: '', tax_rate: 0, tax_authority: '', deductible: 0, fee_name: '', fee_amount: 0, interest_applicable: false, interest_rate: null, interest_principal: null, interest_days: null, interest_authority: '', pricing_source: '', pricing_effective_date: new Date().toISOString().slice(0, 10), notes: '' };
+  }
+
   emptyDraft(): ClaimDraft {
     return {
       customer_name: '', email: '', phone: '', policy_number: '',
@@ -213,6 +223,48 @@ export class AppComponent implements OnInit {
         this.loadDashboard();
       },
       error: error => this.handleApiError(error)
+    });
+  }
+
+  calculateFinancialEstimate(): void {
+    const d = this.estimateDraft;
+    if (!this.estimateClaimId.trim() || !d.description.trim() || !d.state_or_jurisdiction.trim() ||
+        !d.pricing_source.trim() || !d.pricing_effective_date || Number(d.quantity) <= 0 || Number(d.unit_rate) < 0) {
+      this.errorMessage = 'Enter a Claim ID, repair description, jurisdiction, valid quantity/rate and pricing source/date.';
+      return;
+    }
+    if (Number(d.tax_rate) > 0 && (!d.tax_jurisdiction.trim() || !d.tax_authority.trim())) {
+      this.errorMessage = 'For a tax rate above zero, provide the tax jurisdiction and legal/rate source.';
+      return;
+    }
+    if (d.interest_applicable && (!d.interest_authority.trim() || d.interest_rate === null || d.interest_principal === null || d.interest_days === null)) {
+      this.errorMessage = 'Applicable interest requires rate, principal, days and a policy/legal authority reference.';
+      return;
+    }
+    const claim = this.claims.find(x => x.claim_id === this.estimateClaimId.trim());
+    const currency = claim?.currency || d.currency;
+    const body: any = {
+      currency, state_or_jurisdiction: d.state_or_jurisdiction,
+      line_items: [{ description: d.description, quantity: Number(d.quantity), unit: d.unit, unit_rate: Number(d.unit_rate), taxable: !!d.taxable, depreciation_rate: Number(d.depreciation_rate) }],
+      taxes: Number(d.tax_rate) > 0 ? [{ name: d.tax_name, jurisdiction: d.tax_jurisdiction, rate_percent: Number(d.tax_rate), applies_to: 'depreciated_repair_subtotal', authority_reference: d.tax_authority }] : [],
+      charges: Number(d.fee_amount) > 0 ? [{ name: d.fee_name || 'Other claim charge', amount: Number(d.fee_amount), charge_type: 'fee', taxable: false, authority_reference: '' }] : [],
+      deductible: Number(d.deductible || 0),
+      interest: { applicable: !!d.interest_applicable, annual_rate_percent: d.interest_applicable ? Number(d.interest_rate) : null, principal: d.interest_applicable ? Number(d.interest_principal) : null, days: d.interest_applicable ? Number(d.interest_days) : null, basis: 'simple_actual_365', authority_reference: d.interest_authority || '' },
+      pricing_source: d.pricing_source, pricing_effective_date: d.pricing_effective_date, notes: d.notes
+    };
+    this.estimateBusy = true; this.errorMessage = ''; this.successMessage = '';
+    this.http.post<FinancialEstimate>(`${environment.apiBaseUrl}/claims/${encodeURIComponent(this.estimateClaimId.trim())}/financial-estimates`, body, { headers: this.authHeaders() }).subscribe({
+      next: result => { this.financialEstimate = result; this.estimateBusy = false; this.successMessage = 'Preliminary financial estimate calculated and saved for adjuster review.'; this.loadFinancialEstimates(); },
+      error: error => { this.estimateBusy = false; this.handleApiError(error); }
+    });
+  }
+
+  loadFinancialEstimates(): void {
+    const id = this.estimateClaimId.trim();
+    if (!id) { this.errorMessage = 'Enter a Claim ID to load financial estimates.'; return; }
+    this.http.get<{items: FinancialEstimate[]; count: number}>(`${environment.apiBaseUrl}/claims/${encodeURIComponent(id)}/financial-estimates`, { headers: this.authHeaders() }).subscribe({
+      next: result => this.financialEstimates = result.items,
+      error: error => { this.financialEstimates = []; this.handleApiError(error); }
     });
   }
 
