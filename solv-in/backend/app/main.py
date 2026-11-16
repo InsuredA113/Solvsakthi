@@ -392,3 +392,55 @@ def review_damage_assessment(assessment_id: str, payload: DamageReviewUpdate, us
         raise
     except PyMongoError as exc:
         raise HTTPException(status_code=503, detail="Unable to save the assessment review.") from exc
+
+
+# Phase 6: deterministic financial estimates (Python Decimal; no LLM arithmetic)
+from .financial_calculations import FinancialEstimateRequest, calculate_estimate
+
+FINANCIAL_ESTIMATE_ROLES = (
+    "Super Administrator", "Insurance Company Administrator", "Claims Manager",
+    "Property Adjuster", "Casualty Adjuster", "Surveyor", "Actuarial Analyst", "Approver"
+)
+
+@app.post("/api/claims/{claim_id}/financial-estimates", status_code=201)
+def create_financial_estimate(
+    claim_id: str,
+    payload: FinancialEstimateRequest,
+    user: dict = Depends(require_roles(*FINANCIAL_ESTIMATE_ROLES))
+):
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable. The estimate was not saved.")
+    db = get_database()
+    claim = db["claims"].find_one({"claim_id": claim_id}, {"_id": 0, "claim_id": 1, "currency": 1, "loss_location": 1, "claim_type": 1})
+    if not claim:
+        raise HTTPException(status_code=404, detail="Claim not found.")
+    if (claim.get("currency") or "").upper() != payload.currency:
+        raise HTTPException(status_code=422, detail="Estimate currency must match the claim currency.")
+    result = calculate_estimate(payload)
+    now = datetime.now(timezone.utc).isoformat()
+    record = {
+        **result, "claim_id": claim_id, "claim_type": claim.get("claim_type"),
+        "created_at": now, "created_by": user["email"], "status": "Preliminary - Pending Review",
+        "review_history": []
+    }
+    try:
+        saved = db["financial_estimates"].insert_one(record)
+    except PyMongoError as exc:
+        raise HTTPException(status_code=503, detail="Unable to save financial estimate.") from exc
+    record["estimate_id"] = str(saved.inserted_id)
+    record.pop("_id", None)
+    return record
+
+@app.get("/api/claims/{claim_id}/financial-estimates")
+def list_financial_estimates(
+    claim_id: str,
+    user: dict = Depends(require_roles(*READ_ROLES))
+):
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    if not get_database()["claims"].find_one({"claim_id": claim_id}, {"_id": 1}):
+        raise HTTPException(status_code=404, detail="Claim not found.")
+    rows = list(get_database()["financial_estimates"].find({"claim_id": claim_id}).sort("created_at", DESCENDING).limit(100))
+    for row in rows:
+        row["estimate_id"] = str(row.pop("_id"))
+    return {"items": rows, "count": len(rows)}
