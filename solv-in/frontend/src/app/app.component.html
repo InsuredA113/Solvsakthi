@@ -317,7 +317,7 @@
                 <button *ngIf="canApproveFinancialEstimate()" class="danger-action" type="button" (click)="reviewFinancialEstimate(estimate, 'Rejected')" [disabled]="financialReviewBusyId === estimate.estimate_id">Reject estimate</button>
               </div>
             </div>
-            <p *ngIf="estimate.review_history?.length" class="muted">Latest review: {{ estimate.review_history[estimate.review_history.length - 1]?.reviewer_email }} · {{ estimate.review_history[estimate.review_history.length - 1]?.status }}</p>
+            <p *ngIf="latestFinancialReview(estimate) as latestReview" class="muted">Latest review: {{ latestReview.reviewer_email }} · {{ latestReview.status }}</p>
           </article>
         </section>
       </ng-container>
