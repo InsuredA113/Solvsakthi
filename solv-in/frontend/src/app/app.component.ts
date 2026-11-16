@@ -187,7 +187,7 @@ export class AppComponent implements OnInit {
 
   emptyEstimateDraft(): any {
     return {
-      description: '', quantity: 1, unit: 'item', unit_rate: 0, depreciation_rate: 0, taxable: true,
+      description: '', quantity: 1, unit: 'item', unit_rate: 0, depreciation_rate: 0, taxable: true, tax_mode: 'automatic',
       currency: '', currency_minor_units: 2, country_code: '', state_or_jurisdiction: '', region: '', locality: '', postal_code: '',
       loss_date: new Date().toISOString().slice(0, 10), tax_point_date: new Date().toISOString().slice(0, 10),
       taxes: [], charges: [], deductible: 0, interest_applicable: false,
@@ -308,7 +308,7 @@ export class AppComponent implements OnInit {
       this.errorMessage = 'Enter a Claim ID, repair details, ISO country and currency codes, loss/tax dates, jurisdiction and verified pricing source.';
       return;
     }
-    if (d.taxes.some((tax: any) => Number(tax.rate_percent) > 0 &&
+    if (d.tax_mode === 'manual' && d.taxes.some((tax: any) => Number(tax.rate_percent) > 0 &&
       (!tax.name.trim() || !tax.jurisdiction.trim() || !tax.authority_reference.trim()))) {
       this.errorMessage = 'Each tax component needs a name, jurisdiction and legal/rate authority reference.';
       return;
@@ -322,10 +322,11 @@ export class AppComponent implements OnInit {
       state_or_jurisdiction: d.state_or_jurisdiction, region: claim?.region || d.region, locality: claim?.locality || d.locality,
       postal_code: claim?.postal_code || d.postal_code, loss_date: claim?.incident_date || d.loss_date, tax_point_date: d.tax_point_date,
       line_items: [{ description: d.description, quantity: Number(d.quantity), unit: d.unit, unit_rate: Number(d.unit_rate), taxable: !!d.taxable, depreciation_rate: Number(d.depreciation_rate) }],
-      taxes: d.taxes.filter((tax: any) => Number(tax.rate_percent) > 0).map((tax: any) => ({
+      tax_mode: d.tax_mode,
+      taxes: d.tax_mode === 'manual' ? d.taxes.filter((tax: any) => Number(tax.rate_percent) > 0).map((tax: any) => ({
         ...tax, rate_percent: Number(tax.rate_percent), effective_from: tax.effective_from || null,
         effective_to: tax.effective_to || null
-      })),
+      })) : [],
       charges: d.charges.filter((charge: any) => Number(charge.amount) > 0).map((charge: any) => ({ ...charge, amount: Number(charge.amount) })),
       deductible: Number(d.deductible || 0),
       interest: {
