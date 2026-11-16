@@ -145,3 +145,16 @@ Solv-In now includes a configurable tax-rule registry for jurisdiction-specific 
 The claim lookup endpoint `GET /api/claims/{claim_id}/applicable-tax-rules?tax_point_date=YYYY-MM-DD` returns active rules matching the claim country, currency, jurisdiction and effective date. It prefers more specific jurisdiction matches and flags same-specificity duplicates as ambiguous. If no verified rule matches, it returns `No verified matching tax profile`.
 
 **Important:** This is a rule registry and matching framework, not a preloaded global tax database or legal/tax advice. Rates must be verified against official authorities before activation. No rates are invented or automatically scraped. The existing financial estimate calculator remains a separate calculation workflow; rule lookup is advisory and does not silently add taxes to an estimate.
+
+
+## Phase 8 – Automated tax calculation and financial estimate integration
+
+- Financial estimates default to **automatic tax mode**. The API matches active tax rules by claim country, currency, administrative area, region/locality and tax-point date.
+- Matching rules are converted into deterministic Python Decimal tax components and calculated using each rule's configured taxable base and compounding setting.
+- The saved estimate contains exact rule identifiers, versions, jurisdiction, rate, effective dates, authority references, source URLs and verification metadata as an audit snapshot.
+- Conflicting active rules for the same tax at the same jurisdiction specificity stop automatic calculation with a conflict response. Administrators must resolve the tax registry instead of allowing Solv-In to guess.
+- If no active verified rule matches, the estimate is still preliminary but explicitly marked **No verified matching tax profile**. No rate is assumed; the warning requires human review before approval.
+- A deliberate **manual tax mode** is available for authorised staff using an approved external tax schedule. Such estimates are labelled **Manual tax override - verify before approval** and are not represented as registry-verified.
+- API: the existing `POST /api/claims/{claim_id}/financial-estimates` endpoint applies verified registry rules automatically by default and stores rule snapshots with the result.
+
+Automatic tax application is limited to tax components and taxable bases represented by the configured rule model. It is not a worldwide tax-compliance engine; exemptions, thresholds, tax-inclusive pricing, reverse charge, special insurance taxes and local filing/reporting obligations require separately verified jurisdiction-specific logic.
