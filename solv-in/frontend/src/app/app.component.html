@@ -3,8 +3,8 @@
   <aside class="sidebar">
     <div class="brand"><div class="brand-mark">S</div><div><strong>Solv-In</strong><small>Smarter Claims. Faster Decisions.</small></div></div>
     <nav aria-label="Main navigation">
-      <ng-container *ngFor="let item of navigation"><button *ngIf="item !== 'Users' || isAdmin()" (click)="selectPage(item)" [class.active]="activePage === item">
-        <span class="nav-icon">{{ item === 'Dashboard' ? '⌂' : item === 'Claims' ? '▤' : item === 'New FNOL' ? '+' : item === 'Reports' ? '▥' : '⚙' }}</span>{{ item }}
+      <ng-container *ngFor="let item of navigation"><button *ngIf="(item !== 'Users' || isAdmin()) && (item !== 'AI Damage Analysis' || canAnalyseDamage()) && (item !== 'Tax Rules' || canManageTaxRules()) && (item !== 'Policy Coverage' || canViewPolicyCoverage())" (click)="selectPage(item)" [class.active]="activePage === item">
+        <span class="nav-icon">{{ item === 'Dashboard' ? '⌂' : item === 'Claims' ? '▤' : item === 'New FNOL' ? '+' : item === 'AI Damage Analysis' ? '◈' : item === 'Tax Rules' ? '⌁' : item === 'Policy Coverage' ? '▣' : item === 'Reports' ? '▥' : item === 'Users' ? '♙' : '⚙' }}</span>{{ item }}
       </button></ng-container>
     </nav>
     <div class="sidebar-foot">P&C Claims Intelligence<br><span>Development preview</span></div>
@@ -80,13 +80,281 @@
               <label>Phone number<input name="phone" [(ngModel)]="draft.phone" placeholder="Contact number"></label>
               <label>Claim type *<select name="claim_type" [(ngModel)]="draft.claim_type"><option value="Property">Property</option><option value="Casualty">Casualty</option></select></label>
               <label>Incident date *<input type="date" name="incident_date" [(ngModel)]="draft.incident_date" required></label>
-              <label class="full">Loss location *<input name="loss_location" [(ngModel)]="draft.loss_location" required placeholder="Address or location of incident"></label>
+              <label class="full">Loss location / address *<input name="loss_location" [(ngModel)]="draft.loss_location" required placeholder="Street address or incident location"></label>
+              <label>Country code (ISO 3166-1 alpha-2) *<input name="claim_country" [(ngModel)]="draft.country_code" maxlength="2" required placeholder="e.g. US, GB, IN, AU"></label>
+              <label>State / province / region<input name="claim_region" [(ngModel)]="draft.region" placeholder="State, province, territory or region"></label>
+              <label>City / locality<input name="claim_locality" [(ngModel)]="draft.locality" placeholder="City or municipality"></label>
+              <label>Postal / ZIP code<input name="claim_postal" [(ngModel)]="draft.postal_code" placeholder="Postal code"></label>
               <label>Estimated loss amount<input type="number" name="estimated_loss" [(ngModel)]="draft.estimated_loss" min="0" step="0.01" placeholder="Optional"></label>
-              <label>Currency<select name="currency" [(ngModel)]="draft.currency"><option value="INR">INR – Indian Rupee</option><option value="USD">USD – US Dollar</option><option value="EUR">EUR – Euro</option><option value="GBP">GBP – British Pound</option></select></label>
+              <label>Currency code (ISO 4217) *<input name="currency" [(ngModel)]="draft.currency" maxlength="3" required placeholder="e.g. USD, CAD, EUR, GBP, INR, JPY"></label>
               <label class="full">Incident description *<textarea name="incident_description" [(ngModel)]="draft.incident_description" required minlength="5" maxlength="5000" rows="4" placeholder="Describe what happened using the information reported. Do not assume missing details."></textarea></label>
             </div>
             <div class="form-actions"><span class="muted">Claim ID will be generated after successful database save.</span><button class="primary-action" type="submit" [disabled]="savingClaim || fnolForm.invalid">{{ savingClaim ? 'Saving…' : 'Create claim' }}</button></div>
           </form>
+        </section>
+      </ng-container>
+
+      <ng-container *ngIf="activePage === 'AI Damage Analysis'">
+        <section class="panel form-panel damage-panel">
+          <div class="panel-heading"><div><h2>AI-assisted damage analysis</h2><p class="muted">Upload a property or casualty damage image for preliminary visual observations.</p></div></div>
+          <div class="damage-disclaimer">AI findings are indicative only. They do not establish coverage, liability, causation, repair costs or claim outcomes. An authorised adjuster must verify every finding.</div>
+          <div class="form-grid damage-inputs">
+            <label class="full">Related Claim ID (optional)
+              <div class="damage-claim-lookup"><input name="damage_claim_id" [(ngModel)]="damageClaimId" placeholder="Example: CLM-2026-000001"><button class="secondary-action" type="button" (click)="loadDamageAssessments()">Load claim assessments</button></div>
+            </label>
+            <label class="full">Damage image *
+              <input type="file" accept="image/jpeg,image/png,image/webp" (change)="onDamageImageSelected($event)" aria-label="Select a damage image">
+              <span class="muted">JPG, PNG or WEBP · Maximum 10 MB</span>
+            </label>
+          </div>
+          <div class="damage-preview" *ngIf="damageImagePreview">
+            <img [src]="damageImagePreview" alt="Selected claim damage preview">
+            <div><b>{{ selectedDamageImage?.name }}</b><p class="muted">{{ selectedDamageImage?.size | number }} bytes</p></div>
+          </div>
+          <div class="form-actions">
+            <button class="secondary-action" type="button" (click)="clearDamageAnalysis()" [disabled]="damageBusy">Clear</button>
+            <button class="primary-action" type="button" (click)="analyseDamage()" [disabled]="damageBusy || !selectedDamageImage">{{ damageBusy ? 'Analysing image…' : 'Analyse damage with AI' }}</button>
+          </div>
+        </section>
+        <section class="panel damage-results" *ngIf="damageAssessment">
+          <div class="panel-heading"><div><h2>AI visual assessment</h2><p class="muted">{{ damageAssessment.status }}</p></div><span class="status">{{ damageAssessment.severity }} severity</span></div>
+          <div class="damage-summary"><div><small>Damage category</small><b>{{ damageAssessment.damage_category }}</b></div><div><small>AI confidence</small><b>{{ damageAssessment.confidence }}</b></div><div><small>Repair cost</small><b>Not estimated</b></div></div>
+          <div class="damage-result-grid">
+            <article><h3>Visible observations</h3><ul><li *ngFor="let item of damageAssessment.visible_observations">{{ item }}</li><li *ngIf="!damageAssessment.visible_observations.length">No observations returned.</li></ul></article>
+            <article><h3>Affected areas</h3><ul><li *ngFor="let item of damageAssessment.affected_areas">{{ item }}</li><li *ngIf="!damageAssessment.affected_areas.length">Not determined.</li></ul></article>
+            <article><h3>Possible cause (unverified)</h3><p>{{ damageAssessment.possible_cause }}</p></article>
+            <article><h3>Recommended next steps</h3><ul><li *ngFor="let item of damageAssessment.recommended_next_steps">{{ item }}</li></ul></article>
+            <article class="full"><h3>Limitations</h3><ul><li *ngFor="let item of damageAssessment.limitations">{{ item }}</li></ul></article>
+          </div>
+          <p class="damage-disclaimer">This assessment is stored in MongoDB. It is not an adjuster approval or a final claim decision.</p>
+        </section>
+        <section class="panel damage-results" *ngIf="damageAssessments.length">
+          <div class="panel-heading"><div><h2>Assessment history</h2><p class="muted">Saved assessments for claim {{ damageClaimId }}</p></div><span class="subtle">{{ damageAssessments.length }} records</span></div>
+          <article class="assessment-history-card" *ngFor="let item of damageAssessments">
+            <div class="panel-heading"><div><b>{{ item.damage_category }}</b><p class="muted">{{ item.created_at | date:'medium' }} · {{ item.severity }} · {{ item.confidence }} confidence</p></div><span class="status">{{ item.status }}</span></div>
+            <p class="muted">{{ item.visible_observations.join(' · ') }}</p>
+            <div class="review-history" *ngIf="item.review_history?.length">
+              <b>Review history</b>
+              <div *ngFor="let review of item.review_history"><small>{{ review.status }} · {{ review.reviewed_by }} ({{ review.reviewer_role }}) · {{ review.reviewed_at | date:'medium' }}</small><p>{{ review.notes || 'No additional notes.' }}</p></div>
+            </div>
+            <div class="review-actions" *ngIf="item.status !== 'Approved' && item.status !== 'Rejected'">
+              <label class="review-note-label">Reviewer notes
+                <textarea rows="2" maxlength="2000" [(ngModel)]="damageReviewNotes" [name]="'review_notes_' + item.assessment_id" placeholder="Record what was checked, evidence needed or reason for decision"></textarea>
+              </label>
+              <div class="review-buttons">
+                <button *ngIf="canReviewDamage()" class="secondary-action" type="button" (click)="reviewDamageAssessment(item, 'Reviewed')" [disabled]="damageReviewBusyId === item.assessment_id">Mark reviewed</button>
+                <button *ngIf="canReviewDamage()" class="secondary-action" type="button" (click)="reviewDamageAssessment(item, 'More Evidence Required')" [disabled]="damageReviewBusyId === item.assessment_id">Request evidence</button>
+                <button *ngIf="canApproveDamage()" class="primary-action" type="button" (click)="reviewDamageAssessment(item, 'Approved')" [disabled]="damageReviewBusyId === item.assessment_id">Approve assessment</button>
+                <button *ngIf="canApproveDamage()" class="danger-action" type="button" (click)="reviewDamageAssessment(item, 'Rejected')" [disabled]="damageReviewBusyId === item.assessment_id">Reject assessment</button>
+              </div>
+            </div>
+          </article>
+        </section>
+      </ng-container>
+
+      <ng-container *ngIf="activePage === 'Policy Coverage'">
+        <section class="panel form-panel">
+          <div class="panel-heading"><div><h2>Policy coverage screening</h2><p class="muted">Link policy terms to a claim and run a rule-based preliminary coverage check.</p></div></div>
+          <div class="damage-disclaimer">This tool only screens configured policy data. It does not interpret the complete policy wording, endorsements or applicable law and cannot approve, deny or settle a claim. A qualified claims professional must make the coverage decision.</div>
+
+          <section *ngIf="canManagePolicies()" class="subsection">
+            <h3>Register a policy</h3>
+            <div class="form-grid">
+              <label>Policy number *<input name="policy_number" [(ngModel)]="policyDraft.policy_number" placeholder="POL-100"></label>
+              <label>Insured name *<input name="policy_insured" [(ngModel)]="policyDraft.insured_name"></label>
+              <label>Policy type *<select name="policy_type" [(ngModel)]="policyDraft.claim_type"><option>Property</option><option>Casualty</option><option>Both</option></select></label>
+              <label>Country code *<input name="policy_country" maxlength="2" [(ngModel)]="policyDraft.country_code" placeholder="US, GB, IN"></label>
+              <label>Currency code *<input name="policy_currency" maxlength="3" [(ngModel)]="policyDraft.currency" placeholder="USD, GBP, INR"></label>
+              <label>Effective from *<input type="date" name="policy_from" [(ngModel)]="policyDraft.effective_from"></label>
+              <label>Effective to *<input type="date" name="policy_to" [(ngModel)]="policyDraft.effective_to"></label>
+              <label>Per-occurrence limit *<input type="number" min="0.01" step="0.01" name="policy_limit" [(ngModel)]="policyDraft.per_occurrence_limit"></label>
+              <label>Aggregate limit<input type="number" min="0" step="0.01" name="policy_aggregate" [(ngModel)]="policyDraft.aggregate_limit"></label>
+              <label>Aggregate already used<input type="number" min="0" step="0.01" name="policy_used" [(ngModel)]="policyDraft.aggregate_used"></label>
+              <label>Deductible<input type="number" min="0" step="0.01" name="policy_deductible" [(ngModel)]="policyDraft.deductible"></label>
+              <label>Covered loss categories (comma separated)<input name="policy_covered" [(ngModel)]="policyDraft.covered_loss_categories" placeholder="fire, water damage"></label>
+              <label>Excluded loss categories (comma separated)<input name="policy_excluded" [(ngModel)]="policyDraft.excluded_loss_categories" placeholder="earthquake, flood"></label>
+              <label>Endorsements (comma separated)<input name="policy_endorsements" [(ngModel)]="policyDraft.endorsements"></label>
+              <label class="full">Policy wording / schedule reference *<input name="policy_wording" [(ngModel)]="policyDraft.policy_wording_reference" placeholder="Document name, section or approved reference"></label>
+              <label class="full">Notes<textarea name="policy_notes" rows="2" [(ngModel)]="policyDraft.notes"></textarea></label>
+            </div>
+            <div class="form-actions"><span class="muted">Only workspace administrators can register policy records.</span><button class="primary-action" type="button" (click)="createPolicy()" [disabled]="policyBusy">{{ policyBusy ? 'Saving…' : 'Save policy' }}</button></div>
+          </section>
+
+          <section class="subsection">
+            <h3>Assess a claim</h3>
+            <div class="form-grid">
+              <label>Claim ID *<div class="damage-claim-lookup"><input name="coverage_claim_id" [(ngModel)]="coverageClaimId" placeholder="CLM-2026-000001"><button type="button" class="secondary-action" (click)="loadCoverageAssessments()">Load history</button></div></label>
+              <label>Reported loss category *<input name="coverage_category" [(ngModel)]="coverageLossCategory" placeholder="fire, water damage, theft"></label>
+              <label>Claimed amount<input type="number" min="0" step="0.01" name="coverage_amount" [(ngModel)]="coverageClaimedAmount"></label>
+            </div>
+            <div class="form-actions"><span class="muted">Uses the policy number already recorded on the selected claim.</span><button class="primary-action" type="button" (click)="assessCoverage()" [disabled]="coverageBusy">{{ coverageBusy ? 'Assessing…' : 'Run preliminary screening' }}</button></div>
+          </section>
+
+          <article class="panel result-panel" *ngIf="coverageAssessment">
+            <div class="panel-heading"><div><h3>Preliminary screening result</h3><span class="status">{{ coverageAssessment.coverage_status }}</span></div></div>
+            <p>{{ coverageAssessment.explanation }}</p>
+            <p><b>Reason codes:</b> {{ coverageAssessment.reason_codes.join(', ') }}</p>
+            <div class="metrics">
+              <article class="metric"><div><small>Indicative limit</small><strong>{{ coverageAssessment.indicative_limit === null ? 'Not available' : formatAmount(+coverageAssessment.indicative_limit, coverageAssessment.policy_snapshot?.currency || 'USD') }}</strong></div></article>
+              <article class="metric"><div><small>Indicative deductible</small><strong>{{ coverageAssessment.indicative_deductible === null ? 'Not available' : formatAmount(+coverageAssessment.indicative_deductible, coverageAssessment.policy_snapshot?.currency || 'USD') }}</strong></div></article>
+              <article class="metric"><div><small>Indicative net amount</small><strong>{{ coverageAssessment.indicative_net_amount === null ? 'Not calculated' : formatAmount(+coverageAssessment.indicative_net_amount, coverageAssessment.policy_snapshot?.currency || 'USD') }}</strong></div></article>
+            </div>
+          </article>
+
+          <section class="panel claims-panel" *ngIf="coverageAssessments.length">
+            <div class="panel-heading"><h3>Saved screening history</h3><span class="subtle">{{ coverageAssessments.length }} records</span></div>
+            <div class="table-scroll"><table><thead><tr><th>Date</th><th>Loss category</th><th>Screening status</th><th>Indicative net</th></tr></thead>
+              <tbody><tr *ngFor="let item of coverageAssessments"><td>{{ item.created_at | date:'medium' }}</td><td>{{ item.loss_category }}</td><td>{{ item.coverage_status }}</td><td>{{ item.indicative_net_amount === null ? '—' : formatAmount(+item.indicative_net_amount, item.policy_snapshot?.currency || 'USD') }}</td></tr></tbody>
+            </table></div>
+          </section>
+        </section>
+
+        <section class="panel claims-panel" *ngIf="canManagePolicies()">
+          <div class="panel-heading"><h2>Registered policy records</h2><span class="subtle">{{ policies.length }} records</span></div>
+          <div class="table-scroll"><table><thead><tr><th>Policy number</th><th>Insured</th><th>Type</th><th>Country / currency</th><th>Period</th><th>Per-occurrence limit</th></tr></thead>
+            <tbody><tr *ngFor="let policy of policies"><td>{{ policy.policy_number }}</td><td>{{ policy.insured_name }}</td><td>{{ policy.claim_type }}</td><td>{{ policy.country_code }} / {{ policy.currency }}</td><td>{{ policy.effective_from }} – {{ policy.effective_to }}</td><td>{{ formatAmount(+policy.per_occurrence_limit, policy.currency) }}</td></tr>
+              <tr *ngIf="policies.length === 0"><td colspan="6" class="empty">No policy records registered in this workspace.</td></tr></tbody>
+          </table></div>
+        </section>
+      </ng-container>
+
+      <ng-container *ngIf="activePage === 'Financial Estimate'">
+        <section class="panel form-panel">
+          <div class="panel-heading"><div><h2>Claims financial calculation</h2><p class="muted">Worldwide-ready Python Decimal calculations with configurable country, regional and local tax rules and ISO currency support.</p></div></div>
+          <div class="damage-disclaimer">This is a preliminary estimate, not a coverage decision or settlement offer. Solv-In does not automatically assume a tax rate, fee or interest charge. Configure rules for the claim's country and loss jurisdiction using the correct tax point date, current law and policy wording. No country-specific rate is assumed.</div>
+          <div class="form-grid">
+            <label class="full">Claim ID *
+              <div class="damage-claim-lookup"><input name="estimate_claim_id" [(ngModel)]="estimateClaimId" (ngModelChange)="resetTaxRuleConfirmation()" placeholder="Example: CLM-2026-000001"><button type="button" class="secondary-action" (click)="loadFinancialEstimates()">Load saved estimates</button></div>
+            </label>
+            <label>Country code (ISO 3166-1 alpha-2) *<input name="estimate_country" maxlength="2" [(ngModel)]="estimateDraft.country_code" (ngModelChange)="resetTaxRuleConfirmation()" placeholder="e.g. US, GB, IN, AU"></label>
+            <label>Currency code (ISO 4217) *<input name="estimate_currency" maxlength="3" [(ngModel)]="estimateDraft.currency" (ngModelChange)="resetTaxRuleConfirmation()" placeholder="e.g. USD, GBP, INR, JPY, EUR"><small class="muted">The linked claim currency takes priority. Enter a three-letter code.</small></label>
+            <label>State / province / territory / jurisdiction *<input name="estimate_jurisdiction" [(ngModel)]="estimateDraft.state_or_jurisdiction" (ngModelChange)="resetTaxRuleConfirmation()" placeholder="State, province, canton, territory or national jurisdiction"></label>
+            <label>Region / county / district<input name="estimate_region" [(ngModel)]="estimateDraft.region" (ngModelChange)="resetTaxRuleConfirmation()" placeholder="Optional administrative region"></label>
+            <label>City / locality<input name="estimate_locality" [(ngModel)]="estimateDraft.locality" (ngModelChange)="resetTaxRuleConfirmation()" placeholder="City or municipality"></label>
+            <label>Postal / ZIP code<input name="estimate_postal" [(ngModel)]="estimateDraft.postal_code" placeholder="Optional postal code"></label>
+            <label>Loss date *<input type="date" name="estimate_loss_date" [(ngModel)]="estimateDraft.loss_date"></label>
+            <label>Tax point / taxable event date *<input type="date" name="estimate_tax_point_date" [(ngModel)]="estimateDraft.tax_point_date" (ngModelChange)="resetTaxRuleConfirmation()"><small class="muted">Tax rule effective dates are checked against this date, not automatically against the loss date.</small></label>
+            <label class="full">Repair item description *<input name="estimate_description" [(ngModel)]="estimateDraft.description" placeholder="e.g. Replace damaged roof tiles"></label>
+            <label>Quantity *<input type="number" min="0.0001" step="0.0001" name="estimate_quantity" [(ngModel)]="estimateDraft.quantity"></label>
+            <label>Unit<input name="estimate_unit" [(ngModel)]="estimateDraft.unit" placeholder="item, sq ft, hour"></label>
+            <label>Verified unit rate *<input type="number" min="0" step="0.01" name="estimate_rate" [(ngModel)]="estimateDraft.unit_rate"></label>
+            <label>Depreciation (%)<input type="number" min="0" max="100" step="0.01" name="estimate_depreciation" [(ngModel)]="estimateDraft.depreciation_rate"></label>
+            <label class="full"><span><input type="checkbox" name="estimate_taxable" [(ngModel)]="estimateDraft.taxable"> Repair item is taxable under the applicable rule</span></label>
+            <label>Tax calculation mode<select name="estimate_tax_mode" [(ngModel)]="estimateDraft.tax_mode" (ngModelChange)="resetTaxRuleConfirmation()"><option value="automatic">Automatic - use verified active tax rules</option><option value="manual">Manual - enter approved tax components</option></select><small class="muted">Automatic mode is the default. Conflicting active rules stop calculation; no matching rule never means tax is assumed to be zero.</small></label>
+            <div class="full"><button class="secondary-action" type="button" (click)="lookupApplicableTaxRules()">Find verified tax rules for this claim</button><div *ngIf="applicableTaxRules" class="assessment-history-card"><b>{{ applicableTaxRules.profile_status }}</b><p class="muted">{{ applicableTaxRules.message }}</p><p *ngFor="let rule of applicableTaxRules.items">{{ rule.tax_name }} · {{ rule.rate_percent }}% · {{ rule.admin_area }} · {{ rule.authority_name }} · {{ rule.authority_reference }}</p><p *ngIf="applicableTaxRules.ambiguous_tax_names?.length" class="muted">Ambiguous rules: {{ applicableTaxRules.ambiguous_tax_names.join(', ') }}</p><label *ngIf="estimateDraft.tax_mode === 'automatic' && applicableTaxRules.count > 0"><input type="checkbox" name="confirm_automatic_tax_application" [(ngModel)]="estimateDraft.confirm_automatic_tax_application"> I reviewed the listed authority, rate, jurisdiction and effective date, and confirm these matched tax rules may be applied to this preliminary estimate.</label></div></div>            <div class="full"><h3>Applicable taxes (optional)</h3><p class="muted">Add every applicable national, state/provincial, regional, municipal or other tax component. Tax-on-tax can be enabled where the verified local rule requires it. Maximum 20 components.</p></div>
+            <div class="full" *ngIf="estimateDraft.tax_mode === 'manual'">
+              <button type="button" class="secondary-action" (click)="addTaxComponent()" [disabled]="estimateDraft.taxes.length >= 20">Add tax component</button>
+            </div>
+            <div class="full" *ngFor="let tax of estimateDraft.taxes; let i = index" [hidden]="estimateDraft.tax_mode !== 'manual'">
+              <div class="assessment-history-card">
+                <div class="panel-heading"><b>Tax component {{ i + 1 }}</b><button type="button" class="danger-action" (click)="removeTaxComponent(i)">Remove</button></div>
+                <div class="form-grid">
+                  <label>Tax name<input [name]="'tax_name_' + i" [(ngModel)]="tax.name" placeholder="VAT, GST, sales tax, insurance premium tax…"></label>
+                  <label>Tax type<input [name]="'tax_type_' + i" [(ngModel)]="tax.tax_type" placeholder="VAT / GST / sales / other"></label>
+                  <label>Jurisdiction<input [name]="'tax_jurisdiction_' + i" [(ngModel)]="tax.jurisdiction" placeholder="Country, state, province or municipality"></label>
+                  <label>Rate (%)<input type="number" min="0" max="100" step="0.0001" [name]="'tax_rate_' + i" [(ngModel)]="tax.rate_percent"></label>
+                  <label>Taxable base<select [name]="'tax_basis_' + i" [(ngModel)]="tax.applies_to"><option value="repair_subtotal">Gross repair subtotal</option><option value="depreciated_repair_subtotal">After depreciation</option><option value="fees">Taxable fees</option><option value="repair_and_fees">Repairs and taxable fees</option></select></label>
+                  <label><span><input type="checkbox" [name]="'tax_compound_' + i" [(ngModel)]="tax.compound_on_prior_taxes"> Tax applies on prior tax components</span></label>
+                  <label>Rule effective from<input type="date" [name]="'tax_from_' + i" [(ngModel)]="tax.effective_from"></label>
+                  <label>Rule effective to<input type="date" [name]="'tax_to_' + i" [(ngModel)]="tax.effective_to"></label>
+                  <label class="full">Law / tax authority / approved schedule reference<input [name]="'tax_authority_' + i" [(ngModel)]="tax.authority_reference" placeholder="Official legal source or insurer-approved tax rule"></label>
+                </div>
+              </div>
+            </div>
+            <div class="full"><h3>Other claim charges (optional)</h3><p class="muted">Add documented fees or other claim-related amounts only where permitted by the policy and applicable rules.</p></div>
+            <div class="full"><button type="button" class="secondary-action" (click)="addCharge()" [disabled]="estimateDraft.charges.length >= 50">Add fee / charge</button></div>
+            <div class="full" *ngFor="let charge of estimateDraft.charges; let i = index">
+              <div class="assessment-history-card">
+                <div class="panel-heading"><b>Charge {{ i + 1 }}</b><button type="button" class="danger-action" (click)="removeCharge(i)">Remove</button></div>
+                <div class="form-grid">
+                  <label>Charge name<input [name]="'charge_name_' + i" [(ngModel)]="charge.name" placeholder="Inspection, mitigation, legal expense…"></label>
+                  <label>Charge type<select [name]="'charge_type_' + i" [(ngModel)]="charge.charge_type"><option value="fee">Fee</option><option value="other">Other</option><option value="assessment">Assessment</option><option value="mitigation">Mitigation</option><option value="salvage">Salvage</option><option value="legal">Legal</option><option value="adjusting">Adjusting</option></select></label>
+                  <label>Amount<input type="number" min="0" step="0.000001" [name]="'charge_amount_' + i" [(ngModel)]="charge.amount"></label>
+                  <label><span><input type="checkbox" [name]="'charge_taxable_' + i" [(ngModel)]="charge.taxable"> Taxable under this jurisdiction's rules</span></label>
+                  <label class="full">Authority / policy reference<input [name]="'charge_authority_' + i" [(ngModel)]="charge.authority_reference" placeholder="Policy clause, invoice or legal basis"></label>
+                </div>
+              </div>
+            </div>
+            <label>Policy deductible<input type="number" min="0" step="0.01" name="deductible" [(ngModel)]="estimateDraft.deductible"></label>
+            <div class="full"><h3>Interest (only if applicable)</h3><label><input type="checkbox" name="interest_applicable" [(ngModel)]="estimateDraft.interest_applicable"> Apply contractually / legally supported simple interest</label></div>
+            <ng-container *ngIf="estimateDraft.interest_applicable">
+              <label>Annual interest rate (%)<input type="number" min="0" max="100" step="0.0001" name="interest_rate" [(ngModel)]="estimateDraft.interest_rate"></label>
+              <label>Principal amount<input type="number" min="0" step="0.01" name="interest_principal" [(ngModel)]="estimateDraft.interest_principal"></label>
+              <label>Number of days<input type="number" min="0" step="1" name="interest_days" [(ngModel)]="estimateDraft.interest_days"></label>
+              <label>Day-count convention<select name="interest_basis" [(ngModel)]="estimateDraft.interest_basis"><option value="simple_actual_365">Actual / 365</option><option value="simple_actual_360">Actual / 360</option><option value="simple_actual_366">Actual / 366</option><option value="simple_30_360">30 / 360</option></select></label>
+              <label>Policy / legal authority reference<input name="interest_authority" [(ngModel)]="estimateDraft.interest_authority" placeholder="Clause / statute / approved rule"></label>
+            </ng-container>
+            <div class="full"><h3>Pricing evidence *</h3></div>
+            <label>Pricing source *<input name="pricing_source" [(ngModel)]="estimateDraft.pricing_source" placeholder="Approved vendor quote / insurer rate schedule"></label>
+            <label>Pricing effective date *<input type="date" name="pricing_date" [(ngModel)]="estimateDraft.pricing_effective_date"></label>
+            <label class="full">Calculation notes<textarea rows="2" name="estimate_notes" [(ngModel)]="estimateDraft.notes" placeholder="Explain assumptions, exclusions and evidence references"></textarea></label>
+          </div>
+          <div class="form-actions"><span class="muted">No tax rates or pricing values are assumed. Currency rounding follows the ISO currency's standard minor units.</span><button class="primary-action" type="button" (click)="calculateFinancialEstimate()" [disabled]="estimateBusy">{{ estimateBusy ? 'Calculating…' : 'Calculate and save estimate' }}</button></div>
+        </section>
+        <section class="panel damage-results" *ngIf="financialEstimate">
+          <div class="panel-heading"><div><h2>Calculation breakdown</h2><p class="muted">{{ financialEstimate.claim_id }} · {{ financialEstimate.state_or_jurisdiction }}</p></div><span class="status">{{ financialEstimate.status }}</span></div>
+          <div class="damage-disclaimer"><b>Tax profile: {{ financialEstimate.tax_profile_status || 'Not recorded' }}</b><p *ngIf="financialEstimate.tax_rule_warning">{{ financialEstimate.tax_rule_warning }}</p><p *ngIf="financialEstimate.tax_rule_ids?.length">Applied verified tax rule versions: {{ financialEstimate.tax_rule_ids?.join(', ') }}</p><p *ngIf="financialEstimate.tax_mode === 'manual'">Manual tax override: independently verify the entered tax schedule before approval.</p></div>
+          <div class="damage-summary"><div><small>Gross repairs</small><b>{{ formatAmount(+financialEstimate.gross_repair_cost, financialEstimate.currency) }}</b></div><div><small>Depreciation</small><b>{{ formatAmount(+financialEstimate.depreciation, financialEstimate.currency) }}</b></div><div><small>Net repair cost</small><b>{{ formatAmount(+financialEstimate.net_repair_cost, financialEstimate.currency) }}</b></div></div>
+          <div class="table-scroll"><table><tbody>
+            <tr><td>Fees and other charges</td><td>{{ formatAmount(+financialEstimate.total_fees_and_charges, financialEstimate.currency) }}</td></tr>
+            <tr><td>Applicable taxes</td><td>{{ formatAmount(+financialEstimate.total_tax, financialEstimate.currency) }}</td></tr>
+            <tr><td>Interest</td><td>{{ formatAmount(+financialEstimate.interest.amount, financialEstimate.currency) }}</td></tr>
+            <tr><td>Less deductible</td><td>{{ formatAmount(+financialEstimate.deductible, financialEstimate.currency) }}</td></tr>
+            <tr><th>Preliminary net estimate</th><th>{{ formatAmount(+financialEstimate.preliminary_net_estimate, financialEstimate.currency) }}</th></tr>
+          </tbody></table></div>
+          <p class="muted">Pricing: {{ financialEstimate.pricing_source }}. This estimate is pending authorised review and is not a settlement decision.</p>
+        </section>
+        <section class="panel damage-results" *ngIf="financialEstimates.length">
+          <div class="panel-heading"><h2>Saved financial estimates</h2><span class="subtle">{{ financialEstimates.length }} records</span></div>
+          <article class="assessment-history-card" *ngFor="let estimate of financialEstimates">
+            <div class="panel-heading"><div><b>{{ formatAmount(+estimate.preliminary_net_estimate, estimate.currency) }}</b><p class="muted">{{ estimate.created_at | date:'medium' }} · {{ estimate.pricing_source }}</p><p class="muted">Tax profile: {{ estimate.tax_profile_status || 'Legacy estimate' }} · Review: {{ estimate.review_status || 'Pending Review' }}</p></div><span class="status">{{ estimate.status }}</span></div>
+            <div *ngIf="canReviewFinancialEstimate() && !isFinalEstimateReview(estimate)" class="form-grid">
+              <label class="full">Reviewer notes<textarea rows="2" [(ngModel)]="financialReviewNotes" placeholder="Add review notes or explain additional evidence needed"></textarea></label>
+              <div class="form-actions">
+                <button class="secondary-action" type="button" (click)="reviewFinancialEstimate(estimate, 'Reviewed')" [disabled]="financialReviewBusyId === estimate.estimate_id">Mark reviewed</button>
+                <button class="secondary-action" type="button" (click)="reviewFinancialEstimate(estimate, 'More Evidence Required')" [disabled]="financialReviewBusyId === estimate.estimate_id">Request evidence</button>
+                <button *ngIf="canApproveFinancialEstimate()" class="primary-action" type="button" (click)="reviewFinancialEstimate(estimate, 'Approved')" [disabled]="financialReviewBusyId === estimate.estimate_id">Approve estimate</button>
+                <button *ngIf="canApproveFinancialEstimate()" class="danger-action" type="button" (click)="reviewFinancialEstimate(estimate, 'Rejected')" [disabled]="financialReviewBusyId === estimate.estimate_id">Reject estimate</button>
+              </div>
+            </div>
+            <p *ngIf="latestFinancialReview(estimate) as latestReview" class="muted">Latest review: {{ latestReview.reviewer_email }} · {{ latestReview.status }}</p>
+          </article>
+        </section>
+      </ng-container>
+
+
+      <ng-container *ngIf="activePage === 'Tax Rules' && canManageTaxRules()">
+        <section class="panel form-panel">
+          <div class="panel-heading"><div><h2>Global tax rule registry</h2><p class="muted">Create jurisdiction profiles using verified official sources. New rules are saved as Draft and must be activated by an authorised administrator.</p></div></div>
+          <div class="damage-disclaimer">Solv-In does not preload or guess worldwide tax rates. Verify each rate, jurisdiction, taxable base and effective date against the relevant official authority before activation. Active rules are immutable; create a new version for changes.</div>
+          <div class="form-grid">
+            <label>Country code (ISO alpha-2) *<input name="rule_country" maxlength="2" [(ngModel)]="taxRuleDraft.country_code" placeholder="US, GB, IN, AU"></label>
+            <label>Currency (ISO 4217) *<input name="rule_currency" maxlength="3" [(ngModel)]="taxRuleDraft.currency" placeholder="USD, GBP, INR"></label>
+            <label>State / province / admin area (optional)<input name="rule_admin_area" [(ngModel)]="taxRuleDraft.admin_area" placeholder="State, province, canton or national scope"></label>
+            <label>Region / county<input name="rule_region" [(ngModel)]="taxRuleDraft.region"></label>
+            <label>City / locality<input name="rule_locality" [(ngModel)]="taxRuleDraft.locality"></label>
+            <label>Tax name *<input name="rule_name" [(ngModel)]="taxRuleDraft.tax_name" placeholder="VAT, GST, sales tax"></label>
+            <label>Tax type<input name="rule_type" [(ngModel)]="taxRuleDraft.tax_type"></label>
+            <label>Rate (%) *<input type="number" min="0" max="100" step="0.0001" name="rule_rate" [(ngModel)]="taxRuleDraft.rate_percent"></label>
+            <label>Calculation order (lower runs first)<input type="number" min="0" max="10000" name="rule_order" [(ngModel)]="taxRuleDraft.calculation_order"></label>
+            <label>Taxable base<select name="rule_basis" [(ngModel)]="taxRuleDraft.applies_to"><option value="repair_subtotal">Gross repair subtotal</option><option value="depreciated_repair_subtotal">After depreciation</option><option value="fees">Taxable fees</option><option value="repair_and_fees">Repairs and fees</option></select></label>
+            <label>Tax point type<input name="rule_point" [(ngModel)]="taxRuleDraft.tax_point_type" placeholder="Tax point date / invoice date"></label>
+            <label>Effective from *<input type="date" name="rule_from" [(ngModel)]="taxRuleDraft.effective_from"></label>
+            <label>Effective to<input type="date" name="rule_to" [(ngModel)]="taxRuleDraft.effective_to"></label>
+            <label>Official authority name *<input name="rule_authority" [(ngModel)]="taxRuleDraft.authority_name" placeholder="Tax authority / government body"></label>
+            <label>Official source URL<input type="url" name="rule_url" [(ngModel)]="taxRuleDraft.source_url" placeholder="https://..."></label>
+            <label class="full">Law / notice / schedule reference *<input name="rule_reference" [(ngModel)]="taxRuleDraft.authority_reference" placeholder="Statute, regulation, official schedule and section"></label>
+            <label class="full">Notes<textarea rows="2" name="rule_notes" [(ngModel)]="taxRuleDraft.notes"></textarea></label>
+            <label class="full"><span><input type="checkbox" name="rule_compound" [(ngModel)]="taxRuleDraft.compound_on_prior_taxes"> Tax compounds on prior tax components (only where official rule requires it)</span></label>
+          </div>
+          <div class="form-actions"><span class="muted">Draft rules are not used in matching.</span><button class="primary-action" type="button" (click)="saveTaxRule()" [disabled]="taxRulesBusy">{{ taxRulesBusy ? 'Saving…' : 'Save draft rule' }}</button></div>
+        </section>
+        <section class="panel claims-panel">
+          <div class="panel-heading"><h2>Configured tax rules</h2><div class="damage-claim-lookup"><input maxlength="2" placeholder="Filter country e.g. US" [(ngModel)]="taxRuleCountryFilter"><button class="secondary-action" type="button" (click)="loadTaxRules()">Load rules</button></div></div>
+          <div class="table-scroll"><table><thead><tr><th>Country / jurisdiction</th><th>Tax</th><th>Rate</th><th>Effective</th><th>Authority</th><th>Status</th><th>Action</th></tr></thead><tbody>
+            <tr *ngFor="let rule of taxRules"><td>{{ rule.country_code }} · {{ rule.admin_area }}<small>{{ rule.region }} {{ rule.locality }}</small></td><td>{{ rule.tax_name }}</td><td>{{ rule.rate_percent }}%</td><td>{{ rule.effective_from }} – {{ rule.effective_to || 'Open-ended' }}</td><td>{{ rule.authority_name }}<small>{{ rule.authority_reference }}</small></td><td><span class="status">{{ rule.status }}</span></td><td><button *ngIf="rule.status === 'Draft' || rule.status === 'Inactive'" class="secondary-action" type="button" (click)="setTaxRuleStatus(rule, 'Active')">Verify &amp; activate</button><button *ngIf="rule.status === 'Active'" class="danger-action" type="button" (click)="setTaxRuleStatus(rule, 'Inactive')">Deactivate</button></td></tr>
+            <tr *ngIf="taxRules.length === 0"><td colspan="7" class="empty">No tax rules found. Add a verified jurisdiction rule above.</td></tr>
+          </tbody></table></div>
         </section>
       </ng-container>
 

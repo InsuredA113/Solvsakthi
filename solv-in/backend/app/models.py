@@ -1,5 +1,7 @@
 from datetime import date, datetime, timezone
 from typing import Literal
+import re
+import pycountry
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 ClaimType = Literal["Property", "Casualty"]
@@ -19,18 +21,28 @@ class ClaimCreate(BaseModel):
     incident_date: date
     incident_description: str = Field(min_length=5, max_length=5000)
     loss_location: str = Field(min_length=2, max_length=250)
+    country_code: str = Field(min_length=2, max_length=2)
+    region: str | None = Field(default=None, max_length=120)
+    locality: str | None = Field(default=None, max_length=120)
+    postal_code: str | None = Field(default=None, max_length=30)
     estimated_loss: float | None = Field(default=None, ge=0)
-    currency: str = Field(default="INR", min_length=3, max_length=3)
+    currency: str = Field(min_length=3, max_length=3)
 
     @field_validator("currency")
     @classmethod
     def normalize_currency(cls, value: str) -> str:
-        return value.upper()
+        value = value.upper()
+        if not re.fullmatch(r"[A-Z]{3}", value) or pycountry.currencies.get(alpha_3=value) is None:
+            raise ValueError("Currency must be a three-letter ISO 4217 code.")
+        return value
 
-class ClaimStatusUpdate(BaseModel):
-    status: ClaimStatus
+    @field_validator("country_code")
+    @classmethod
+    def normalize_country(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Country code is required.")
+        value = value.upper()
+        if not re.fullmatch(r"[A-Z]{2}", value) or pycountry.countries.get(alpha_2=value) is None:
+            raise ValueError("Country must be a two-letter ISO 3166-1 alpha-2 code.")
+        return value
 
-class ClaimRecord(ClaimCreate):
-    claim_id: str
-    status: ClaimStatus = "FNOL Received"
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

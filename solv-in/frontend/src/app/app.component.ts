@@ -8,13 +8,21 @@ interface User { full_name: string; email: string; role: string; is_active?: boo
 interface Claim {
   claim_id: string; customer_name: string; email?: string; phone?: string;
   policy_number: string; claim_type: 'Property' | 'Casualty'; incident_date: string;
-  incident_description: string; loss_location: string; estimated_loss?: number | null;
+  incident_description: string; loss_location: string; country_code: string; region?: string; locality?: string; postal_code?: string; estimated_loss?: number | null;
   currency: string; status: string; created_at?: string; updated_at?: string;
 }
+interface DamageAssessment {
+  assessment_id: string; claim_id?: string | null; damage_category: string;
+  affected_areas: string[]; visible_observations: string[]; severity: string;
+  confidence: string; possible_cause: string; recommended_next_steps: string[];
+  limitations: string[]; repair_cost_estimate: number | null; status: string; created_at: string;
+  review_history?: { status: string; notes: string; reviewed_at: string; reviewed_by: string; reviewer_role: string }[];
+}
+interface FinancialEstimate { estimate_id: string; claim_id: string; currency: string; gross_repair_cost: string; depreciation: string; net_repair_cost: string; total_fees_and_charges: string; total_tax: string; interest: { amount: string }; deductible: string; total_before_deductible: string; preliminary_net_estimate: string; status: string; created_at: string; pricing_source: string; state_or_jurisdiction: string; taxes: any[]; line_items: any[]; tax_mode?: string; tax_profile_status?: string; tax_rule_warning?: string | null; tax_rule_ids?: string[]; review_status?: string; review_history?: any[]; }
 interface ClaimDraft {
   customer_name: string; email: string; phone: string; policy_number: string;
   claim_type: 'Property' | 'Casualty'; incident_date: string; incident_description: string;
-  loss_location: string; estimated_loss: number | null; currency: string;
+  loss_location: string; country_code: string; region: string; locality: string; postal_code: string; estimated_loss: number | null; currency: string;
 }
 
 @Component({
@@ -43,13 +51,42 @@ export class AppComponent implements OnInit {
   users: User[] = [];
   roles: string[] = [];
   userBusy = false;
+  selectedDamageImage: File | null = null;
+  damageImagePreview = '';
+  damageClaimId = '';
+  damageBusy = false;
+  damageAssessment: DamageAssessment | null = null;
+  damageAssessments: DamageAssessment[] = [];
+  damageReviewNotes = '';
+  damageReviewBusyId = '';
+  estimateClaimId = '';
+  estimateBusy = false;
+  financialEstimate: FinancialEstimate | null = null;
+  financialEstimates: FinancialEstimate[] = [];
+  financialReviewNotes = '';
+  financialReviewBusyId = '';
+  policies: any[] = [];
+  policyDraft: any = this.emptyPolicyDraft();
+  policyBusy = false;
+  coverageClaimId = '';
+  coverageLossCategory = '';
+  coverageClaimedAmount: number | null = null;
+  coverageBusy = false;
+  coverageAssessment: any = null;
+  coverageAssessments: any[] = [];
+  taxRules: any[] = [];
+  taxRuleDraft: any = this.emptyTaxRuleDraft();
+  taxRulesBusy = false;
+  taxRuleCountryFilter = '';
+  applicableTaxRules: any = null;
+  estimateDraft: any = this.emptyEstimateDraft();
   newUser = { full_name: '', email: '', password: '', role: 'Claims Manager' };
   totalClaims = 0;
   newClaims = 0;
   investigatingClaims = 0;
   pendingClaims = 0;
   closedClaims = 0;
-  readonly navigation = ['Dashboard', 'Claims', 'New FNOL', 'Reports', 'Users', 'Settings'];
+  readonly navigation = ['Dashboard', 'Claims', 'New FNOL', 'AI Damage Analysis', 'Policy Coverage', 'Financial Estimate', 'Tax Rules', 'Reports', 'Users', 'Settings'];
   readonly statuses = ['FNOL Received', 'Under Review', 'Investigation', 'Assessment', 'Pending Approval', 'Approved', 'Closed'];
   draft: ClaimDraft = this.emptyDraft();
 
@@ -121,11 +158,179 @@ export class AppComponent implements OnInit {
     return this.currentUser?.role === 'Super Administrator';
   }
 
+  canManageTaxRules(): boolean {
+    return ['Super Administrator', 'Insurance Company Administrator'].includes(this.currentUser?.role || '');
+  }
+
+  canManagePolicies(): boolean {
+    return ['Super Administrator', 'Insurance Company Administrator'].includes(this.currentUser?.role || '');
+  }
+
+  canViewPolicyCoverage(): boolean {
+    return ['Super Administrator', 'Insurance Company Administrator', 'Claims Manager', 'Property Adjuster', 'Casualty Adjuster', 'Surveyor', 'Actuarial Analyst', 'Approver', 'Auditor'].includes(this.currentUser?.role || '');
+  }
+
+  latestFinancialReview(estimate: FinancialEstimate): any | null {
+    const history = estimate.review_history;
+    return history?.length ? history[history.length - 1] : null;
+  }
+
+  canAnalyseDamage(): boolean {
+    return ['Super Administrator', 'Insurance Company Administrator', 'Claims Manager', 'Property Adjuster', 'Casualty Adjuster', 'Surveyor', 'Actuarial Analyst', 'Approver'].includes(this.currentUser?.role || '');
+  }
+
+  emptyPolicyDraft(): any {
+    return {
+      policy_number: '', insured_name: '', claim_type: 'Property', country_code: '', currency: '',
+      effective_from: '', effective_to: '', per_occurrence_limit: 0, aggregate_limit: null,
+      aggregate_used: 0, deductible: 0, excluded_loss_categories: '', covered_loss_categories: '',
+      endorsements: '', policy_wording_reference: '', notes: ''
+    };
+  }
+
+  loadPolicies(): void {
+    this.http.get<{items: any[]; count: number}>(`${environment.apiBaseUrl}/policies`, { headers: this.authHeaders() }).subscribe({
+      next: result => this.policies = result.items,
+      error: error => this.handleApiError(error)
+    });
+  }
+
+  createPolicy(): void {
+    const d = this.policyDraft;
+    if (!d.policy_number.trim() || !d.insured_name.trim() || !d.effective_from || !d.effective_to ||
+        !/^[A-Z]{2}$/i.test(d.country_code) || !/^[A-Z]{3}$/i.test(d.currency) ||
+        !d.policy_wording_reference.trim() || Number(d.per_occurrence_limit) <= 0) {
+      this.errorMessage = 'Complete the required policy details, valid country/currency codes, policy dates, limit and wording reference.';
+      return;
+    }
+    const splitValues = (value: string) => value.split(',').map(x => x.trim()).filter(Boolean);
+    const body = {
+      ...d, country_code: d.country_code.toUpperCase(), currency: d.currency.toUpperCase(),
+      aggregate_limit: d.aggregate_limit === '' || d.aggregate_limit === null ? null : Number(d.aggregate_limit),
+      per_occurrence_limit: Number(d.per_occurrence_limit), aggregate_used: Number(d.aggregate_used || 0),
+      deductible: Number(d.deductible || 0),
+      excluded_loss_categories: splitValues(d.excluded_loss_categories),
+      covered_loss_categories: splitValues(d.covered_loss_categories),
+      endorsements: splitValues(d.endorsements)
+    };
+    this.policyBusy = true;
+    this.http.post<any>(`${environment.apiBaseUrl}/policies`, body, { headers: this.authHeaders() }).subscribe({
+      next: () => {
+        this.policyBusy = false;
+        this.successMessage = 'Policy record saved. Coverage checks will remain preliminary.';
+        this.policyDraft = this.emptyPolicyDraft();
+        this.loadPolicies();
+      },
+      error: error => { this.policyBusy = false; this.handleApiError(error); }
+    });
+  }
+
+  assessCoverage(): void {
+    const id = this.coverageClaimId.trim();
+    if (!id || !this.coverageLossCategory.trim()) {
+      this.errorMessage = 'Enter a Claim ID and the reported loss category.';
+      return;
+    }
+    this.coverageBusy = true;
+    this.coverageAssessment = null;
+    this.http.post<any>(`${environment.apiBaseUrl}/claims/${encodeURIComponent(id)}/coverage-assessments`, {
+      loss_category: this.coverageLossCategory.trim(),
+      claimed_amount: this.coverageClaimedAmount,
+      notes: ''
+    }, { headers: this.authHeaders() }).subscribe({
+      next: result => {
+        this.coverageBusy = false;
+        this.coverageAssessment = result;
+        this.loadCoverageAssessments();
+      },
+      error: error => { this.coverageBusy = false; this.handleApiError(error); }
+    });
+  }
+
+  loadCoverageAssessments(): void {
+    const id = this.coverageClaimId.trim();
+    if (!id) return;
+    this.http.get<{items: any[]; count: number}>(`${environment.apiBaseUrl}/claims/${encodeURIComponent(id)}/coverage-assessments`, { headers: this.authHeaders() }).subscribe({
+      next: result => this.coverageAssessments = result.items,
+      error: error => this.handleApiError(error)
+    });
+  }
+
+  emptyTaxRuleDraft(): any {
+    return { country_code: '', currency: '', admin_area: '', region: '', locality: '', tax_name: '', tax_type: 'Sales tax', rate_percent: 0, calculation_order: 100, applies_to: 'depreciated_repair_subtotal', compound_on_prior_taxes: false, tax_point_type: 'Tax point date', effective_from: new Date().toISOString().slice(0, 10), effective_to: '', authority_name: '', authority_reference: '', source_url: '', notes: '' };
+  }
+
+  loadTaxRules(): void {
+    let params = new HttpParams();
+    if (this.taxRuleCountryFilter.trim()) params = params.set('country_code', this.taxRuleCountryFilter.trim().toUpperCase());
+    this.http.get<{items: any[]; count: number}>(`${environment.apiBaseUrl}/tax-rules`, { params, headers: this.authHeaders() }).subscribe({ next: result => this.taxRules = result.items, error: error => this.handleApiError(error) });
+  }
+
+  saveTaxRule(): void {
+    const d = this.taxRuleDraft;
+    if (!/^[A-Z]{2}$/i.test(d.country_code) || !/^[A-Z]{3}$/i.test(d.currency) || !d.tax_name.trim() || !d.effective_from || !d.authority_name.trim() || !d.authority_reference.trim()) { this.errorMessage = 'Enter valid country/currency codes, tax name, jurisdiction, effective date and official authority reference.'; return; }
+    this.taxRulesBusy = true; this.errorMessage = '';
+    const body = { ...d, country_code: d.country_code.toUpperCase(), currency: d.currency.toUpperCase(), effective_to: d.effective_to || null, source_url: d.source_url || null, rate_percent: Number(d.rate_percent) };
+    this.http.post<any>(`${environment.apiBaseUrl}/tax-rules`, body, { headers: this.authHeaders() }).subscribe({ next: () => { this.taxRulesBusy = false; this.successMessage = 'Tax rule saved as Draft. An authorised administrator must verify and activate it.'; this.taxRuleDraft = this.emptyTaxRuleDraft(); this.loadTaxRules(); }, error: error => { this.taxRulesBusy = false; this.handleApiError(error); } });
+  }
+
+  setTaxRuleStatus(rule: any, status: 'Active' | 'Inactive'): void {
+    const note = status === 'Active' ? 'Verified against the cited authority by authorised administrator.' : 'Deactivated by authorised administrator.';
+    this.http.patch<any>(`${environment.apiBaseUrl}/tax-rules/${encodeURIComponent(rule.rule_id)}/status`, { status, verification_note: note }, { headers: this.authHeaders() }).subscribe({ next: () => { this.successMessage = `Tax rule ${status.toLowerCase()}.`; this.loadTaxRules(); }, error: error => this.handleApiError(error) });
+  }
+
+  resetTaxRuleConfirmation(): void {
+    this.estimateDraft.confirm_automatic_tax_application = false;
+    this.applicableTaxRules = null;
+  }
+
+  lookupApplicableTaxRules(): void {
+    const id = this.estimateClaimId.trim();
+    if (!id || !this.estimateDraft.tax_point_date) { this.errorMessage = 'Enter a Claim ID and tax point date.'; return; }
+    this.estimateDraft.confirm_automatic_tax_application = false;
+    this.applicableTaxRules = null;
+    const params = new HttpParams().set('tax_point_date', this.estimateDraft.tax_point_date);
+    this.http.get<any>(`${environment.apiBaseUrl}/claims/${encodeURIComponent(id)}/applicable-tax-rules`, { params, headers: this.authHeaders() }).subscribe({ next: result => this.applicableTaxRules = result, error: error => this.handleApiError(error) });
+  }
+
+  emptyEstimateDraft(): any {
+    return {
+      description: '', quantity: 1, unit: 'item', unit_rate: 0, depreciation_rate: 0, taxable: true, tax_mode: 'automatic',
+      currency: '', currency_minor_units: 2, country_code: '', state_or_jurisdiction: '', region: '', locality: '', postal_code: '',
+      loss_date: new Date().toISOString().slice(0, 10), tax_point_date: new Date().toISOString().slice(0, 10),
+      taxes: [], charges: [], deductible: 0, interest_applicable: false,
+      interest_rate: null, interest_principal: null, interest_days: null, interest_basis: 'simple_actual_365',
+      interest_authority: '', pricing_source: '', pricing_effective_date: new Date().toISOString().slice(0, 10), notes: ''
+    };
+  }
+
+  addTaxComponent(): void {
+    if (this.estimateDraft.taxes.length >= 20) return;
+    this.estimateDraft.taxes.push({
+      name: '', tax_type: 'Other', jurisdiction: '', rate_percent: 0,
+      applies_to: 'depreciated_repair_subtotal', compound_on_prior_taxes: false,
+      authority_reference: '', effective_from: '', effective_to: ''
+    });
+  }
+
+  removeTaxComponent(index: number): void {
+    this.estimateDraft.taxes.splice(index, 1);
+  }
+
+  addCharge(): void {
+    if (this.estimateDraft.charges.length >= 50) return;
+    this.estimateDraft.charges.push({ name: '', amount: 0, charge_type: 'fee', taxable: false, authority_reference: '' });
+  }
+
+  removeCharge(index: number): void {
+    this.estimateDraft.charges.splice(index, 1);
+  }
+
   emptyDraft(): ClaimDraft {
     return {
       customer_name: '', email: '', phone: '', policy_number: '',
       claim_type: 'Property', incident_date: '', incident_description: '',
-      loss_location: '', estimated_loss: null, currency: 'INR'
+      loss_location: '', country_code: '', region: '', locality: '', postal_code: '', estimated_loss: null, currency: ''
     };
   }
 
@@ -135,7 +340,10 @@ export class AppComponent implements OnInit {
     this.errorMessage = '';
     this.successMessage = '';
     if (page === 'Claims') this.loadClaims();
+    if (page === 'AI Damage Analysis' && this.damageClaimId.trim()) this.loadDamageAssessments();
     if (page === 'Users') this.loadUsers();
+    if (page === 'Tax Rules' && this.canManageTaxRules()) this.loadTaxRules();
+    if (page === 'Policy Coverage') this.loadPolicies();
   }
 
   loadDashboard(): void {
@@ -168,7 +376,7 @@ export class AppComponent implements OnInit {
     this.successMessage = '';
     if (!this.draft.customer_name.trim() || !this.draft.policy_number.trim() ||
         !this.draft.incident_date || !this.draft.incident_description.trim() ||
-        !this.draft.loss_location.trim()) {
+        !this.draft.loss_location.trim() || !this.draft.country_code.trim() || !/^[A-Z]{3}$/i.test(this.draft.currency.trim())) {
       this.errorMessage = 'Complete all required fields before submitting the FNOL.';
       return;
     }
@@ -194,6 +402,208 @@ export class AppComponent implements OnInit {
       },
       error: error => this.handleApiError(error)
     });
+  }
+
+  calculateFinancialEstimate(): void {
+    const d = this.estimateDraft;
+    const claim = this.claims.find(x => x.claim_id === this.estimateClaimId.trim());
+    const currency = (claim?.currency || d.currency || '').toUpperCase();
+    const countryCode = (claim?.country_code || d.country_code || '').toUpperCase();
+    if (!this.estimateClaimId.trim() || !d.description.trim() || !countryCode ||
+        !d.state_or_jurisdiction.trim() || !currency || !/^[A-Z]{3}$/.test(currency) ||
+        !/^[A-Z]{2}$/.test(countryCode) || !d.loss_date || !d.tax_point_date ||
+        !d.pricing_source.trim() || !d.pricing_effective_date ||
+        Number(d.quantity) <= 0 || Number(d.unit_rate) < 0) {
+      this.errorMessage = 'Enter a Claim ID, repair details, ISO country and currency codes, loss/tax dates, jurisdiction and verified pricing source.';
+      return;
+    }
+    if (d.tax_mode === 'automatic' && this.applicableTaxRules?.count > 0 && !d.confirm_automatic_tax_application) {
+      this.errorMessage = 'Review the matched tax rules and confirm their application before calculating.';
+      return;
+    }
+    if (d.tax_mode === 'manual' && d.taxes.some((tax: any) => Number(tax.rate_percent) > 0 &&
+      (!tax.name.trim() || !tax.jurisdiction.trim() || !tax.authority_reference.trim()))) {
+      this.errorMessage = 'Each tax component needs a name, jurisdiction and legal/rate authority reference.';
+      return;
+    }
+    if (d.interest_applicable && (!d.interest_authority.trim() || d.interest_rate === null || d.interest_principal === null || d.interest_days === null)) {
+      this.errorMessage = 'Applicable interest requires rate, principal, days and a policy/legal authority reference.';
+      return;
+    }
+    const body: any = {
+      currency, country_code: countryCode,
+      state_or_jurisdiction: d.state_or_jurisdiction, region: claim?.region || d.region, locality: claim?.locality || d.locality,
+      postal_code: claim?.postal_code || d.postal_code, loss_date: claim?.incident_date || d.loss_date, tax_point_date: d.tax_point_date,
+      line_items: [{ description: d.description, quantity: Number(d.quantity), unit: d.unit, unit_rate: Number(d.unit_rate), taxable: !!d.taxable, depreciation_rate: Number(d.depreciation_rate) }],
+      tax_mode: d.tax_mode,
+      confirm_automatic_tax_application: !!d.confirm_automatic_tax_application,
+      taxes: d.tax_mode === 'manual' ? d.taxes.filter((tax: any) => Number(tax.rate_percent) > 0).map((tax: any) => ({
+        ...tax, rate_percent: Number(tax.rate_percent), effective_from: tax.effective_from || null,
+        effective_to: tax.effective_to || null
+      })) : [],
+      charges: d.charges.filter((charge: any) => Number(charge.amount) > 0).map((charge: any) => ({ ...charge, amount: Number(charge.amount) })),
+      deductible: Number(d.deductible || 0),
+      interest: {
+        applicable: !!d.interest_applicable,
+        annual_rate_percent: d.interest_applicable ? Number(d.interest_rate) : null,
+        principal: d.interest_applicable ? Number(d.interest_principal) : null,
+        days: d.interest_applicable ? Number(d.interest_days) : null,
+        basis: d.interest_basis, authority_reference: d.interest_authority || ''
+      },
+      pricing_source: d.pricing_source, pricing_effective_date: d.pricing_effective_date, notes: d.notes
+    };
+    this.estimateBusy = true; this.errorMessage = ''; this.successMessage = '';
+    this.http.post<FinancialEstimate>(`${environment.apiBaseUrl}/claims/${encodeURIComponent(this.estimateClaimId.trim())}/financial-estimates`, body, { headers: this.authHeaders() }).subscribe({
+      next: result => { this.financialEstimate = result; this.estimateBusy = false; this.successMessage = 'Preliminary financial estimate calculated and saved for authorised review.'; this.loadFinancialEstimates(); },
+      error: error => { this.estimateBusy = false; this.handleApiError(error); }
+    });
+  }
+
+  loadFinancialEstimates(): void {
+    const id = this.estimateClaimId.trim();
+    if (!id) { this.errorMessage = 'Enter a Claim ID to load financial estimates.'; return; }
+    this.http.get<{items: FinancialEstimate[]; count: number}>(`${environment.apiBaseUrl}/claims/${encodeURIComponent(id)}/financial-estimates`, { headers: this.authHeaders() }).subscribe({
+      next: result => this.financialEstimates = result.items,
+      error: error => { this.financialEstimates = []; this.handleApiError(error); }
+    });
+  }
+
+  canReviewFinancialEstimate(): boolean {
+    return ['Super Administrator', 'Insurance Company Administrator', 'Claims Manager', 'Property Adjuster', 'Casualty Adjuster', 'Surveyor', 'Actuarial Analyst', 'Approver'].includes(this.currentUser?.role || '');
+  }
+
+  canApproveFinancialEstimate(): boolean {
+    return ['Super Administrator', 'Insurance Company Administrator', 'Claims Manager', 'Approver'].includes(this.currentUser?.role || '');
+  }
+
+  isFinalEstimateReview(estimate: FinancialEstimate): boolean {
+    return ['Approved', 'Rejected'].includes(estimate.review_status || '');
+  }
+
+  reviewFinancialEstimate(estimate: FinancialEstimate, status: string): void {
+    if (['More Evidence Required', 'Rejected'].includes(status) && !this.financialReviewNotes.trim()) {
+      this.errorMessage = 'Add reviewer notes before requesting evidence or rejecting this estimate.';
+      return;
+    }
+    if (['Approved', 'Rejected'].includes(status) && !this.canApproveFinancialEstimate()) {
+      this.errorMessage = 'Your role cannot approve or reject financial estimates.';
+      return;
+    }
+    this.financialReviewBusyId = estimate.estimate_id;
+    this.http.patch<FinancialEstimate>(`${environment.apiBaseUrl}/claims/${encodeURIComponent(this.estimateClaimId.trim())}/financial-estimates/${encodeURIComponent(estimate.estimate_id)}/review`,
+      { status, notes: this.financialReviewNotes.trim() }, { headers: this.authHeaders() }).subscribe({
+        next: () => { this.financialReviewBusyId = ''; this.financialReviewNotes = ''; this.successMessage = `Financial estimate review updated: ${status}.`; this.loadFinancialEstimates(); },
+        error: error => { this.financialReviewBusyId = ''; this.handleApiError(error); }
+      });
+  }
+
+  onDamageImageSelected(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0] || null;
+    this.damageAssessment = null;
+    this.errorMessage = '';
+    if (this.damageImagePreview) URL.revokeObjectURL(this.damageImagePreview);
+    this.damageImagePreview = '';
+    this.selectedDamageImage = null;
+    if (!file) return;
+    const allowed = ['image/jpeg', 'image/png', 'image/webp'];
+    if (!allowed.includes(file.type)) {
+      this.errorMessage = 'Choose a JPG, PNG or WEBP image.';
+      input.value = '';
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      this.errorMessage = 'Image size must not exceed 10 MB.';
+      input.value = '';
+      return;
+    }
+    this.selectedDamageImage = file;
+    this.damageImagePreview = URL.createObjectURL(file);
+  }
+
+  canReviewDamage(): boolean {
+    return ['Super Administrator', 'Insurance Company Administrator', 'Claims Manager', 'Property Adjuster', 'Casualty Adjuster', 'Surveyor'].includes(this.currentUser?.role || '');
+  }
+
+  canApproveDamage(): boolean {
+    return ['Super Administrator', 'Insurance Company Administrator', 'Claims Manager', 'Approver'].includes(this.currentUser?.role || '');
+  }
+
+  loadDamageAssessments(): void {
+    const claimId = this.damageClaimId.trim();
+    if (!claimId) {
+      this.errorMessage = 'Enter a Claim ID to retrieve its saved assessments.';
+      return;
+    }
+    this.http.get<{items: DamageAssessment[]; count: number}>(`${environment.apiBaseUrl}/claims/${encodeURIComponent(claimId)}/damage-assessments`, { headers: this.authHeaders() }).subscribe({
+      next: result => {
+        this.damageAssessments = result.items;
+        this.errorMessage = '';
+      },
+      error: error => {
+        this.damageAssessments = [];
+        this.handleApiError(error);
+      }
+    });
+  }
+
+  reviewDamageAssessment(item: DamageAssessment, status: string): void {
+    if (['More Evidence Required', 'Rejected'].includes(status) && !this.damageReviewNotes.trim()) {
+      this.errorMessage = 'Add reviewer notes before requesting evidence or rejecting the assessment.';
+      return;
+    }
+    this.damageReviewBusyId = item.assessment_id;
+    this.errorMessage = '';
+    this.http.patch<DamageAssessment>(`${environment.apiBaseUrl}/damage-assessments/${encodeURIComponent(item.assessment_id)}/review`, {
+      status, notes: this.damageReviewNotes.trim()
+    }, { headers: this.authHeaders() }).subscribe({
+      next: updated => {
+        this.damageAssessments = this.damageAssessments.map(row => row.assessment_id === updated.assessment_id ? updated : row);
+        if (this.damageAssessment?.assessment_id === updated.assessment_id) this.damageAssessment = updated;
+        this.damageReviewNotes = '';
+        this.damageReviewBusyId = '';
+        this.successMessage = `Assessment marked: ${updated.status}.`;
+      },
+      error: error => {
+        this.damageReviewBusyId = '';
+        this.handleApiError(error);
+      }
+    });
+  }
+
+  analyseDamage(): void {
+    if (!this.selectedDamageImage) {
+      this.errorMessage = 'Select a damage image before starting the analysis.';
+      return;
+    }
+    this.errorMessage = '';
+    this.successMessage = '';
+    this.damageBusy = true;
+    const body = new FormData();
+    body.append('image', this.selectedDamageImage);
+    if (this.damageClaimId.trim()) body.append('claim_id', this.damageClaimId.trim());
+    this.http.post<DamageAssessment>(`${environment.apiBaseUrl}/ai/damage-analysis`, body, { headers: this.authHeaders() }).subscribe({
+      next: result => {
+        this.damageAssessment = result;
+        this.damageBusy = false;
+        if (result.claim_id) this.loadDamageAssessments();
+        this.successMessage = 'Preliminary visual assessment saved. An authorised adjuster must review the findings.';
+      },
+      error: error => {
+        this.damageBusy = false;
+        this.handleApiError(error);
+      }
+    });
+  }
+
+  clearDamageAnalysis(): void {
+    if (this.damageImagePreview) URL.revokeObjectURL(this.damageImagePreview);
+    this.selectedDamageImage = null;
+    this.damageImagePreview = '';
+    this.damageAssessment = null;
+    this.damageAssessments = [];
+    this.damageReviewNotes = '';
+    this.damageClaimId = '';
   }
 
   loadUsers(): void {
@@ -228,13 +638,16 @@ export class AppComponent implements OnInit {
       this.logout(false);
       this.errorMessage = 'Your session expired. Please sign in again.';
     } else {
-      this.errorMessage = error.error?.detail || 'The request could not be completed.';
+      const detail = error.error?.detail;
+      this.errorMessage = typeof detail === 'string'
+        ? detail
+        : (detail?.message || 'The request could not be completed.');
     }
   }
 
   formatAmount(amount: number | null | undefined, currency: string): string {
     if (amount === null || amount === undefined) return 'Not provided';
-    try { return new Intl.NumberFormat('en-IN', { style: 'currency', currency }).format(amount); }
-    catch { return `${currency} ${amount.toLocaleString('en-IN')}`; }
+    try { return new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(amount); }
+    catch { return `${currency} ${amount.toLocaleString()}`; }
   }
 }

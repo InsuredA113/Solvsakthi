@@ -1,5 +1,8 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from fastapi import Depends, FastAPI, HTTPException, Query
+from pydantic import BaseModel, Field
+from bson import ObjectId
+from bson.errors import InvalidId
 from fastapi.middleware.cors import CORSMiddleware
 from pymongo import DESCENDING, ReturnDocument
 from pymongo.errors import PyMongoError
@@ -40,6 +43,19 @@ STATUS_ROLES = (
     "Property Adjuster", "Casualty Adjuster", "Approver"
 )
 ADMIN_ROLES = ("Super Administrator",)
+
+DAMAGE_REVIEW_ROLES = ("Super Administrator", "Insurance Company Administrator", "Claims Manager", "Property Adjuster", "Casualty Adjuster", "Surveyor", "Actuarial Analyst", "Approver")
+DAMAGE_APPROVAL_ROLES = ("Super Administrator", "Insurance Company Administrator", "Claims Manager", "Approver")
+
+class DamageReviewUpdate(BaseModel):
+    status: str = Field(..., max_length=40)
+    notes: str = Field(default="", max_length=2000)
+
+
+class FinancialEstimateReviewUpdate(BaseModel):
+    status: str = Field(..., max_length=40)
+    notes: str = Field(default="", max_length=2000)
+
 
 @app.on_event("startup")
 def startup():
@@ -214,3 +230,582 @@ def update_claim_status(
         raise
     except PyMongoError as exc:
         raise HTTPException(status_code=503, detail="Unable to update claim status.") from exc
+
+
+# Phase 4: AI-assisted visual damage analysis
+from typing import Any
+import json
+from fastapi import File, Form, UploadFile
+from google import genai
+from google.genai import types
+from .config import GEMINI_API_KEY, GEMINI_MODEL
+
+DAMAGE_ANALYSIS_ROLES = (
+    "Super Administrator", "Insurance Company Administrator", "Claims Manager",
+    "Property Adjuster", "Casualty Adjuster", "Surveyor", "Actuarial Analyst"
+)
+ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
+MAX_DAMAGE_IMAGE_BYTES = 10 * 1024 * 1024
+
+@app.post("/api/ai/damage-analysis")
+async def analyse_damage_image(
+    image: UploadFile = File(...),
+    claim_id: str | None = Form(default=None, max_length=40),
+    user: dict = Depends(require_roles(*DAMAGE_ANALYSIS_ROLES))
+):
+    if not GEMINI_API_KEY:
+        raise HTTPException(status_code=503, detail="AI damage analysis is not configured. Add GEMINI_API_KEY to backend/.env.")
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable. The assessment cannot be saved.")
+    content_type = (image.content_type or "").lower()
+    if content_type not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(status_code=415, detail="Upload a JPG, PNG or WEBP image.")
+    image_bytes = await image.read(MAX_DAMAGE_IMAGE_BYTES + 1)
+    if not image_bytes:
+        raise HTTPException(status_code=400, detail="The uploaded image is empty.")
+    if len(image_bytes) > MAX_DAMAGE_IMAGE_BYTES:
+        raise HTTPException(status_code=413, detail="Image size must not exceed 10 MB.")
+    if claim_id:
+        claim = get_database()["claims"].find_one({"claim_id": claim_id}, {"_id": 0, "claim_id": 1})
+        if not claim:
+            raise HTTPException(status_code=404, detail="The selected claim ID was not found.")
+    prompt = """
+You are an assistant supporting a licensed Property & Casualty insurance claims adjuster.
+Inspect only what is visibly supported by the supplied image. Return one valid JSON object
+with these keys and types:
+{
+  "damage_category": "short category or Undetermined",
+  "affected_areas": ["visible area"],
+  "visible_observations": ["objective visual observation"],
+  "severity": "Minor|Moderate|Severe|Critical|Undetermined",
+  "confidence": "Low|Medium|High",
+  "possible_cause": "carefully qualified possibility or Undetermined",
+  "recommended_next_steps": ["practical evidence or inspection step"],
+  "limitations": ["what cannot be determined from this image"]
+}
+Do not infer policy coverage, liability, fraud, exact dimensions, hidden damage, repair quantities,
+or repair costs. Do not make a final claim decision. If the image is unclear or not relevant to
+property/casualty damage, state that in limitations and use Undetermined where appropriate.
+Keep findings concise and distinguish observation from hypothesis.
+"""
+    try:
+        client = genai.Client(api_key=GEMINI_API_KEY)
+        response = client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=[
+                types.Part.from_bytes(data=image_bytes, mime_type=content_type),
+                prompt
+            ],
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.1
+            )
+        )
+        raw_text = response.text or ""
+        result = json.loads(raw_text)
+        if not isinstance(result, dict):
+            raise json.JSONDecodeError("Expected a JSON object", raw_text, 0)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=502, detail="The AI service returned an unreadable assessment. Please retry.") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="The AI damage analysis service could not complete the request.") from exc
+
+    allowed_severity = {"Minor", "Moderate", "Severe", "Critical", "Undetermined"}
+    allowed_confidence = {"Low", "Medium", "High"}
+    if result.get("severity") not in allowed_severity:
+        result["severity"] = "Undetermined"
+    if result.get("confidence") not in allowed_confidence:
+        result["confidence"] = "Low"
+    for key in ("affected_areas", "visible_observations", "recommended_next_steps", "limitations"):
+        if not isinstance(result.get(key), list):
+            result[key] = []
+    result["damage_category"] = str(result.get("damage_category") or "Undetermined")[:120]
+    result["possible_cause"] = str(result.get("possible_cause") or "Undetermined")[:500]
+    record = {
+        "claim_id": claim_id,
+        "file_name": (image.filename or "uploaded-image")[:255],
+        "mime_type": content_type,
+        "damage_category": result["damage_category"],
+        "affected_areas": result["affected_areas"][:20],
+        "visible_observations": result["visible_observations"][:20],
+        "severity": result["severity"],
+        "confidence": result["confidence"],
+        "possible_cause": result["possible_cause"],
+        "recommended_next_steps": result["recommended_next_steps"][:20],
+        "limitations": result["limitations"][:20],
+        "repair_cost_estimate": None,
+        "status": "Pending Adjuster Review",
+        "review_history": [],
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_by": user["email"]
+    }
+    try:
+        saved = get_database()["damage_assessments"].insert_one(record)
+    except PyMongoError as exc:
+        raise HTTPException(status_code=503, detail="Unable to save the AI assessment to MongoDB.") from exc
+    record.pop("_id", None)
+    record["assessment_id"] = str(saved.inserted_id)
+    return record
+
+@app.get("/api/claims/{claim_id}/damage-assessments")
+def list_damage_assessments(
+    claim_id: str,
+    user: dict = Depends(require_roles(*READ_ROLES))
+):
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    if not get_database()["claims"].find_one({"claim_id": claim_id}, {"_id": 0}):
+        raise HTTPException(status_code=404, detail="Claim not found.")
+    rows = list(get_database()["damage_assessments"].find(
+        {"claim_id": claim_id}
+    ).sort("created_at", DESCENDING).limit(100))
+    for row in rows:
+        row["assessment_id"] = str(row.pop("_id"))
+    return {"items": rows, "count": len(rows)}
+
+@app.patch("/api/damage-assessments/{assessment_id}/review")
+def review_damage_assessment(assessment_id: str, payload: DamageReviewUpdate, user: dict = Depends(require_roles(*DAMAGE_REVIEW_ROLES))):
+    allowed_statuses = {"Reviewed", "More Evidence Required", "Approved", "Rejected"}
+    if payload.status not in allowed_statuses:
+        raise HTTPException(status_code=422, detail="Choose a valid assessment review status.")
+    if payload.status in {"Approved", "Rejected"} and user["role"] not in DAMAGE_APPROVAL_ROLES:
+        raise HTTPException(status_code=403, detail="Only an authorised approver can approve or reject an AI assessment.")
+    if payload.status in {"More Evidence Required", "Rejected"} and not payload.notes.strip():
+        raise HTTPException(status_code=422, detail="Reviewer notes are required for this decision.")
+    try:
+        object_id = ObjectId(assessment_id)
+    except InvalidId as exc:
+        raise HTTPException(status_code=400, detail="Invalid damage assessment ID.") from exc
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    now = datetime.now(timezone.utc).isoformat()
+    review_entry = {"status": payload.status, "notes": payload.notes.strip(), "reviewed_at": now, "reviewed_by": user["email"], "reviewer_role": user["role"]}
+    try:
+        updated = get_database()["damage_assessments"].find_one_and_update(
+            {"_id": object_id, "status": {"$nin": ["Approved", "Rejected"]}},
+            {"$set": {"status": payload.status, "updated_at": now, "updated_by": user["email"]}, "$push": {"review_history": review_entry}},
+            return_document=ReturnDocument.AFTER, projection={"_id": 0}
+        )
+        if not updated:
+            existing = get_database()["damage_assessments"].find_one({"_id": object_id}, {"status": 1})
+            if not existing:
+                raise HTTPException(status_code=404, detail="Damage assessment not found.")
+            raise HTTPException(status_code=409, detail="This assessment has already been finalised.")
+        updated["assessment_id"] = str(object_id)
+        return updated
+    except HTTPException:
+        raise
+    except PyMongoError as exc:
+        raise HTTPException(status_code=503, detail="Unable to save the assessment review.") from exc
+
+
+# Phase 6: deterministic financial estimates (Python Decimal; no LLM arithmetic)
+from .financial_calculations import FinancialEstimateRequest, TaxComponent, calculate_estimate
+
+FINANCIAL_ESTIMATE_ROLES = (
+    "Super Administrator", "Insurance Company Administrator", "Claims Manager",
+    "Property Adjuster", "Casualty Adjuster", "Surveyor", "Actuarial Analyst", "Approver"
+)
+
+@app.post("/api/claims/{claim_id}/financial-estimates", status_code=201)
+def create_financial_estimate(
+    claim_id: str,
+    payload: FinancialEstimateRequest,
+    user: dict = Depends(require_roles(*FINANCIAL_ESTIMATE_ROLES))
+):
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable. The estimate was not saved.")
+    db = get_database()
+    claim = db["claims"].find_one({"claim_id": claim_id}, {"_id": 0, "claim_id": 1, "currency": 1, "country_code": 1, "loss_location": 1, "claim_type": 1})
+    if not claim:
+        raise HTTPException(status_code=404, detail="Claim not found.")
+    if (claim.get("currency") or "").upper() != payload.currency:
+        raise HTTPException(status_code=422, detail="Estimate currency must match the claim currency.")
+    if (claim.get("country_code") and claim["country_code"].upper() != payload.country_code):
+        raise HTTPException(status_code=422, detail="Estimate country must match the claim's recorded loss country.")
+    calculation_payload = payload
+    tax_rule_snapshots = []
+    if payload.tax_mode == "automatic":
+        try:
+            point_date = date.fromisoformat(payload.tax_point_date)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="Tax point date must use YYYY-MM-DD.") from exc
+        rules = list(db["tax_rules"].find({
+            "country_code": payload.country_code,
+            "currency": payload.currency,
+            "status": "Active"
+        }))
+        selected_rules, ambiguous_tax_names = select_applicable_tax_rules(
+            rules, country_code=payload.country_code, currency=payload.currency,
+            admin_area=payload.state_or_jurisdiction, region=payload.region,
+            locality=payload.locality, tax_point_date=point_date
+        )
+        if ambiguous_tax_names:
+            raise HTTPException(status_code=409, detail={
+                "message": "Conflicting active tax rules exist. Resolve the jurisdiction profile before calculating automatically.",
+                "ambiguous_tax_names": ambiguous_tax_names
+            })
+        if selected_rules and not payload.confirm_automatic_tax_application:
+            raise HTTPException(status_code=428, detail={
+                "message": "Review the matched tax rules and explicitly confirm their application before saving this estimate.",
+                "required_confirmation": "confirm_automatic_tax_application",
+                "matched_tax_names": [rule["tax_name"] for rule in selected_rules],
+                "tax_point_date": payload.tax_point_date
+            })
+        automatic_taxes = []
+        for rule in selected_rules:
+            automatic_taxes.append(TaxComponent(
+                name=rule["tax_name"], tax_type=rule["tax_type"],
+                jurisdiction=" / ".join(part for part in [
+                    rule.get("admin_area", ""), rule.get("region", ""),
+                    rule.get("locality", ""), rule["country_code"]
+                ] if part),
+                rate_percent=rule["rate_percent"], applies_to=rule["applies_to"],
+                compound_on_prior_taxes=bool(rule.get("compound_on_prior_taxes", False)),
+                authority_reference=rule["authority_reference"],
+                effective_from=str(rule["effective_from"])[:10],
+                effective_to=str(rule["effective_to"])[:10] if rule.get("effective_to") else None
+            ))
+            tax_rule_snapshots.append({
+                "rule_id": str(rule["_id"]), "version": rule.get("version", 1),
+                "country_code": rule["country_code"], "currency": rule["currency"],
+                "admin_area": rule.get("admin_area", ""), "region": rule.get("region", ""),
+                "locality": rule.get("locality", ""), "tax_name": rule["tax_name"],
+                "tax_type": rule["tax_type"], "rate_percent": str(rule["rate_percent"]),
+                "calculation_order": rule.get("calculation_order", 100),
+                "applies_to": rule["applies_to"],
+                "compound_on_prior_taxes": bool(rule.get("compound_on_prior_taxes", False)),
+                "effective_from": str(rule["effective_from"])[:10],
+                "effective_to": str(rule["effective_to"])[:10] if rule.get("effective_to") else None,
+                "authority_name": rule["authority_name"],
+                "authority_reference": rule["authority_reference"],
+                "source_url": rule.get("source_url"),
+                "verified_by": rule.get("verified_by"), "verified_at": rule.get("verified_at")
+            })
+        calculation_payload = payload.model_copy(update={"taxes": automatic_taxes})
+    result = calculate_estimate(calculation_payload)
+    result["tax_mode"] = payload.tax_mode
+    result["tax_profile_status"] = (
+        "Configured" if tax_rule_snapshots else
+        ("No verified matching tax profile" if payload.tax_mode == "automatic" else "Manual tax override - verify before approval")
+    )
+    result["tax_rule_snapshots"] = tax_rule_snapshots
+    result["tax_rule_ids"] = [rule["rule_id"] for rule in tax_rule_snapshots]
+    result["tax_rule_warning"] = (
+        None if tax_rule_snapshots or payload.tax_mode == "manual"
+        else "No active verified tax rule matched this claim jurisdiction and tax point date. No tax has been assumed; confirm whether tax applies before approval."
+    )
+    now = datetime.now(timezone.utc).isoformat()
+    record = {
+        **result, "claim_id": claim_id, "claim_type": claim.get("claim_type"),
+        "created_at": now, "created_by": user["email"], "status": "Preliminary - Pending Review",
+        "tax_application_confirmation": {
+            "confirmed": bool(payload.tax_mode == "automatic" and payload.confirm_automatic_tax_application and tax_rule_snapshots),
+            "confirmed_by": user["email"] if payload.tax_mode == "automatic" and payload.confirm_automatic_tax_application and tax_rule_snapshots else None,
+            "confirmed_at": now if payload.tax_mode == "automatic" and payload.confirm_automatic_tax_application and tax_rule_snapshots else None
+        },
+        "review_history": []
+    }
+    try:
+        saved = db["financial_estimates"].insert_one(record)
+    except PyMongoError as exc:
+        raise HTTPException(status_code=503, detail="Unable to save financial estimate.") from exc
+    record["estimate_id"] = str(saved.inserted_id)
+    record.pop("_id", None)
+    return record
+
+@app.get("/api/claims/{claim_id}/financial-estimates")
+def list_financial_estimates(
+    claim_id: str,
+    user: dict = Depends(require_roles(*READ_ROLES))
+):
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    if not get_database()["claims"].find_one({"claim_id": claim_id}, {"_id": 1}):
+        raise HTTPException(status_code=404, detail="Claim not found.")
+    rows = list(get_database()["financial_estimates"].find({"claim_id": claim_id}).sort("created_at", DESCENDING).limit(100))
+    for row in rows:
+        row["estimate_id"] = str(row.pop("_id"))
+    return {"items": rows, "count": len(rows)}
+
+
+@app.patch("/api/claims/{claim_id}/financial-estimates/{estimate_id}/review")
+def review_financial_estimate(
+    claim_id: str,
+    estimate_id: str,
+    payload: FinancialEstimateReviewUpdate,
+    user: dict = Depends(require_roles(
+        "Super Administrator", "Insurance Company Administrator", "Claims Manager",
+        "Property Adjuster", "Casualty Adjuster", "Surveyor", "Actuarial Analyst", "Approver"
+    ))
+):
+    allowed = {"Reviewed", "More Evidence Required", "Approved", "Rejected"}
+    if payload.status not in allowed:
+        raise HTTPException(status_code=422, detail=f"Status must be one of: {', '.join(sorted(allowed))}.")
+    if payload.status in {"More Evidence Required", "Rejected"} and not payload.notes.strip():
+        raise HTTPException(status_code=422, detail="Reviewer notes are required for this decision.")
+    if payload.status in {"Approved", "Rejected"} and user.get("role") not in {
+        "Super Administrator", "Insurance Company Administrator", "Claims Manager", "Approver"
+    }:
+        raise HTTPException(status_code=403, detail="Your role cannot approve or reject financial estimates.")
+    try:
+        object_id = ObjectId(estimate_id)
+    except InvalidId as exc:
+        raise HTTPException(status_code=400, detail="Invalid financial estimate ID.") from exc
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    collection = get_database()["financial_estimates"]
+    existing = collection.find_one({"_id": object_id, "claim_id": claim_id})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Financial estimate not found for this claim.")
+    if existing.get("review_status") in {"Approved", "Rejected"}:
+        raise HTTPException(status_code=409, detail="This estimate review is final. Create a new estimate to make revised calculations.")
+    now = datetime.now(timezone.utc).isoformat()
+    event = {
+        "status": payload.status, "notes": payload.notes.strip(),
+        "reviewer_email": user["email"], "reviewer_role": user["role"], "reviewed_at": now
+    }
+    updated = collection.find_one_and_update(
+        {"_id": object_id, "claim_id": claim_id, "review_status": existing.get("review_status")},
+        {"$set": {"review_status": payload.status, "updated_at": now},
+         "$push": {"review_history": event}},
+        return_document=ReturnDocument.AFTER
+    )
+    if not updated:
+        raise HTTPException(status_code=409, detail="Estimate changed concurrently. Refresh and retry.")
+    updated["estimate_id"] = str(updated.pop("_id"))
+    return updated
+
+
+# Phase 9: policy records and preliminary coverage screening
+from .policy_coverage import PolicyCreate, CoverageAssessmentRequest, assess_policy
+
+POLICY_READ_ROLES = (
+    "Super Administrator", "Insurance Company Administrator", "Claims Manager",
+    "Property Adjuster", "Casualty Adjuster", "Surveyor", "Actuarial Analyst",
+    "Approver", "Auditor"
+)
+POLICY_ADMIN_ROLES = ("Super Administrator", "Insurance Company Administrator")
+
+
+@app.get("/api/policies")
+def list_policies(
+    policy_number: str | None = Query(default=None, max_length=80),
+    user: dict = Depends(require_roles(*POLICY_READ_ROLES))
+):
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    query = {"policy_number": policy_number.strip()} if policy_number else {}
+    rows = list(get_database()["policies"].find(query).sort("created_at", DESCENDING).limit(250))
+    for row in rows:
+        row["policy_id"] = str(row.pop("_id"))
+    return {"items": rows, "count": len(rows)}
+
+
+@app.post("/api/policies", status_code=201)
+def create_policy(
+    payload: PolicyCreate,
+    user: dict = Depends(require_roles(*POLICY_ADMIN_ROLES))
+):
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    collection = get_database()["policies"]
+    if collection.find_one({"policy_number": payload.policy_number}):
+        raise HTTPException(status_code=409, detail="A policy with this policy number already exists in the current workspace.")
+    record = payload.model_dump(mode="json")
+    record.update({
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_by": user["email"]
+    })
+    try:
+        saved = collection.insert_one(record)
+    except PyMongoError as exc:
+        raise HTTPException(status_code=503, detail="Unable to save policy record.") from exc
+    record["policy_id"] = str(saved.inserted_id)
+    record.pop("_id", None)
+    return record
+
+
+@app.post("/api/claims/{claim_id}/coverage-assessments", status_code=201)
+def create_coverage_assessment(
+    claim_id: str,
+    payload: CoverageAssessmentRequest,
+    user: dict = Depends(require_roles(*POLICY_READ_ROLES))
+):
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    db = get_database()
+    claim = db["claims"].find_one({"claim_id": claim_id}, {"_id": 0})
+    if not claim:
+        raise HTTPException(status_code=404, detail="Claim not found.")
+    policy = db["policies"].find_one({"policy_number": claim.get("policy_number")})
+    result = assess_policy(policy, claim, payload)
+    now = datetime.now(timezone.utc).isoformat()
+    policy_snapshot = None
+    if policy:
+        policy_snapshot = {
+            "policy_number": policy.get("policy_number"),
+            "claim_type": policy.get("claim_type"),
+            "country_code": policy.get("country_code"),
+            "currency": policy.get("currency"),
+            "effective_from": str(policy.get("effective_from", ""))[:10],
+            "effective_to": str(policy.get("effective_to", ""))[:10],
+            "per_occurrence_limit": str(policy.get("per_occurrence_limit")),
+            "aggregate_limit": str(policy.get("aggregate_limit")) if policy.get("aggregate_limit") is not None else None,
+            "aggregate_used": str(policy.get("aggregate_used", "0")),
+            "deductible": str(policy.get("deductible", "0")),
+            "excluded_loss_categories": policy.get("excluded_loss_categories", []),
+            "covered_loss_categories": policy.get("covered_loss_categories", []),
+            "endorsements": policy.get("endorsements", []),
+            "policy_wording_reference": policy.get("policy_wording_reference")
+        }
+    record = {
+        **result, "claim_id": claim_id, "policy_number": claim.get("policy_number"),
+        "policy_snapshot": policy_snapshot, "loss_category": payload.loss_category,
+        "claimed_amount": str(payload.claimed_amount) if payload.claimed_amount is not None else None,
+        "notes": payload.notes, "created_at": now, "created_by": user["email"],
+        "assessment_type": "Preliminary coverage screening"
+    }
+    try:
+        saved = db["coverage_assessments"].insert_one(record)
+    except PyMongoError as exc:
+        raise HTTPException(status_code=503, detail="Unable to save coverage assessment.") from exc
+    record["coverage_assessment_id"] = str(saved.inserted_id)
+    record.pop("_id", None)
+    return record
+
+
+@app.get("/api/claims/{claim_id}/coverage-assessments")
+def list_coverage_assessments(
+    claim_id: str,
+    user: dict = Depends(require_roles(*POLICY_READ_ROLES))
+):
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    if not get_database()["claims"].find_one({"claim_id": claim_id}, {"_id": 1}):
+        raise HTTPException(status_code=404, detail="Claim not found.")
+    rows = list(get_database()["coverage_assessments"].find({"claim_id": claim_id}).sort("created_at", DESCENDING).limit(100))
+    for row in rows:
+        row["coverage_assessment_id"] = str(row.pop("_id"))
+    return {"items": rows, "count": len(rows)}
+
+
+# Phase 7: verified global tax rules and jurisdiction profiles
+from datetime import date
+from .tax_rules import TaxRuleCreate, TaxRuleStatusUpdate, rule_is_applicable, rule_specificity, select_applicable_tax_rules
+
+TAX_RULE_READ_ROLES = (
+    "Super Administrator", "Insurance Company Administrator", "Claims Manager",
+    "Property Adjuster", "Casualty Adjuster", "Surveyor", "Actuarial Analyst", "Approver", "Auditor"
+)
+TAX_RULE_ADMIN_ROLES = ("Super Administrator", "Insurance Company Administrator")
+
+@app.get("/api/tax-rules")
+def list_tax_rules(
+    country_code: str | None = Query(default=None, min_length=2, max_length=2),
+    status: str | None = Query(default=None, pattern="^(Draft|Active|Inactive)$"),
+    user: dict = Depends(require_roles(*TAX_RULE_READ_ROLES))
+):
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    query = {}
+    if country_code:
+        query["country_code"] = country_code.upper()
+    if status:
+        query["status"] = status
+    rows = list(get_database()["tax_rules"].find(query).sort([("country_code", 1), ("admin_area", 1), ("tax_name", 1)]).limit(500))
+    for row in rows:
+        row["rule_id"] = str(row.pop("_id"))
+    return {"items": rows, "count": len(rows)}
+
+@app.post("/api/tax-rules", status_code=201)
+def create_tax_rule(payload: TaxRuleCreate, user: dict = Depends(require_roles(*TAX_RULE_ADMIN_ROLES))):
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    now = datetime.now(timezone.utc).isoformat()
+    record = payload.model_dump(mode="json")
+    record.update({
+        "status": "Draft", "created_at": now, "created_by": user["email"],
+        "verified_by": None, "verified_at": None, "activated_at": None,
+        "version": 1
+    })
+    try:
+        saved = get_database()["tax_rules"].insert_one(record)
+    except PyMongoError as exc:
+        raise HTTPException(status_code=503, detail="Unable to save tax rule.") from exc
+    record["rule_id"] = str(saved.inserted_id)
+    record.pop("_id", None)
+    return record
+
+@app.patch("/api/tax-rules/{rule_id}/status")
+def change_tax_rule_status(
+    rule_id: str,
+    payload: TaxRuleStatusUpdate,
+    user: dict = Depends(require_roles(*TAX_RULE_ADMIN_ROLES))
+):
+    try:
+        object_id = ObjectId(rule_id)
+    except InvalidId as exc:
+        raise HTTPException(status_code=400, detail="Invalid tax rule ID.") from exc
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    collection = get_database()["tax_rules"]
+    existing = collection.find_one({"_id": object_id})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Tax rule not found.")
+    if existing.get("status") == "Active" and payload.status == "Active":
+        raise HTTPException(status_code=409, detail="Active tax rules are immutable. Create a new version for any change.")
+    now = datetime.now(timezone.utc).isoformat()
+    changes = {"status": payload.status, "status_updated_at": now, "status_updated_by": user["email"]}
+    if payload.status == "Active":
+        if not existing.get("authority_reference") or not existing.get("authority_name"):
+            raise HTTPException(status_code=422, detail="An official authority and reference are required before activation.")
+        if not existing.get("source_url") and len(existing.get("authority_reference", "")) < 3:
+            raise HTTPException(status_code=422, detail="A source reference is required before activation.")
+        changes.update({
+            "verified_by": user["email"], "verified_at": now, "activated_at": now,
+            "verification_note": payload.verification_note.strip()
+        })
+    updated = collection.find_one_and_update(
+        {"_id": object_id, "status": existing.get("status")},
+        {"$set": changes}, return_document=ReturnDocument.AFTER, projection={"_id": 0}
+    )
+    if not updated:
+        raise HTTPException(status_code=409, detail="Tax rule changed concurrently. Refresh and retry.")
+    updated["rule_id"] = rule_id
+    return updated
+
+@app.get("/api/claims/{claim_id}/applicable-tax-rules")
+def applicable_tax_rules(
+    claim_id: str,
+    tax_point_date: str = Query(..., min_length=10, max_length=10),
+    user: dict = Depends(require_roles(*TAX_RULE_READ_ROLES))
+):
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    claim = get_database()["claims"].find_one({"claim_id": claim_id}, {"_id": 0})
+    if not claim:
+        raise HTTPException(status_code=404, detail="Claim not found.")
+    try:
+        point_date = date.fromisoformat(tax_point_date)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Tax point date must use YYYY-MM-DD.") from exc
+    candidates = list(get_database()["tax_rules"].find({
+        "country_code": (claim.get("country_code") or "").upper(),
+        "currency": (claim.get("currency") or "").upper(),
+        "status": "Active"
+    }))
+    selected, ambiguous = select_applicable_tax_rules(
+        candidates, country_code=claim.get("country_code", ""), currency=claim.get("currency", ""),
+        admin_area=claim.get("state_or_jurisdiction", "") or claim.get("region", ""),
+        region=claim.get("region", ""), locality=claim.get("locality", ""), tax_point_date=point_date
+    )
+    for row in selected:
+        row["rule_id"] = str(row.pop("_id"))
+    return {
+        "claim_id": claim_id, "country_code": claim.get("country_code"),
+        "currency": claim.get("currency"), "tax_point_date": tax_point_date,
+        "items": selected, "count": len(selected), "ambiguous_tax_names": ambiguous,
+        "profile_status": "Ambiguous" if ambiguous else ("Configured" if selected else "No verified matching tax profile"),
+        "message": "Only active, verified, effective-dated rules are returned. This lookup is advisory; confirm the applicable tax treatment with the authorised tax/legal source."
+    }
