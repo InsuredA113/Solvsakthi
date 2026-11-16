@@ -80,9 +80,13 @@
               <label>Phone number<input name="phone" [(ngModel)]="draft.phone" placeholder="Contact number"></label>
               <label>Claim type *<select name="claim_type" [(ngModel)]="draft.claim_type"><option value="Property">Property</option><option value="Casualty">Casualty</option></select></label>
               <label>Incident date *<input type="date" name="incident_date" [(ngModel)]="draft.incident_date" required></label>
-              <label class="full">Loss location *<input name="loss_location" [(ngModel)]="draft.loss_location" required placeholder="Address or location of incident"></label>
+              <label class="full">Loss location / address *<input name="loss_location" [(ngModel)]="draft.loss_location" required placeholder="Street address or incident location"></label>
+              <label>Country code (ISO 3166-1 alpha-2) *<input name="claim_country" [(ngModel)]="draft.country_code" maxlength="2" required placeholder="e.g. US, GB, IN, AU"></label>
+              <label>State / province / region<input name="claim_region" [(ngModel)]="draft.region" placeholder="State, province, territory or region"></label>
+              <label>City / locality<input name="claim_locality" [(ngModel)]="draft.locality" placeholder="City or municipality"></label>
+              <label>Postal / ZIP code<input name="claim_postal" [(ngModel)]="draft.postal_code" placeholder="Postal code"></label>
               <label>Estimated loss amount<input type="number" name="estimated_loss" [(ngModel)]="draft.estimated_loss" min="0" step="0.01" placeholder="Optional"></label>
-              <label>Currency<select name="currency" [(ngModel)]="draft.currency"><option value="INR">INR – Indian Rupee</option><option value="USD">USD – US Dollar</option><option value="EUR">EUR – Euro</option><option value="GBP">GBP – British Pound</option></select></label>
+              <label>Currency code (ISO 4217) *<input name="currency" [(ngModel)]="draft.currency" maxlength="3" required placeholder="e.g. USD, CAD, EUR, GBP, INR, JPY"></label>
               <label class="full">Incident description *<textarea name="incident_description" [(ngModel)]="draft.incident_description" required minlength="5" maxlength="5000" rows="4" placeholder="Describe what happened using the information reported. Do not assume missing details."></textarea></label>
             </div>
             <div class="form-actions"><span class="muted">Claim ID will be generated after successful database save.</span><button class="primary-action" type="submit" [disabled]="savingClaim || fnolForm.invalid">{{ savingClaim ? 'Saving…' : 'Create claim' }}</button></div>
