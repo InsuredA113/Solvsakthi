@@ -4,7 +4,7 @@
     <div class="brand"><div class="brand-mark">S</div><div><strong>Solv-In</strong><small>Smarter Claims. Faster Decisions.</small></div></div>
     <nav aria-label="Main navigation">
       <ng-container *ngFor="let item of navigation"><button *ngIf="item !== 'Users' || isAdmin()" (click)="selectPage(item)" [class.active]="activePage === item">
-        <span class="nav-icon">{{ item === 'Dashboard' ? '⌂' : item === 'Claims' ? '▤' : item === 'New FNOL' ? '+' : item === 'Reports' ? '▥' : '⚙' }}</span>{{ item }}
+        <span class="nav-icon">{{ item === 'Dashboard' ? '⌂' : item === 'Claims' ? '▤' : item === 'New FNOL' ? '+' : item === 'AI Damage Analysis' ? '◈' : item === 'Reports' ? '▥' : item === 'Users' ? '♙' : '⚙' }}</span>{{ item }}
       </button></ng-container>
     </nav>
     <div class="sidebar-foot">P&C Claims Intelligence<br><span>Development preview</span></div>
@@ -87,6 +87,42 @@
             </div>
             <div class="form-actions"><span class="muted">Claim ID will be generated after successful database save.</span><button class="primary-action" type="submit" [disabled]="savingClaim || fnolForm.invalid">{{ savingClaim ? 'Saving…' : 'Create claim' }}</button></div>
           </form>
+        </section>
+      </ng-container>
+
+      <ng-container *ngIf="activePage === 'AI Damage Analysis'">
+        <section class="panel form-panel damage-panel">
+          <div class="panel-heading"><div><h2>AI-assisted damage analysis</h2><p class="muted">Upload a property or casualty damage image for preliminary visual observations.</p></div></div>
+          <div class="damage-disclaimer">AI findings are indicative only. They do not establish coverage, liability, causation, repair costs or claim outcomes. An authorised adjuster must verify every finding.</div>
+          <div class="form-grid damage-inputs">
+            <label class="full">Related Claim ID (optional)
+              <input name="damage_claim_id" [(ngModel)]="damageClaimId" placeholder="Example: CLM-2026-000001">
+            </label>
+            <label class="full">Damage image *
+              <input type="file" accept="image/jpeg,image/png,image/webp" (change)="onDamageImageSelected($event)" aria-label="Select a damage image">
+              <span class="muted">JPG, PNG or WEBP · Maximum 10 MB</span>
+            </label>
+          </div>
+          <div class="damage-preview" *ngIf="damageImagePreview">
+            <img [src]="damageImagePreview" alt="Selected claim damage preview">
+            <div><b>{{ selectedDamageImage?.name }}</b><p class="muted">{{ selectedDamageImage?.size | number }} bytes</p></div>
+          </div>
+          <div class="form-actions">
+            <button class="secondary-action" type="button" (click)="clearDamageAnalysis()" [disabled]="damageBusy">Clear</button>
+            <button class="primary-action" type="button" (click)="analyseDamage()" [disabled]="damageBusy || !selectedDamageImage">{{ damageBusy ? 'Analysing image…' : 'Analyse damage with AI' }}</button>
+          </div>
+        </section>
+        <section class="panel damage-results" *ngIf="damageAssessment">
+          <div class="panel-heading"><div><h2>AI visual assessment</h2><p class="muted">{{ damageAssessment.status }}</p></div><span class="status">{{ damageAssessment.severity }} severity</span></div>
+          <div class="damage-summary"><div><small>Damage category</small><b>{{ damageAssessment.damage_category }}</b></div><div><small>AI confidence</small><b>{{ damageAssessment.confidence }}</b></div><div><small>Repair cost</small><b>Not estimated</b></div></div>
+          <div class="damage-result-grid">
+            <article><h3>Visible observations</h3><ul><li *ngFor="let item of damageAssessment.visible_observations">{{ item }}</li><li *ngIf="!damageAssessment.visible_observations.length">No observations returned.</li></ul></article>
+            <article><h3>Affected areas</h3><ul><li *ngFor="let item of damageAssessment.affected_areas">{{ item }}</li><li *ngIf="!damageAssessment.affected_areas.length">Not determined.</li></ul></article>
+            <article><h3>Possible cause (unverified)</h3><p>{{ damageAssessment.possible_cause }}</p></article>
+            <article><h3>Recommended next steps</h3><ul><li *ngFor="let item of damageAssessment.recommended_next_steps">{{ item }}</li></ul></article>
+            <article class="full"><h3>Limitations</h3><ul><li *ngFor="let item of damageAssessment.limitations">{{ item }}</li></ul></article>
+          </div>
+          <p class="damage-disclaimer">This assessment is stored in MongoDB. It is not an adjuster approval or a final claim decision.</p>
         </section>
       </ng-container>
 
