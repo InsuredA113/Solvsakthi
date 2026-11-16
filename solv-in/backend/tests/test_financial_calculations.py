@@ -107,3 +107,14 @@ def test_automatic_tax_mode_is_the_default():
 def test_manual_tax_mode_requires_explicit_selection():
     payload = sample_payload(tax_mode="manual")
     assert payload.tax_mode == "manual"
+
+
+def test_automatic_tax_application_requires_explicit_confirmation_by_default():
+    payload = sample_payload()
+    assert payload.tax_mode == "automatic"
+    assert payload.confirm_automatic_tax_application is False
+
+
+def test_automatic_tax_application_confirmation_can_be_recorded():
+    payload = sample_payload(confirm_automatic_tax_application=True)
+    assert payload.confirm_automatic_tax_application is True
