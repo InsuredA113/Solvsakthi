@@ -54,7 +54,7 @@ LABELS = {
 def _label_value(body: str, labels: tuple[str, ...]) -> str | None:
     for label in labels:
         match = re.search(
-            rf"(?im)^\\s*{re.escape(label)}\\s*:\\s*(.*?)\\s*$",
+            rf"(?im)^\s*{re.escape(label)}\s*:\s*(.*?)\s*$",
             body,
         )
         if match and match.group(1).strip():
