@@ -1,5 +1,7 @@
 from datetime import date, datetime, timezone
-from fastapi import Depends, FastAPI, HTTPException, Query
+import csv
+import io
+from fastapi import Depends, FastAPI, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 from bson import ObjectId
 from bson.errors import InvalidId
@@ -14,6 +16,7 @@ from .bootstrap import seed_initial_admin
 from .config import CORS_ORIGINS, ACCESS_TOKEN_MINUTES
 from .database import get_database, database_is_available
 from .models import ClaimCreate, ClaimStatusUpdate
+from .claims_analytics import build_claims_analytics, is_in_scope_claim, safe_csv_cell
 from .user_models import LoginRequest, UserCreate
 
 app = FastAPI(
@@ -132,19 +135,163 @@ def create_user(payload: UserCreate, actor: dict = Depends(require_roles(*ADMIN_
         raise HTTPException(status_code=503, detail="Unable to create user.") from exc
     return {key: value for key, value in record.items() if key != "password_hash"}
 
+def _load_claims_analytics(
+    from_date: date | None,
+    to_date: date | None,
+    country_code: str | None,
+    currency: str | None,
+    portfolio: str
+):
+    if from_date and to_date and from_date > to_date:
+        raise HTTPException(status_code=422, detail="From date must be on or before to date.")
+
+    common_filters = []
+    date_filter = {}
+    if from_date:
+        date_filter["$gte"] = from_date.isoformat()
+    if to_date:
+        date_filter["$lte"] = to_date.isoformat()
+    if date_filter:
+        common_filters.append({"incident_date": date_filter})
+    if country_code:
+        common_filters.append({"country_code": country_code.upper()})
+    if currency:
+        common_filters.append({"currency": currency.upper()})
+
+    scope_filter = {"$or": [
+        {"claim_type": "Property"},
+        {"claim_type": "Casualty", "casualty_segment": "Commercial"}
+    ]}
+    if portfolio == "Property":
+        scope_filter = {"claim_type": "Property"}
+    elif portfolio == "Commercial Casualty":
+        scope_filter = {"claim_type": "Casualty", "casualty_segment": "Commercial"}
+
+    query_parts = [scope_filter, *common_filters]
+    query = {"$and": query_parts}
+    db = get_database()
+    try:
+        claims_collection = db["claims"]
+        matching_count = claims_collection.count_documents(query)
+        if matching_count > 50000:
+            raise HTTPException(
+                status_code=413,
+                detail="This report matches more than 50,000 claims. Narrow the date, country or currency filters; no partial report was generated."
+            )
+        claims = list(claims_collection.find(query, {"_id": 0}).sort("incident_date", 1))
+        claim_ids = [claim.get("claim_id") for claim in claims if claim.get("claim_id")]
+        estimates = []
+        if claim_ids:
+            estimates = list(db["financial_estimates"].aggregate([
+                {"$match": {"claim_id": {"$in": claim_ids}}},
+                {"$sort": {"created_at": -1}},
+                {"$group": {"_id": "$claim_id", "latest": {"$first": "$$ROOT"}}},
+                {"$replaceRoot": {"newRoot": "$latest"}}
+            ]))
+
+        result = build_claims_analytics(claims, estimates)
+        unclassified_query_parts = [
+            {"claim_type": "Casualty", "casualty_segment": {"$ne": "Commercial"}},
+            *common_filters
+        ]
+        result["summary"]["unclassified_legacy_casualty_claims"] = claims_collection.count_documents(
+            {"$and": unclassified_query_parts}
+        )
+        result["filters"] = {
+            "from_date": from_date.isoformat() if from_date else None,
+            "to_date": to_date.isoformat() if to_date else None,
+            "country_code": country_code.upper() if country_code else None,
+            "currency": currency.upper() if currency else None,
+            "portfolio": portfolio
+        }
+        result["data_complete"] = True
+        result["claim_count_checked"] = matching_count
+        return result
+    except HTTPException:
+        raise
+    except PyMongoError as exc:
+        raise HTTPException(status_code=503, detail="Unable to build claims analytics.") from exc
+
+@app.get("/api/reports/claims-analytics")
+def claims_analytics(
+    from_date: date | None = Query(default=None),
+    to_date: date | None = Query(default=None),
+    country_code: str | None = Query(default=None, min_length=2, max_length=2),
+    currency: str | None = Query(default=None, min_length=3, max_length=3),
+    portfolio: str = Query(default="All", pattern="^(All|Property|Commercial Casualty)$"),
+    user: dict = Depends(require_roles(*READ_ROLES))
+):
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    return _load_claims_analytics(from_date, to_date, country_code, currency, portfolio)
+
+
+@app.get("/api/reports/claims-analytics.csv")
+def export_claims_analytics_csv(
+    from_date: date | None = Query(default=None),
+    to_date: date | None = Query(default=None),
+    country_code: str | None = Query(default=None, min_length=2, max_length=2),
+    currency: str | None = Query(default=None, min_length=3, max_length=3),
+    portfolio: str = Query(default="All", pattern="^(All|Property|Commercial Casualty)$"),
+    user: dict = Depends(require_roles(*READ_ROLES))
+):
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    data = _load_claims_analytics(from_date, to_date, country_code, currency, portfolio)
+    output = io.StringIO()
+    writer = csv.writer(output)
+    def write_row(values):
+        writer.writerow([safe_csv_cell(value) for value in values])
+    write_row(["Section", "Dimension", "Currency", "Claim count", "Amount"])
+    summary = data["summary"]
+    for key, value in summary.items():
+        write_row(["Summary", key, "", value, ""])
+    for row in data["by_status"]:
+        write_row(["Status", row["status"], "", row["claim_count"], ""])
+    for row in data["by_country"]:
+        write_row(["Country", row["country_code"], "", row["claim_count"], ""])
+    for row in data["by_month"]:
+        write_row(["Month", row["month"], "", row["claim_count"], ""])
+    for row in data["by_claim_line"]:
+        write_row(["Claim line", row["claim_line"], "", row["claim_count"], ""])
+    for row in data["by_industry"]:
+        write_row(["Commercial casualty industry", row["industry"], "", row["claim_count"], ""])
+    for row in data["reported_exposure_by_currency"]:
+        write_row(["Reported exposure", "Claim-reported estimated loss", row["currency"], row["claim_count"], row["reported_estimated_loss"]])
+    for row in data["latest_preliminary_estimates_by_currency"]:
+        write_row(["Latest preliminary estimates", "Latest estimate per claim", row["currency"], row["claim_count"], row["latest_preliminary_estimate_total"]])
+    write_row(["Scope", data["scope"], "", "", ""])
+    return Response(
+        content=output.getvalue(), media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="solv-in-claims-analytics.csv"'}
+    )
+
+
 @app.get("/api/dashboard/summary")
 def dashboard_summary(user: dict = Depends(require_roles(*READ_ROLES))):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     try:
         claims = get_database()["claims"]
+        scope_query = {"$or": [
+            {"claim_type": "Property"},
+            {"claim_type": "Casualty", "casualty_segment": "Commercial"}
+        ]}
+        def scoped_count(status_query=None):
+            filters = [scope_query]
+            if status_query:
+                filters.append(status_query)
+            return claims.count_documents({"$and": filters})
         return {
             "data_mode": "live",
-            "total_claims": claims.count_documents({}),
-            "new_claims": claims.count_documents({"status": "FNOL Received"}),
-            "under_investigation": claims.count_documents({"status": {"$in": ["Under Review", "Investigation", "Assessment"]}}),
-            "pending_approval": claims.count_documents({"status": "Pending Approval"}),
-            "settled_claims": claims.count_documents({"status": "Closed"})
+            "total_claims": scoped_count(),
+            "new_claims": scoped_count({"status": "FNOL Received"}),
+            "under_investigation": scoped_count({"status": {"$in": ["Under Review", "Investigation", "Assessment"]}}),
+            "pending_approval": scoped_count({"status": "Pending Approval"}),
+            "settled_claims": scoped_count({"status": "Closed"}),
+            "unclassified_legacy_casualty_claims": claims.count_documents({
+                "claim_type": "Casualty", "casualty_segment": {"$ne": "Commercial"}
+            })
         }
     except PyMongoError as exc:
         raise HTTPException(status_code=503, detail="Unable to load dashboard metrics.") from exc
@@ -159,17 +306,20 @@ def list_claims(
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
-    query = {}
+    query = {"$and": [{"$or": [
+        {"claim_type": "Property"},
+        {"claim_type": "Casualty", "casualty_segment": "Commercial"}
+    ]}]}
     if claim_type:
-        query["claim_type"] = claim_type
+        query["$and"].append({"claim_type": claim_type})
     if status:
-        query["status"] = status
+        query["$and"].append({"status": status})
     if search:
-        query["$or"] = [
+        query["$and"].append({"$or": [
             {"claim_id": {"$regex": search, "$options": "i"}},
             {"customer_name": {"$regex": search, "$options": "i"}},
             {"policy_number": {"$regex": search, "$options": "i"}}
-        ]
+        ]})
     try:
         rows = list(get_database()["claims"].find(query, {"_id": 0}).sort("created_at", DESCENDING).limit(limit))
         return {"items": rows, "count": len(rows)}
@@ -266,9 +416,13 @@ async def analyse_damage_image(
     if len(image_bytes) > MAX_DAMAGE_IMAGE_BYTES:
         raise HTTPException(status_code=413, detail="Image size must not exceed 10 MB.")
     if claim_id:
-        claim = get_database()["claims"].find_one({"claim_id": claim_id}, {"_id": 0, "claim_id": 1})
+        claim = get_database()["claims"].find_one({"claim_id": claim_id}, {
+            "_id": 0, "claim_id": 1, "claim_type": 1, "casualty_segment": 1
+        })
         if not claim:
             raise HTTPException(status_code=404, detail="The selected claim ID was not found.")
+        if not is_in_scope_claim(claim):
+            raise HTTPException(status_code=422, detail="This claim is outside Solv-In's supported scope: all Property and Commercial Casualty only.")
     prompt = """
 You are an assistant supporting a licensed Property & Casualty insurance claims adjuster.
 Inspect only what is visibly supported by the supplied image. Return one valid JSON object
@@ -416,9 +570,14 @@ def create_financial_estimate(
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable. The estimate was not saved.")
     db = get_database()
-    claim = db["claims"].find_one({"claim_id": claim_id}, {"_id": 0, "claim_id": 1, "currency": 1, "country_code": 1, "loss_location": 1, "claim_type": 1})
+    claim = db["claims"].find_one({"claim_id": claim_id}, {
+        "_id": 0, "claim_id": 1, "currency": 1, "country_code": 1,
+        "loss_location": 1, "claim_type": 1, "casualty_segment": 1
+    })
     if not claim:
         raise HTTPException(status_code=404, detail="Claim not found.")
+    if not is_in_scope_claim(claim):
+        raise HTTPException(status_code=422, detail="Financial estimates are limited to all Property and Commercial Casualty claims.")
     if (claim.get("currency") or "").upper() != payload.currency:
         raise HTTPException(status_code=422, detail="Estimate currency must match the claim currency.")
     if (claim.get("country_code") and claim["country_code"].upper() != payload.country_code):
@@ -638,6 +797,8 @@ def create_coverage_assessment(
     claim = db["claims"].find_one({"claim_id": claim_id}, {"_id": 0})
     if not claim:
         raise HTTPException(status_code=404, detail="Claim not found.")
+    if not is_in_scope_claim(claim):
+        raise HTTPException(status_code=422, detail="Coverage screening is limited to all Property and Commercial Casualty claims.")
     policy = db["policies"].find_one({"policy_number": claim.get("policy_number")})
     result = assess_policy(policy, claim, payload)
     now = datetime.now(timezone.utc).isoformat()

@@ -182,3 +182,31 @@ Automatic tax application is limited to tax components and taxable bases represe
 - Policy records are currently scoped to the shared development workspace. Insurer-level tenant isolation and duplicate policy-number handling across separate insurers must be implemented before multi-insurer production use.
 - The indicative net amount is a preliminary arithmetic illustration only. It is not an approved reserve, offer, payment or settlement.
 - All results require qualified human review. No automatic coverage approval or denial is performed.
+
+
+## Product scope – Property and Commercial Casualty
+
+- Solv-In supports **all Property claims**, including residential, commercial, industrial and mixed-use property.
+- Solv-In supports **Commercial Casualty claims only**. Personal-lines casualty claims are outside the product scope.
+- New Commercial Casualty FNOL records require a business/insured entity name, industry and commercial liability line (Commercial General Liability, Professional Liability, Product Liability, Employers Liability, Public Liability or Other Commercial Liability).
+- Legacy Casualty records without an explicit Commercial segment are excluded from portfolio dashboards and analytics until an authorised user verifies their classification. They are counted separately as unclassified legacy records.
+
+## Phase 10 – Claims Portfolio Analytics & Reporting
+
+- Scoped portfolio metrics for all Property and Commercial Casualty claims only.
+- Property occupancy and commercial casualty liability-line breakdowns, plus commercial casualty industry reporting.
+- Claim status, country and incident-month breakdowns.
+- Reported estimated-loss exposure grouped by ISO currency; no cross-currency addition or implied FX conversion.
+- Latest saved preliminary financial estimate per claim, grouped by currency, with pending-review and approved-estimate counts. This is not paid-loss or settlement reporting.
+- Filters for incident date range, country, currency and portfolio (All / Property / Commercial Casualty).
+- Authenticated CSV export using the same report filters, with spreadsheet-formula injection protection.
+- Reports explicitly reject result sets above 50,000 matching claims rather than silently returning partial totals; users must narrow filters.
+- Dashboard summary and claim list use the same Property + Commercial Casualty scope.
+- APIs: `GET /api/reports/claims-analytics` and `GET /api/reports/claims-analytics.csv`.
+
+### Phase 10 reporting safeguards
+
+- Reported estimated loss is not an actuarially validated reserve, incurred loss, paid loss or settlement.
+- Preliminary estimate totals use only the latest saved estimate per claim to avoid double-counting multiple revisions.
+- Currency totals remain separate. No FX rates are sourced or assumed.
+- Legacy Casualty records without commercial classification are excluded and separately counted; do not bulk-classify them without policy/business evidence.
