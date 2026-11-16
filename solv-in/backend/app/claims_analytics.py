@@ -119,3 +119,14 @@ def build_claims_analytics(claims: list[dict], estimates: list[dict] | None = No
             for key, value in sorted(monthly_counts.items())
         ]
     }
+
+
+
+def safe_csv_cell(value):
+    """Neutralise spreadsheet formula prefixes in user-controlled CSV text."""
+    if not isinstance(value, str):
+        return value
+    first_non_whitespace = value.lstrip(" \\t\\r\\n")
+    if first_non_whitespace.startswith(("=", "+", "-", "@")):
+        return "'" + value
+    return value
