@@ -31,6 +31,7 @@ class EmailIntakeCreate(BaseModel):
 class EmailIntakeReview(BaseModel):
     status: Literal["Reviewed", "Rejected"]
     notes: str = Field(default="", max_length=2000)
+    confirmed_claim_type: Literal["Property", "Commercial Casualty"] | None = None
 
 
 LABELS = {
