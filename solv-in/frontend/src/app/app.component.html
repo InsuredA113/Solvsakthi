@@ -242,7 +242,7 @@
           <div class="panel-heading"><h2>Saved financial estimates</h2><span class="subtle">{{ financialEstimates.length }} records</span></div>
           <article class="assessment-history-card" *ngFor="let estimate of financialEstimates">
             <div class="panel-heading"><div><b>{{ formatAmount(+estimate.preliminary_net_estimate, estimate.currency) }}</b><p class="muted">{{ estimate.created_at | date:'medium' }} · {{ estimate.pricing_source }}</p><p class="muted">Tax profile: {{ estimate.tax_profile_status || 'Legacy estimate' }} · Review: {{ estimate.review_status || 'Pending Review' }}</p></div><span class="status">{{ estimate.status }}</span></div>
-            <div *ngIf="canReviewFinancialEstimate() && !['Approved', 'Rejected'].includes(estimate.review_status || '')" class="form-grid">
+            <div *ngIf="canReviewFinancialEstimate() && !isFinalEstimateReview(estimate)" class="form-grid">
               <label class="full">Reviewer notes<textarea rows="2" [(ngModel)]="financialReviewNotes" placeholder="Add review notes or explain additional evidence needed"></textarea></label>
               <div class="form-actions">
                 <button class="secondary-action" type="button" (click)="reviewFinancialEstimate(estimate, 'Reviewed')" [disabled]="financialReviewBusyId === estimate.estimate_id">Mark reviewed</button>
