@@ -147,6 +147,10 @@ export class AppComponent implements OnInit {
     return this.currentUser?.role === 'Super Administrator';
   }
 
+  canManageTaxRules(): boolean {
+    return ['Super Administrator', 'Insurance Company Administrator'].includes(this.currentUser?.role || '');
+  }
+
   canAnalyseDamage(): boolean {
     return ['Super Administrator', 'Insurance Company Administrator', 'Claims Manager', 'Property Adjuster', 'Casualty Adjuster', 'Surveyor', 'Actuarial Analyst', 'Approver'].includes(this.currentUser?.role || '');
   }
