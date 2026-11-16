@@ -7,6 +7,7 @@ from bson import ObjectId
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
 from pydantic import ValidationError
 from pymongo.errors import DuplicateKeyError
+import httpx
 
 from .auth import require_roles
 from .database import database_is_available, get_database
@@ -39,6 +40,8 @@ def _save_email(provider: str, provider_message_id: str, sender_email: str,
     )
     if existing:
         return {"duplicate": True, "intake_id": existing["intake_id"]}
+    if not sender_email:
+        return {"ignored": True, "reason": "missing_sender_address"}
     try:
         payload = EmailIntakeCreate(
             provider=provider, provider_message_id=provider_message_id,
@@ -170,9 +173,22 @@ def create_microsoft_subscription(user: dict = Depends(require_roles(*ADMIN_ROLE
     if not microsoft_configured():
         raise HTTPException(status_code=409, detail="Configure all MS365 environment variables before subscribing.")
     try:
-        result = graph_api("POST", "subscriptions", microsoft_access_token(), json_body=microsoft_subscription_payload())
+        token = microsoft_access_token()
+        subscription = microsoft_subscription_payload()
         mailbox = setting("MS365_MAILBOX").lower()
-        get_database()["email_connector_state"].update_one(
+        states = get_database()["email_connector_state"]
+        previous = states.find_one({"_id": "microsoft365:" + mailbox}) or {}
+        result = None
+        if previous.get("subscription_id"):
+            try:
+                result = graph_api("PATCH", "subscriptions/" + previous["subscription_id"], token,
+                                   json_body={"expirationDateTime": subscription["expirationDateTime"]})
+            except httpx.HTTPStatusError as renewal_error:
+                if renewal_error.response.status_code not in (404, 410):
+                    raise
+        if result is None:
+            result = graph_api("POST", "subscriptions", token, json_body=subscription)
+        states.update_one(
             {"_id": "microsoft365:" + mailbox},
             {"$set": {"provider": "microsoft365", "mailbox": mailbox,
                       "subscription_id": result.get("id"),
