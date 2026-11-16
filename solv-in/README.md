@@ -151,6 +151,7 @@ The claim lookup endpoint `GET /api/claims/{claim_id}/applicable-tax-rules?tax_p
 
 - Financial estimates default to **automatic tax mode**. The API matches active tax rules by claim country, currency, administrative area, region/locality and tax-point date.
 - Matching rules are converted into deterministic Python Decimal tax components and calculated using each rule's configured taxable base, compounding setting and explicit calculation order (lower order runs first).
+- The API requires an explicit confirmation flag before applying any matched automatic tax rules. The Angular workflow previews the matched authority, rate, jurisdiction and source reference and requires an adjuster/admin to tick the confirmation control. A changed preview clears the confirmation state.
 - The saved estimate contains exact rule identifiers, versions, jurisdiction, rate, effective dates, authority references, source URLs and verification metadata as an audit snapshot.
 - Configurable calculation order determines the sequence for tax-on-tax compounding; lower order values are applied first.
 - Financial estimate review is separate from the preliminary calculation status. Reviewers can mark reviewed or request evidence; only designated approver roles can approve/reject the estimate. Rejected or approved estimate reviews are final; revised calculations require a new estimate.
