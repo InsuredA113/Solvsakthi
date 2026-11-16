@@ -98,3 +98,12 @@ def test_tax_rule_effective_dates_are_checked_against_tax_point_date():
             "name": "Future tax", "jurisdiction": "Country", "rate_percent": "5",
             "authority_reference": "Verified source", "effective_from": "2027-01-01"
         }])
+
+
+def test_automatic_tax_mode_is_the_default():
+    payload = sample_payload()
+    assert payload.tax_mode == "automatic"
+
+def test_manual_tax_mode_requires_explicit_selection():
+    payload = sample_payload(tax_mode="manual")
+    assert payload.tax_mode == "manual"
