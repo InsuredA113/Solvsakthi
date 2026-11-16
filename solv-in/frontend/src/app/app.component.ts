@@ -538,7 +538,10 @@ export class AppComponent implements OnInit {
       this.logout(false);
       this.errorMessage = 'Your session expired. Please sign in again.';
     } else {
-      this.errorMessage = error.error?.detail || 'The request could not be completed.';
+      const detail = error.error?.detail;
+      this.errorMessage = typeof detail === 'string'
+        ? detail
+        : (detail?.message || 'The request could not be completed.');
     }
   }
 
