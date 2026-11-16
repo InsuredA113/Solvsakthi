@@ -129,7 +129,7 @@ def gmail_pubsub(payload: dict, authorization: str | None = Header(default=None)
         cursor, page_token, ids = str(state["last_history_id"]), None, set()
         latest_history_id = cursor
         while True:
-            params = {"startHistoryId": cursor, "historyTypes": "messageAdded"}
+            params = {"startHistoryId": cursor, "historyTypes": "messageAdded", "labelId": "INBOX", "maxResults": 500}
             if page_token:
                 params["pageToken"] = page_token
             page = gmail_api("GET", "history", token, params=params)
