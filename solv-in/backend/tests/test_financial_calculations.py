@@ -1,4 +1,5 @@
 import pytest
+from pydantic import ValidationError
 from app.financial_calculations import FinancialEstimateRequest, calculate_estimate
 
 
@@ -53,7 +54,7 @@ def test_applicable_interest_requires_contract_or_legal_reference():
         "applicable": True, "annual_rate_percent": "12", "principal": "1000",
         "days": 30, "basis": "simple_actual_365", "authority_reference": ""
     }
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         FinancialEstimateRequest.model_validate({
             **sample_payload().model_dump(mode="python"), "interest": data
         })
