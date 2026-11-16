@@ -44,7 +44,7 @@ STATUS_ROLES = (
 )
 ADMIN_ROLES = ("Super Administrator",)
 
-DAMAGE_REVIEW_ROLES = DAMAGE_ANALYSIS_ROLES + ("Approver",)
+DAMAGE_REVIEW_ROLES = ("Super Administrator", "Insurance Company Administrator", "Claims Manager", "Property Adjuster", "Casualty Adjuster", "Surveyor", "Actuarial Analyst", "Approver")
 DAMAGE_APPROVAL_ROLES = ("Super Administrator", "Insurance Company Administrator", "Claims Manager", "Approver")
 
 class DamageReviewUpdate(BaseModel):
@@ -352,7 +352,7 @@ def list_damage_assessments(
     if not get_database()["claims"].find_one({"claim_id": claim_id}, {"_id": 0}):
         raise HTTPException(status_code=404, detail="Claim not found.")
     rows = list(get_database()["damage_assessments"].find(
-        {"claim_id": claim_id}, {"_id": 0}
+        {"claim_id": claim_id}
     ).sort("created_at", DESCENDING).limit(100))
     for row in rows:
         row["assessment_id"] = str(row.pop("_id"))
@@ -377,12 +377,16 @@ def review_damage_assessment(assessment_id: str, payload: DamageReviewUpdate, us
     review_entry = {"status": payload.status, "notes": payload.notes.strip(), "reviewed_at": now, "reviewed_by": user["email"], "reviewer_role": user["role"]}
     try:
         updated = get_database()["damage_assessments"].find_one_and_update(
-            {"_id": object_id},
+            {"_id": object_id, "status": {"$nin": ["Approved", "Rejected"]}},
             {"$set": {"status": payload.status, "updated_at": now, "updated_by": user["email"]}, "$push": {"review_history": review_entry}},
             return_document=ReturnDocument.AFTER, projection={"_id": 0}
         )
         if not updated:
-            raise HTTPException(status_code=404, detail="Damage assessment not found.")
+            existing = get_database()["damage_assessments"].find_one({"_id": object_id}, {"status": 1})
+            if not existing:
+                raise HTTPException(status_code=404, detail="Damage assessment not found.")
+            raise HTTPException(status_code=409, detail="This assessment has already been finalised.")
+        updated["assessment_id"] = str(object_id)
         return updated
     except HTTPException:
         raise
