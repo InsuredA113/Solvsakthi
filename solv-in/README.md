@@ -150,7 +150,7 @@ The claim lookup endpoint `GET /api/claims/{claim_id}/applicable-tax-rules?tax_p
 ## Phase 8 – Automated tax calculation and financial estimate integration
 
 - Financial estimates default to **automatic tax mode**. The API matches active tax rules by claim country, currency, administrative area, region/locality and tax-point date.
-- Matching rules are converted into deterministic Python Decimal tax components and calculated using each rule's configured taxable base and compounding setting.
+- Matching rules are converted into deterministic Python Decimal tax components and calculated using each rule's configured taxable base, compounding setting and explicit calculation order (lower order runs first).
 - The saved estimate contains exact rule identifiers, versions, jurisdiction, rate, effective dates, authority references, source URLs and verification metadata as an audit snapshot.
 - Conflicting active rules for the same tax at the same jurisdiction specificity stop automatic calculation with a conflict response. Administrators must resolve the tax registry instead of allowing Solv-In to guess.
 - If no active verified rule matches, the estimate is still preliminary but explicitly marked **No verified matching tax profile**. No rate is assumed; the warning requires human review before approval.
