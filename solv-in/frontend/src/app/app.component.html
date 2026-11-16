@@ -4,7 +4,7 @@
     <div class="brand"><div class="brand-mark">S</div><div><strong>Solv-In</strong><small>Smarter Claims. Faster Decisions.</small></div></div>
     <nav aria-label="Main navigation">
       <ng-container *ngFor="let item of navigation"><button *ngIf="(item !== 'Users' || isAdmin()) && (item !== 'AI Damage Analysis' || canAnalyseDamage()) && (item !== 'Tax Rules' || canManageTaxRules())" (click)="selectPage(item)" [class.active]="activePage === item">
-        <span class="nav-icon">{{ item === 'Dashboard' ? '⌂' : item === 'Claims' ? '▤' : item === 'New FNOL' ? '+' : item === 'AI Damage Analysis' ? '◈' : item === 'Tax Rules' ? '⌁' : item === 'Reports' ? '▥' : item === 'Users' ? '♙' : '⚙' }}</span>{{ item }}
+        <span class="nav-icon">{{ item === 'Dashboard' ? '⌂' : item === 'Claims' ? '▤' : item === 'New FNOL' ? '+' : item === 'AI Damage Analysis' ? '◈' : item === 'Tax Rules' ? '⌁' : item === 'Policy Coverage' ? '▣' : item === 'Reports' ? '▥' : item === 'Users' ? '♙' : '⚙' }}</span>{{ item }}
       </button></ng-container>
     </nav>
     <div class="sidebar-foot">P&C Claims Intelligence<br><span>Development preview</span></div>
@@ -149,6 +149,72 @@
               </div>
             </div>
           </article>
+        </section>
+      </ng-container>
+
+      <ng-container *ngIf="activePage === 'Policy Coverage'">
+        <section class="panel form-panel">
+          <div class="panel-heading"><div><h2>Policy coverage screening</h2><p class="muted">Link policy terms to a claim and run a rule-based preliminary coverage check.</p></div></div>
+          <div class="damage-disclaimer">This tool only screens configured policy data. It does not interpret the complete policy wording, endorsements or applicable law and cannot approve, deny or settle a claim. A qualified claims professional must make the coverage decision.</div>
+
+          <section *ngIf="canManagePolicies()" class="subsection">
+            <h3>Register a policy</h3>
+            <div class="form-grid">
+              <label>Policy number *<input name="policy_number" [(ngModel)]="policyDraft.policy_number" placeholder="POL-100"></label>
+              <label>Insured name *<input name="policy_insured" [(ngModel)]="policyDraft.insured_name"></label>
+              <label>Policy type *<select name="policy_type" [(ngModel)]="policyDraft.claim_type"><option>Property</option><option>Casualty</option><option>Both</option></select></label>
+              <label>Country code *<input name="policy_country" maxlength="2" [(ngModel)]="policyDraft.country_code" placeholder="US, GB, IN"></label>
+              <label>Currency code *<input name="policy_currency" maxlength="3" [(ngModel)]="policyDraft.currency" placeholder="USD, GBP, INR"></label>
+              <label>Effective from *<input type="date" name="policy_from" [(ngModel)]="policyDraft.effective_from"></label>
+              <label>Effective to *<input type="date" name="policy_to" [(ngModel)]="policyDraft.effective_to"></label>
+              <label>Per-occurrence limit *<input type="number" min="0.01" step="0.01" name="policy_limit" [(ngModel)]="policyDraft.per_occurrence_limit"></label>
+              <label>Aggregate limit<input type="number" min="0" step="0.01" name="policy_aggregate" [(ngModel)]="policyDraft.aggregate_limit"></label>
+              <label>Aggregate already used<input type="number" min="0" step="0.01" name="policy_used" [(ngModel)]="policyDraft.aggregate_used"></label>
+              <label>Deductible<input type="number" min="0" step="0.01" name="policy_deductible" [(ngModel)]="policyDraft.deductible"></label>
+              <label>Covered loss categories (comma separated)<input name="policy_covered" [(ngModel)]="policyDraft.covered_loss_categories" placeholder="fire, water damage"></label>
+              <label>Excluded loss categories (comma separated)<input name="policy_excluded" [(ngModel)]="policyDraft.excluded_loss_categories" placeholder="earthquake, flood"></label>
+              <label>Endorsements (comma separated)<input name="policy_endorsements" [(ngModel)]="policyDraft.endorsements"></label>
+              <label class="full">Policy wording / schedule reference *<input name="policy_wording" [(ngModel)]="policyDraft.policy_wording_reference" placeholder="Document name, section or approved reference"></label>
+              <label class="full">Notes<textarea name="policy_notes" rows="2" [(ngModel)]="policyDraft.notes"></textarea></label>
+            </div>
+            <div class="form-actions"><span class="muted">Only workspace administrators can register policy records.</span><button class="primary-action" type="button" (click)="createPolicy()" [disabled]="policyBusy">{{ policyBusy ? 'Saving…' : 'Save policy' }}</button></div>
+          </section>
+
+          <section class="subsection">
+            <h3>Assess a claim</h3>
+            <div class="form-grid">
+              <label>Claim ID *<div class="damage-claim-lookup"><input name="coverage_claim_id" [(ngModel)]="coverageClaimId" placeholder="CLM-2026-000001"><button type="button" class="secondary-action" (click)="loadCoverageAssessments()">Load history</button></div></label>
+              <label>Reported loss category *<input name="coverage_category" [(ngModel)]="coverageLossCategory" placeholder="fire, water damage, theft"></label>
+              <label>Claimed amount<input type="number" min="0" step="0.01" name="coverage_amount" [(ngModel)]="coverageClaimedAmount"></label>
+            </div>
+            <div class="form-actions"><span class="muted">Uses the policy number already recorded on the selected claim.</span><button class="primary-action" type="button" (click)="assessCoverage()" [disabled]="coverageBusy">{{ coverageBusy ? 'Assessing…' : 'Run preliminary screening' }}</button></div>
+          </section>
+
+          <article class="panel result-panel" *ngIf="coverageAssessment">
+            <div class="panel-heading"><div><h3>Preliminary screening result</h3><span class="status">{{ coverageAssessment.coverage_status }}</span></div></div>
+            <p>{{ coverageAssessment.explanation }}</p>
+            <p><b>Reason codes:</b> {{ coverageAssessment.reason_codes.join(', ') }}</p>
+            <div class="metrics">
+              <article class="metric"><div><small>Indicative limit</small><strong>{{ coverageAssessment.indicative_limit === null ? 'Not available' : formatAmount(+coverageAssessment.indicative_limit, coverageAssessment.policy_snapshot?.currency || 'USD') }}</strong></div></article>
+              <article class="metric"><div><small>Indicative deductible</small><strong>{{ coverageAssessment.indicative_deductible === null ? 'Not available' : formatAmount(+coverageAssessment.indicative_deductible, coverageAssessment.policy_snapshot?.currency || 'USD') }}</strong></div></article>
+              <article class="metric"><div><small>Indicative net amount</small><strong>{{ coverageAssessment.indicative_net_amount === null ? 'Not calculated' : formatAmount(+coverageAssessment.indicative_net_amount, coverageAssessment.policy_snapshot?.currency || 'USD') }}</strong></div></article>
+            </div>
+          </article>
+
+          <section class="panel claims-panel" *ngIf="coverageAssessments.length">
+            <div class="panel-heading"><h3>Saved screening history</h3><span class="subtle">{{ coverageAssessments.length }} records</span></div>
+            <div class="table-scroll"><table><thead><tr><th>Date</th><th>Loss category</th><th>Screening status</th><th>Indicative net</th></tr></thead>
+              <tbody><tr *ngFor="let item of coverageAssessments"><td>{{ item.created_at | date:'medium' }}</td><td>{{ item.loss_category }}</td><td>{{ item.coverage_status }}</td><td>{{ item.indicative_net_amount === null ? '—' : formatAmount(+item.indicative_net_amount, item.policy_snapshot?.currency || 'USD') }}</td></tr></tbody>
+            </table></div>
+          </section>
+        </section>
+
+        <section class="panel claims-panel" *ngIf="canManagePolicies()">
+          <div class="panel-heading"><h2>Registered policy records</h2><span class="subtle">{{ policies.length }} records</span></div>
+          <div class="table-scroll"><table><thead><tr><th>Policy number</th><th>Insured</th><th>Type</th><th>Country / currency</th><th>Period</th><th>Per-occurrence limit</th></tr></thead>
+            <tbody><tr *ngFor="let policy of policies"><td>{{ policy.policy_number }}</td><td>{{ policy.insured_name }}</td><td>{{ policy.claim_type }}</td><td>{{ policy.country_code }} / {{ policy.currency }}</td><td>{{ policy.effective_from }} – {{ policy.effective_to }}</td><td>{{ formatAmount(+policy.per_occurrence_limit, policy.currency) }}</td></tr>
+              <tr *ngIf="policies.length === 0"><td colspan="6" class="empty">No policy records registered in this workspace.</td></tr></tbody>
+          </table></div>
         </section>
       </ng-container>
 
