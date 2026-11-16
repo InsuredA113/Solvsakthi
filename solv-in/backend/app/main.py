@@ -331,7 +331,6 @@ def list_claims(
 def create_claim(payload: ClaimCreate, user: dict = Depends(require_roles(*CREATE_CLAIM_ROLES))):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable. No claim was saved.")
-    db = get_database()
     try:
         year = datetime.now(timezone.utc).year
         sequence = db["counters"].find_one_and_update(
@@ -1110,7 +1109,19 @@ def create_claim_from_email_intake(
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
-    collection = get_database()["email_intake"]
+    db = get_database()
+    collection = db["email_intake"]
+    try:
+        db["claims"].create_index("source_intake_id", unique=True, sparse=True)
+        existing_claim = db["claims"].find_one({"source_intake_id": intake_id}, {"_id": 0})
+        if existing_claim:
+            collection.update_one({"intake_id": intake_id}, {"$set": {
+                "review_status": "Converted", "conversion_state": "Completed",
+                "claim_id": existing_claim["claim_id"]
+            }})
+            return existing_claim
+    except PyMongoError as exc:
+        raise HTTPException(status_code=503, detail="Unable to verify email-to-claim conversion state.") from exc
     record = collection.find_one_and_update(
         {"intake_id": intake_id, "review_status": "Reviewed",
          "claim_id": {"$exists": False}, "conversion_state": {"$ne": "Processing"}},
@@ -1151,6 +1162,13 @@ def create_claim_from_email_intake(
         )
         return claim_record
     except PyMongoError as exc:
+        existing_claim = db["claims"].find_one({"source_intake_id": intake_id}, {"_id": 0})
+        if existing_claim:
+            collection.update_one({"intake_id": intake_id}, {"$set": {
+                "review_status": "Converted", "conversion_state": "Completed",
+                "claim_id": existing_claim["claim_id"]
+            }})
+            return existing_claim
         collection.update_one({"intake_id": intake_id, "conversion_state": "Processing"},
                               {"$set": {"conversion_state": "Failed"}})
         raise HTTPException(status_code=503, detail="Unable to create the claim from this email.") from exc
