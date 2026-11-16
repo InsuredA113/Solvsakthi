@@ -65,6 +65,15 @@ export class AppComponent implements OnInit {
   financialEstimates: FinancialEstimate[] = [];
   financialReviewNotes = '';
   financialReviewBusyId = '';
+  policies: any[] = [];
+  policyDraft: any = this.emptyPolicyDraft();
+  policyBusy = false;
+  coverageClaimId = '';
+  coverageLossCategory = '';
+  coverageClaimedAmount: number | null = null;
+  coverageBusy = false;
+  coverageAssessment: any = null;
+  coverageAssessments: any[] = [];
   taxRules: any[] = [];
   taxRuleDraft: any = this.emptyTaxRuleDraft();
   taxRulesBusy = false;
@@ -77,7 +86,7 @@ export class AppComponent implements OnInit {
   investigatingClaims = 0;
   pendingClaims = 0;
   closedClaims = 0;
-  readonly navigation = ['Dashboard', 'Claims', 'New FNOL', 'AI Damage Analysis', 'Financial Estimate', 'Tax Rules', 'Reports', 'Users', 'Settings'];
+  readonly navigation = ['Dashboard', 'Claims', 'New FNOL', 'AI Damage Analysis', 'Policy Coverage', 'Financial Estimate', 'Tax Rules', 'Reports', 'Users', 'Settings'];
   readonly statuses = ['FNOL Received', 'Under Review', 'Investigation', 'Assessment', 'Pending Approval', 'Approved', 'Closed'];
   draft: ClaimDraft = this.emptyDraft();
 
@@ -153,8 +162,89 @@ export class AppComponent implements OnInit {
     return ['Super Administrator', 'Insurance Company Administrator'].includes(this.currentUser?.role || '');
   }
 
+  canManagePolicies(): boolean {
+    return ['Super Administrator', 'Insurance Company Administrator'].includes(this.currentUser?.role || '');
+  }
+
   canAnalyseDamage(): boolean {
     return ['Super Administrator', 'Insurance Company Administrator', 'Claims Manager', 'Property Adjuster', 'Casualty Adjuster', 'Surveyor', 'Actuarial Analyst', 'Approver'].includes(this.currentUser?.role || '');
+  }
+
+  emptyPolicyDraft(): any {
+    return {
+      policy_number: '', insured_name: '', claim_type: 'Property', country_code: '', currency: '',
+      effective_from: '', effective_to: '', per_occurrence_limit: 0, aggregate_limit: null,
+      aggregate_used: 0, deductible: 0, excluded_loss_categories: '', covered_loss_categories: '',
+      endorsements: '', policy_wording_reference: '', notes: ''
+    };
+  }
+
+  loadPolicies(): void {
+    this.http.get<{items: any[]; count: number}>(`${environment.apiBaseUrl}/policies`, { headers: this.authHeaders() }).subscribe({
+      next: result => this.policies = result.items,
+      error: error => this.handleApiError(error)
+    });
+  }
+
+  createPolicy(): void {
+    const d = this.policyDraft;
+    if (!d.policy_number.trim() || !d.insured_name.trim() || !d.effective_from || !d.effective_to ||
+        !/^[A-Z]{2}$/i.test(d.country_code) || !/^[A-Z]{3}$/i.test(d.currency) ||
+        !d.policy_wording_reference.trim() || Number(d.per_occurrence_limit) <= 0) {
+      this.errorMessage = 'Complete the required policy details, valid country/currency codes, policy dates, limit and wording reference.';
+      return;
+    }
+    const splitValues = (value: string) => value.split(',').map(x => x.trim()).filter(Boolean);
+    const body = {
+      ...d, country_code: d.country_code.toUpperCase(), currency: d.currency.toUpperCase(),
+      aggregate_limit: d.aggregate_limit === '' || d.aggregate_limit === null ? null : Number(d.aggregate_limit),
+      per_occurrence_limit: Number(d.per_occurrence_limit), aggregate_used: Number(d.aggregate_used || 0),
+      deductible: Number(d.deductible || 0),
+      excluded_loss_categories: splitValues(d.excluded_loss_categories),
+      covered_loss_categories: splitValues(d.covered_loss_categories),
+      endorsements: splitValues(d.endorsements)
+    };
+    this.policyBusy = true;
+    this.http.post<any>(`${environment.apiBaseUrl}/policies`, body, { headers: this.authHeaders() }).subscribe({
+      next: () => {
+        this.policyBusy = false;
+        this.successMessage = 'Policy record saved. Coverage checks will remain preliminary.';
+        this.policyDraft = this.emptyPolicyDraft();
+        this.loadPolicies();
+      },
+      error: error => { this.policyBusy = false; this.handleApiError(error); }
+    });
+  }
+
+  assessCoverage(): void {
+    const id = this.coverageClaimId.trim();
+    if (!id || !this.coverageLossCategory.trim()) {
+      this.errorMessage = 'Enter a Claim ID and the reported loss category.';
+      return;
+    }
+    this.coverageBusy = true;
+    this.coverageAssessment = null;
+    this.http.post<any>(`${environment.apiBaseUrl}/claims/${encodeURIComponent(id)}/coverage-assessments`, {
+      loss_category: this.coverageLossCategory.trim(),
+      claimed_amount: this.coverageClaimedAmount,
+      notes: ''
+    }, { headers: this.authHeaders() }).subscribe({
+      next: result => {
+        this.coverageBusy = false;
+        this.coverageAssessment = result;
+        this.loadCoverageAssessments();
+      },
+      error: error => { this.coverageBusy = false; this.handleApiError(error); }
+    });
+  }
+
+  loadCoverageAssessments(): void {
+    const id = this.coverageClaimId.trim();
+    if (!id) return;
+    this.http.get<{items: any[]; count: number}>(`${environment.apiBaseUrl}/claims/${encodeURIComponent(id)}/coverage-assessments`, { headers: this.authHeaders() }).subscribe({
+      next: result => this.coverageAssessments = result.items,
+      error: error => this.handleApiError(error)
+    });
   }
 
   emptyTaxRuleDraft(): any {
@@ -244,6 +334,7 @@ export class AppComponent implements OnInit {
     if (page === 'AI Damage Analysis' && this.damageClaimId.trim()) this.loadDamageAssessments();
     if (page === 'Users') this.loadUsers();
     if (page === 'Tax Rules' && this.canManageTaxRules()) this.loadTaxRules();
+    if (page === 'Policy Coverage') this.loadPolicies();
   }
 
   loadDashboard(): void {
