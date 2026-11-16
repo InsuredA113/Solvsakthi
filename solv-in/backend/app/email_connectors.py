@@ -8,7 +8,6 @@ import html
 import os
 import re
 from datetime import datetime, timedelta, timezone
-from email import message_from_bytes
 from email.header import decode_header, make_header
 from html.parser import HTMLParser
 from typing import Any
@@ -196,8 +195,9 @@ def parse_gmail_notification(payload: dict) -> tuple[str, int]:
     data = message.get("data")
     if not data:
         raise ValueError("Pub/Sub message data is missing.")
-    decoded = base64.b64decode(data).decode("utf-8")
-    notification = __import__("json").loads(decoded)
+    decoded = base64.urlsafe_b64decode(data + "=" * (-len(data) % 4)).decode("utf-8")
+    import json
+    notification = json.loads(decoded)
     mailbox = str(notification.get("emailAddress", "")).lower()
     if mailbox != setting("GMAIL_MAILBOX").lower():
         raise ValueError("Notification mailbox does not match the configured Gmail mailbox.")
