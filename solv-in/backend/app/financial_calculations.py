@@ -1,5 +1,6 @@
 from decimal import Decimal, ROUND_HALF_UP
 import re
+import pycountry
 from typing import Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -76,7 +77,7 @@ class FinancialEstimateRequest(BaseModel):
     @classmethod
     def currency_upper(cls, value: str) -> str:
         value = value.upper()
-        if not CURRENCY_CODE.fullmatch(value):
+        if not CURRENCY_CODE.fullmatch(value) or pycountry.currencies.get(alpha_3=value) is None:
             raise ValueError("Currency must be a three-letter ISO 4217 code.")
         return value
 
@@ -84,7 +85,7 @@ class FinancialEstimateRequest(BaseModel):
     @classmethod
     def country_upper(cls, value: str) -> str:
         value = value.upper()
-        if not re.fullmatch(r"[A-Z]{2}", value):
+        if not re.fullmatch(r"[A-Z]{2}", value) or pycountry.countries.get(alpha_2=value) is None:
             raise ValueError("Country must be a two-letter ISO 3166-1 alpha-2 code.")
         return value
 
@@ -96,12 +97,12 @@ class FinancialEstimateRequest(BaseModel):
             date.fromisoformat(self.pricing_effective_date)
             tax_point_date = date.fromisoformat(self.tax_point_date)
         except ValueError as exc:
-            raise ValueError("Loss date and pricing effective date must use YYYY-MM-DD.") from exc
+            raise ValueError("Loss date, tax point date and pricing effective date must use YYYY-MM-DD.") from exc
         for tax in self.taxes:
             if tax.effective_from and date.fromisoformat(tax.effective_from) > tax_point_date:
-                raise ValueError(f"Tax rule '{tax.name}' is not effective on the loss date.")
+                raise ValueError(f"Tax rule '{tax.name}' is not effective on the tax point date.")
             if tax.effective_to and date.fromisoformat(tax.effective_to) < tax_point_date:
-                raise ValueError(f"Tax rule '{tax.name}' expired before the loss date.")
+                raise ValueError(f"Tax rule '{tax.name}' expired before the tax point date.")
         return self
 
 def calculate_estimate(payload: FinancialEstimateRequest) -> dict:
