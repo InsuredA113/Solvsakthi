@@ -1006,9 +1006,10 @@ def receive_email_intake(
             "received_at": received_at,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "created_by": user["email"],
+            **parsed,
+            "received_at": received_at,
             "review_status": parsed["intake_status"],
             "review_history": [],
-            **parsed,
         }
         collection.insert_one(record)
         record.pop("_id", None)
