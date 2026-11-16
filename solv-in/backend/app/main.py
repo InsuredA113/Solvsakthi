@@ -286,7 +286,9 @@ Keep findings concise and distinguish observation from hypothesis.
             )
         )
         raw_text = response.text or ""
-        result: dict[str, Any] = json.loads(raw_text)
+        result = json.loads(raw_text)
+        if not isinstance(result, dict):
+            raise json.JSONDecodeError("Expected a JSON object", raw_text, 0)
     except json.JSONDecodeError as exc:
         raise HTTPException(status_code=502, detail="The AI service returned an unreadable assessment. Please retry.") from exc
     except Exception as exc:
@@ -335,7 +337,7 @@ def list_damage_assessments(
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
-    if not get_database()["claims"].find_one({"claim_id": claim_id}, {"_id": 1}):
+    if not get_database()["claims"].find_one({"claim_id": claim_id}, {"_id": 0}):
         raise HTTPException(status_code=404, detail="Claim not found.")
     rows = list(get_database()["damage_assessments"].find(
         {"claim_id": claim_id}, {"_id": 1}
