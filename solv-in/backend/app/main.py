@@ -577,6 +577,119 @@ def review_financial_estimate(
     return updated
 
 
+# Phase 9: policy records and preliminary coverage screening
+from .policy_coverage import PolicyCreate, CoverageAssessmentRequest, assess_policy
+
+POLICY_READ_ROLES = (
+    "Super Administrator", "Insurance Company Administrator", "Claims Manager",
+    "Property Adjuster", "Casualty Adjuster", "Surveyor", "Actuarial Analyst",
+    "Approver", "Auditor"
+)
+POLICY_ADMIN_ROLES = ("Super Administrator", "Insurance Company Administrator")
+
+
+@app.get("/api/policies")
+def list_policies(
+    policy_number: str | None = Query(default=None, max_length=80),
+    user: dict = Depends(require_roles(*POLICY_READ_ROLES))
+):
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    query = {"policy_number": policy_number.strip()} if policy_number else {}
+    rows = list(get_database()["policies"].find(query).sort("created_at", DESCENDING).limit(250))
+    for row in rows:
+        row["policy_id"] = str(row.pop("_id"))
+    return {"items": rows, "count": len(rows)}
+
+
+@app.post("/api/policies", status_code=201)
+def create_policy(
+    payload: PolicyCreate,
+    user: dict = Depends(require_roles(*POLICY_ADMIN_ROLES))
+):
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    collection = get_database()["policies"]
+    if collection.find_one({"policy_number": payload.policy_number}):
+        raise HTTPException(status_code=409, detail="A policy with this policy number already exists in the current workspace.")
+    record = payload.model_dump(mode="json")
+    record.update({
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_by": user["email"]
+    })
+    try:
+        saved = collection.insert_one(record)
+    except PyMongoError as exc:
+        raise HTTPException(status_code=503, detail="Unable to save policy record.") from exc
+    record["policy_id"] = str(saved.inserted_id)
+    record.pop("_id", None)
+    return record
+
+
+@app.post("/api/claims/{claim_id}/coverage-assessments", status_code=201)
+def create_coverage_assessment(
+    claim_id: str,
+    payload: CoverageAssessmentRequest,
+    user: dict = Depends(require_roles(*POLICY_READ_ROLES))
+):
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    db = get_database()
+    claim = db["claims"].find_one({"claim_id": claim_id}, {"_id": 0})
+    if not claim:
+        raise HTTPException(status_code=404, detail="Claim not found.")
+    policy = db["policies"].find_one({"policy_number": claim.get("policy_number")})
+    result = assess_policy(policy, claim, payload)
+    now = datetime.now(timezone.utc).isoformat()
+    policy_snapshot = None
+    if policy:
+        policy_snapshot = {
+            "policy_number": policy.get("policy_number"),
+            "claim_type": policy.get("claim_type"),
+            "country_code": policy.get("country_code"),
+            "currency": policy.get("currency"),
+            "effective_from": str(policy.get("effective_from", ""))[:10],
+            "effective_to": str(policy.get("effective_to", ""))[:10],
+            "per_occurrence_limit": str(policy.get("per_occurrence_limit")),
+            "aggregate_limit": str(policy.get("aggregate_limit")) if policy.get("aggregate_limit") is not None else None,
+            "aggregate_used": str(policy.get("aggregate_used", "0")),
+            "deductible": str(policy.get("deductible", "0")),
+            "excluded_loss_categories": policy.get("excluded_loss_categories", []),
+            "covered_loss_categories": policy.get("covered_loss_categories", []),
+            "endorsements": policy.get("endorsements", []),
+            "policy_wording_reference": policy.get("policy_wording_reference")
+        }
+    record = {
+        **result, "claim_id": claim_id, "policy_number": claim.get("policy_number"),
+        "policy_snapshot": policy_snapshot, "loss_category": payload.loss_category,
+        "claimed_amount": str(payload.claimed_amount) if payload.claimed_amount is not None else None,
+        "notes": payload.notes, "created_at": now, "created_by": user["email"],
+        "assessment_type": "Preliminary coverage screening"
+    }
+    try:
+        saved = db["coverage_assessments"].insert_one(record)
+    except PyMongoError as exc:
+        raise HTTPException(status_code=503, detail="Unable to save coverage assessment.") from exc
+    record["coverage_assessment_id"] = str(saved.inserted_id)
+    record.pop("_id", None)
+    return record
+
+
+@app.get("/api/claims/{claim_id}/coverage-assessments")
+def list_coverage_assessments(
+    claim_id: str,
+    user: dict = Depends(require_roles(*POLICY_READ_ROLES))
+):
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    if not get_database()["claims"].find_one({"claim_id": claim_id}, {"_id": 1}):
+        raise HTTPException(status_code=404, detail="Claim not found.")
+    rows = list(get_database()["coverage_assessments"].find({"claim_id": claim_id}).sort("created_at", DESCENDING).limit(100))
+    for row in rows:
+        row["coverage_assessment_id"] = str(row.pop("_id"))
+    return {"items": rows, "count": len(rows)}
+
+
 # Phase 7: verified global tax rules and jurisdiction profiles
 from datetime import date
 from .tax_rules import TaxRuleCreate, TaxRuleStatusUpdate, rule_is_applicable, rule_specificity, select_applicable_tax_rules
