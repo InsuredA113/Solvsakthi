@@ -16,7 +16,7 @@ from .bootstrap import seed_initial_admin
 from .config import CORS_ORIGINS, ACCESS_TOKEN_MINUTES
 from .database import get_database, database_is_available
 from .models import ClaimCreate, ClaimStatusUpdate
-from .claims_analytics import build_claims_analytics
+from .claims_analytics import build_claims_analytics, is_in_scope_claim
 from .user_models import LoginRequest, UserCreate
 
 app = FastAPI(
@@ -386,9 +386,13 @@ async def analyse_damage_image(
     if len(image_bytes) > MAX_DAMAGE_IMAGE_BYTES:
         raise HTTPException(status_code=413, detail="Image size must not exceed 10 MB.")
     if claim_id:
-        claim = get_database()["claims"].find_one({"claim_id": claim_id}, {"_id": 0, "claim_id": 1})
+        claim = get_database()["claims"].find_one({"claim_id": claim_id}, {
+            "_id": 0, "claim_id": 1, "claim_type": 1, "casualty_segment": 1
+        })
         if not claim:
             raise HTTPException(status_code=404, detail="The selected claim ID was not found.")
+        if not is_in_scope_claim(claim):
+            raise HTTPException(status_code=422, detail="This claim is outside Solv-In's supported scope: all Property and Commercial Casualty only.")
     prompt = """
 You are an assistant supporting a licensed Property & Casualty insurance claims adjuster.
 Inspect only what is visibly supported by the supplied image. Return one valid JSON object
@@ -536,9 +540,14 @@ def create_financial_estimate(
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable. The estimate was not saved.")
     db = get_database()
-    claim = db["claims"].find_one({"claim_id": claim_id}, {"_id": 0, "claim_id": 1, "currency": 1, "country_code": 1, "loss_location": 1, "claim_type": 1})
+    claim = db["claims"].find_one({"claim_id": claim_id}, {
+        "_id": 0, "claim_id": 1, "currency": 1, "country_code": 1,
+        "loss_location": 1, "claim_type": 1, "casualty_segment": 1
+    })
     if not claim:
         raise HTTPException(status_code=404, detail="Claim not found.")
+    if not is_in_scope_claim(claim):
+        raise HTTPException(status_code=422, detail="Financial estimates are limited to all Property and Commercial Casualty claims.")
     if (claim.get("currency") or "").upper() != payload.currency:
         raise HTTPException(status_code=422, detail="Estimate currency must match the claim currency.")
     if (claim.get("country_code") and claim["country_code"].upper() != payload.country_code):
@@ -758,6 +767,8 @@ def create_coverage_assessment(
     claim = db["claims"].find_one({"claim_id": claim_id}, {"_id": 0})
     if not claim:
         raise HTTPException(status_code=404, detail="Claim not found.")
+    if not is_in_scope_claim(claim):
+        raise HTTPException(status_code=422, detail="Coverage screening is limited to all Property and Commercial Casualty claims.")
     policy = db["policies"].find_one({"policy_number": claim.get("policy_number")})
     result = assess_policy(policy, claim, payload)
     now = datetime.now(timezone.utc).isoformat()
