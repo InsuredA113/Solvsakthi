@@ -19,7 +19,7 @@
     <section class="content">
       <div class="welcome">
         <div><p class="eyebrow">SOLV-IN WORKSPACE</p><h1>{{ activePage === 'Dashboard' ? 'Welcome to Solv-In' : activePage }}</h1>
-        <p class="muted">{{ activePage === 'Dashboard' ? 'Your Property & Casualty claims at a glance' : 'Manage claim intake and operational workflows' }}</p></div>
+        <p class="muted">{{ activePage === 'Dashboard' ? 'Your Property and Commercial Casualty claims at a glance' : 'Manage claim intake and operational workflows' }}</p></div>
         <button class="primary-action" *ngIf="activePage !== 'New FNOL'" (click)="selectPage('New FNOL')">＋ New FNOL</button>
       </div>
 
@@ -39,7 +39,7 @@
           <article class="panel claims-panel">
             <div class="panel-heading"><h2>Recent claims</h2><button class="text-button" (click)="selectPage('Claims')">View all →</button></div>
             <div class="table-scroll"><table><thead><tr><th>Claim ID</th><th>Customer</th><th>Type</th><th>Status</th></tr></thead>
-              <tbody><tr *ngFor="let claim of claims.slice(0,5)"><td>{{ claim.claim_id }}</td><td>{{ claim.customer_name }}</td><td>{{ claim.claim_type }}</td><td><span class="status">{{ claim.status }}</span></td></tr>
+              <tbody><tr *ngFor="let claim of claims.slice(0,5)"><td>{{ claim.claim_id }}</td><td>{{ claim.customer_name }}</td><td>{{ claim.claim_type === 'Casualty' ? 'Commercial Casualty' : 'Property' }}</td><td><span class="status">{{ claim.status }}</span></td></tr>
                 <tr *ngIf="claims.length === 0"><td colspan="4" class="empty">No saved claims yet. Create your first FNOL.</td></tr></tbody>
             </table></div>
           </article>
@@ -54,7 +54,7 @@
       <ng-container *ngIf="activePage === 'Claims'">
         <section class="panel filters">
           <input aria-label="Search claims" placeholder="Search claim ID, customer or policy…" [(ngModel)]="searchTerm" (keyup.enter)="loadClaims()">
-          <select aria-label="Filter claim type" [(ngModel)]="typeFilter" (change)="loadClaims()"><option value="">All claim types</option><option value="Property">Property</option><option value="Casualty">Casualty</option></select>
+          <select aria-label="Filter claim type" [(ngModel)]="typeFilter" (change)="loadClaims()"><option value="">All claim types</option><option value="Property">Property</option><option value="Casualty">Commercial Casualty</option></select>
           <select aria-label="Filter status" [(ngModel)]="statusFilter" (change)="loadClaims()"><option value="">All statuses</option><option *ngFor="let status of statuses" [value]="status">{{ status }}</option></select>
           <button class="secondary-action" (click)="loadClaims()">Search</button>
         </section>
@@ -72,7 +72,7 @@
 
       <ng-container *ngIf="activePage === 'New FNOL'">
         <section class="panel form-panel">
-          <div class="panel-heading"><div><h2>First Notice of Loss (FNOL)</h2><p class="muted">Register a new Property or Casualty claim.</p></div><span class="required-note">* Required fields</span></div>
+          <div class="panel-heading"><div><h2>First Notice of Loss (FNOL)</h2><p class="muted">Register any Property claim or a Commercial Casualty claim.</p></div><span class="required-note">* Required fields</span></div>
           <form (ngSubmit)="submitFnol()" #fnolForm="ngForm">
             <div class="form-grid">
               <label>Customer name *<input name="customer_name" [(ngModel)]="draft.customer_name" required minlength="2" maxlength="120" placeholder="Enter customer name"></label>
@@ -116,7 +116,7 @@
 
       <ng-container *ngIf="activePage === 'AI Damage Analysis'">
         <section class="panel form-panel damage-panel">
-          <div class="panel-heading"><div><h2>AI-assisted damage analysis</h2><p class="muted">Upload a property or casualty damage image for preliminary visual observations.</p></div></div>
+          <div class="panel-heading"><div><h2>AI-assisted damage analysis</h2><p class="muted">Upload a Property or Commercial Casualty damage image for preliminary visual observations.</p></div></div>
           <div class="damage-disclaimer">AI findings are indicative only. They do not establish coverage, liability, causation, repair costs or claim outcomes. An authorised adjuster must verify every finding.</div>
           <div class="form-grid damage-inputs">
             <label class="full">Related Claim ID (optional)
