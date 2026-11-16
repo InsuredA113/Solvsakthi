@@ -4,7 +4,7 @@
     <div class="brand"><div class="brand-mark">S</div><div><strong>Solv-In</strong><small>Smarter Claims. Faster Decisions.</small></div></div>
     <nav aria-label="Main navigation">
       <ng-container *ngFor="let item of navigation"><button *ngIf="(item !== 'Users' || isAdmin()) && (item !== 'AI Damage Analysis' || canAnalyseDamage()) && (item !== 'Tax Rules' || canManageTaxRules()) && (item !== 'Policy Coverage' || canViewPolicyCoverage())" (click)="selectPage(item)" [class.active]="activePage === item">
-        <span class="nav-icon">{{ item === 'Dashboard' ? '⌂' : item === 'Claims' ? '▤' : item === 'New FNOL' ? '+' : item === 'AI Damage Analysis' ? '◈' : item === 'Tax Rules' ? '⌁' : item === 'Policy Coverage' ? '▣' : item === 'Reports' ? '▥' : item === 'Users' ? '♙' : '⚙' }}</span>{{ item }}
+        <span class="nav-icon">{{ item === 'Dashboard' ? '⌂' : item === 'Claims' ? '▤' : item === 'New FNOL' ? '+' : item === 'Email FNOL' ? '✉' : item === 'AI Damage Analysis' ? '◈' : item === 'Tax Rules' ? '⌁' : item === 'Policy Coverage' ? '▣' : item === 'Reports' ? '▥' : item === 'Users' ? '♙' : '⚙' }}</span>{{ item }}
       </button></ng-container>
     </nav>
     <div class="sidebar-foot">P&C Claims Intelligence<br><span>Development preview</span></div>
@@ -67,6 +67,35 @@
               <td><select class="status-select" [ngModel]="claim.status" (ngModelChange)="changeStatus(claim, $event)" [attr.aria-label]="'Update status for ' + claim.claim_id"><option *ngFor="let status of statuses" [value]="status">{{ status }}</option></select></td>
             </tr><tr *ngIf="claims.length === 0"><td colspan="7" class="empty">No claims match your search. Create a new FNOL to get started.</td></tr></tbody>
           </table></div>
+        </section>
+      </ng-container>
+
+      <ng-container *ngIf="activePage === 'Email FNOL'">
+        <section class="panel claims-panel">
+          <div class="panel-heading"><div><h2>Incoming claim emails</h2><p class="muted">Email messages are stored as intake drafts. Verify classification and details before creating a claim.</p></div><button class="secondary-action" (click)="loadEmailIntake()">Refresh</button></div>
+          <div class="damage-disclaimer">Integration-ready intake API: a configured mail connector must securely forward messages to Solv-In. Gmail or Microsoft mailbox OAuth/webhook credentials are not configured in this development build.</div>
+          <p class="muted" *ngIf="emailIntakeBusy">Loading email intake…</p>
+          <div class="table-scroll" *ngIf="!emailIntakeBusy">
+            <table><thead><tr><th>Received</th><th>Sender / subject</th><th>Suggested classification</th><th>Status</th><th>Missing details</th><th>Actions</th></tr></thead>
+              <tbody><tr *ngFor="let item of emailIntakeItems">
+                <td>{{ item.received_at | date:'medium' }}</td>
+                <td><b>{{ item.sender_email }}</b><br>{{ item.subject || '(No subject)' }}</td>
+                <td>{{ item.confirmed_claim_type || item.suggested_claim_type }}<small class="muted">{{ item.classification_reason }}</small></td>
+                <td><span class="status">{{ item.review_status }}</span></td>
+                <td>{{ item.missing_fields.length ? item.missing_fields.join(', ') : 'None detected' }}</td>
+                <td>
+                  <div class="form-actions" *ngIf="item.review_status === 'Needs Review'">
+                    <button class="secondary-action" *ngIf="item.suggested_claim_type === 'Property' || item.suggested_claim_type === 'Unclassified'" (click)="reviewEmailIntake(item, 'Property', 'Reviewed')">Confirm Property</button>
+                    <button class="secondary-action" *ngIf="item.suggested_claim_type === 'Commercial Casualty' || item.suggested_claim_type === 'Unclassified'" (click)="reviewEmailIntake(item, 'Commercial Casualty', 'Reviewed')">Confirm Commercial Casualty</button>
+                    <button class="text-button" (click)="reviewEmailIntake(item, null, 'Rejected')">Reject</button>
+                  </div>
+                  <button class="primary-action" *ngIf="item.review_status === 'Reviewed'" (click)="prepareFnolFromEmail(item)">Review details &amp; prepare FNOL</button>
+                  <span class="muted" *ngIf="item.review_status === 'Out of Scope'">Outside Solv-In scope</span>
+                  <span class="muted" *ngIf="item.review_status === 'Converted'">Created {{ item.claim_id }}</span>
+                </td>
+              </tr><tr *ngIf="emailIntakeItems.length === 0"><td colspan="6" class="empty">No incoming email records yet. Connect a mail provider or post a test email to the intake API.</td></tr></tbody>
+            </table>
+          </div>
         </section>
       </ng-container>
 
