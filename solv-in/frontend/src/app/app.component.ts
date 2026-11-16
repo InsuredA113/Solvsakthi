@@ -21,7 +21,7 @@ interface DamageAssessment {
   review_history?: { status: string; notes: string; reviewed_at: string; reviewed_by: string; reviewer_role: string }[];
 }
 interface FinancialEstimate { estimate_id: string; claim_id: string; currency: string; gross_repair_cost: string; depreciation: string; net_repair_cost: string; total_fees_and_charges: string; total_tax: string; interest: { amount: string }; deductible: string; total_before_deductible: string; preliminary_net_estimate: string; status: string; created_at: string; pricing_source: string; state_or_jurisdiction: string; taxes: any[]; line_items: any[]; tax_mode?: string; tax_profile_status?: string; tax_rule_warning?: string | null; tax_rule_ids?: string[]; review_status?: string; review_history?: any[]; }
-interface ClaimDraft {
+interface EmailIntakeItem { intake_id: string; sender_email: string; subject: string; received_at: string; suggested_claim_type: string; confirmed_claim_type?: string; classification_reason: string; missing_fields: string[]; review_status: string; extracted_fields: Record<string, string | null>; claim_id?: string; }\ninterface ClaimDraft {
   customer_name: string; email: string; phone: string; policy_number: string;
   claim_type: 'Property' | 'Casualty'; property_occupancy: string | null;
   casualty_segment: 'Commercial' | null; business_name: string; industry: string;
@@ -91,14 +91,14 @@ export class AppComponent implements OnInit {
   pendingClaims = 0;
   closedClaims = 0;
   unclassifiedLegacyCasualtyClaims = 0;
-  analyticsData: any = null;
+  analyticsData: any = null;\n  emailIntakeItems: EmailIntakeItem[] = [];\n  emailIntakeBusy = false;\n  selectedEmailIntakeId = '';
   analyticsBusy = false;
   analyticsFromDate = '';
   analyticsToDate = '';
   analyticsCountry = '';
   analyticsCurrency = '';
   analyticsPortfolio = 'All';
-  readonly navigation = ['Dashboard', 'Claims', 'New FNOL', 'AI Damage Analysis', 'Policy Coverage', 'Financial Estimate', 'Tax Rules', 'Reports', 'Users', 'Settings'];
+  readonly navigation = ['Dashboard', 'Claims', 'Email FNOL', 'New FNOL', 'AI Damage Analysis', 'Policy Coverage', 'Financial Estimate', 'Tax Rules', 'Reports', 'Users', 'Settings'];
   readonly statuses = ['FNOL Received', 'Under Review', 'Investigation', 'Assessment', 'Pending Approval', 'Approved', 'Closed'];
   draft: ClaimDraft = this.emptyDraft();
 
@@ -369,7 +369,7 @@ export class AppComponent implements OnInit {
     this.activePage = page;
     this.errorMessage = '';
     this.successMessage = '';
-    if (page === 'Claims') this.loadClaims();
+    if (page === 'Claims') this.loadClaims();\n    if (page === 'Email FNOL') this.loadEmailIntake();
     if (page === 'AI Damage Analysis' && this.damageClaimId.trim()) this.loadDamageAssessments();
     if (page === 'Users') this.loadUsers();
     if (page === 'Tax Rules' && this.canManageTaxRules()) this.loadTaxRules();
@@ -450,7 +450,7 @@ export class AppComponent implements OnInit {
       return;
     }
     this.savingClaim = true;
-    this.http.post<Claim>(`${environment.apiBaseUrl}/claims`, this.draft, { headers: this.authHeaders() }).subscribe({
+    const url = this.selectedEmailIntakeId\n      ? `${environment.apiBaseUrl}/email-intake/${encodeURIComponent(this.selectedEmailIntakeId)}/create-claim`\n      : `${environment.apiBaseUrl}/claims`;\n    this.http.post<Claim>(url, this.draft, { headers: this.authHeaders() }).subscribe({
       next: claim => {
         this.savingClaim = false;
         this.successMessage = `Claim ${claim.claim_id} was created successfully.`;
@@ -460,6 +460,64 @@ export class AppComponent implements OnInit {
       },
       error: error => { this.savingClaim = false; this.handleApiError(error); }
     });
+  }
+
+
+  loadEmailIntake(): void {
+    this.emailIntakeBusy = true;
+    this.http.get<{items: EmailIntakeItem[]; count: number}>(`${environment.apiBaseUrl}/email-intake`, { headers: this.authHeaders() }).subscribe({
+      next: result => { this.emailIntakeItems = result.items; this.emailIntakeBusy = false; },
+      error: error => { this.emailIntakeBusy = false; this.handleApiError(error); }
+    });
+  }
+
+  reviewEmailIntake(item: EmailIntakeItem, confirmedType: 'Property' | 'Commercial Casualty' | null, status: 'Reviewed' | 'Rejected'): void {
+    if (status === 'Reviewed' && !confirmedType) {
+      this.errorMessage = 'Confirm whether this is a Property or Commercial Casualty claim.';
+      return;
+    }
+    const notes = status === 'Rejected' ? window.prompt('Enter the reason for rejecting this email intake:') : '';
+    if (status === 'Rejected' && !notes?.trim()) return;
+    this.http.patch<EmailIntakeItem>(`${environment.apiBaseUrl}/email-intake/${encodeURIComponent(item.intake_id)}/review`,
+      { status, notes: notes || '', confirmed_claim_type: confirmedType },
+      { headers: this.authHeaders() }).subscribe({
+        next: () => { this.successMessage = `Email intake ${status.toLowerCase()}.`; this.loadEmailIntake(); },
+        error: error => this.handleApiError(error)
+      });
+  }
+
+  prepareFnolFromEmail(item: EmailIntakeItem): void {
+    if (item.review_status !== 'Reviewed') {
+      this.errorMessage = 'Review and confirm the email classification before preparing an FNOL.';
+      return;
+    }
+    const f = item.extracted_fields || {};
+    const type = item.confirmed_claim_type || item.suggested_claim_type;
+    const commercial = type === 'Commercial Casualty';
+    this.draft = {
+      customer_name: f['customer_name'] || '',
+      email: f['email'] || item.sender_email || '',
+      phone: f['phone'] || '',
+      policy_number: f['policy_number'] || '',
+      claim_type: commercial ? 'Casualty' : 'Property',
+      property_occupancy: commercial ? null : 'Residential',
+      casualty_segment: commercial ? 'Commercial' : null,
+      business_name: f['business_name'] || '',
+      industry: f['industry'] || '',
+      commercial_liability_type: commercial ? (f['commercial_liability_type'] || 'Commercial General Liability') : null,
+      incident_date: f['incident_date'] || '',
+      incident_description: f['incident_description'] || '',
+      loss_location: f['loss_location'] || '',
+      country_code: (f['country_code'] || '').toUpperCase(),
+      region: '',
+      locality: '',
+      postal_code: '',
+      estimated_loss: f['estimated_loss'] && !isNaN(Number(f['estimated_loss'])) ? Number(f['estimated_loss']) : null,
+      currency: (f['currency'] || '').toUpperCase()
+    };
+    this.selectedEmailIntakeId = item.intake_id;
+    this.selectPage('New FNOL');
+    this.successMessage = 'Extracted details copied into FNOL. Verify and complete every required field before creating the claim.';
   }
 
   changeStatus(claim: Claim, status: string): void {
