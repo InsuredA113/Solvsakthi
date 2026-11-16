@@ -98,3 +98,14 @@ The current implementation grants claim read access to operational roles, claim 
 4. Sign in, open **AI Damage Analysis**, select an image, optionally enter a Claim ID, and run the analysis.
 
 Never commit the API key or upload real policyholder evidence to an unapproved environment. This remains a development feature and requires privacy, security, model-quality and human-review testing before production use.
+
+
+## Phase 5 – Claim-linked assessment review workflow
+
+- Retrieve all saved AI damage assessments using an existing Claim ID.
+- Keep the assessment status separate from the overall claim status.
+- Record review history with reviewer email, role, timestamp, decision and notes.
+- Adjusters and surveyors can mark an assessment reviewed or request more evidence.
+- Claims managers, insurer administrators and authorised Approvers can approve or reject the assessment; notes are mandatory for a rejection or evidence request.
+- This approval applies only to the AI assessment record. It does not approve, deny or settle the insurance claim.
+- The Gemini API key remains optional for development of the review workflow; image analysis itself requires the key.
