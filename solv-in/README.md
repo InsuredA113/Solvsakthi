@@ -109,3 +109,19 @@ Never commit the API key or upload real policyholder evidence to an unapproved e
 - Claims managers, insurer administrators and authorised Approvers can approve or reject the assessment; notes are mandatory for a rejection or evidence request.
 - This approval applies only to the AI assessment record. It does not approve, deny or settle the insurance claim.
 - The Gemini API key remains optional for development of the review workflow; image analysis itself requires the key.
+
+
+## Phase 6 – Claims financial calculation engine
+
+- Calculate repair line items in Python using `Decimal` arithmetic and half-up rounding to two decimal places.
+- Capture quantity, unit, verified unit rate, taxable status and depreciation for each repair item.
+- Support multiple configurable tax components (state, local or other jurisdictions), each with its own rate, tax base and authority reference. Tax rates are entered from a verified schedule; the application does not assume a universal state tax rate.
+- Support documented fees/other charges, policy deductibles and optional simple interest on actual days/365.
+- Interest is excluded by default. To include it, the user must explicitly enable it and supply the rate, principal, day count and policy/legal authority reference.
+- Require a pricing source and effective date; estimates are linked to a Claim ID and saved in MongoDB `financial_estimates`.
+- The estimate is marked **Preliminary – Pending Review**. It does not determine coverage, liability, claim approval or settlement.
+- API: `POST /api/claims/{claim_id}/financial-estimates` and `GET /api/claims/{claim_id}/financial-estimates`.
+- Run calculation tests from `solv-in/backend` with `pytest`.
+
+For India, GST/CGST/SGST/IGST or any other tax treatment must be configured only after confirming the applicable supply, place-of-supply, taxable component, registration and current legal schedule. State of loss alone does not establish the correct tax treatment. For other countries, configure the relevant state/province/local tax components similarly. This tool is a calculation framework, not a tax-law engine.
+
