@@ -428,6 +428,23 @@
           </article>
         </section>
 
+        <section class="bottom-grid" *ngIf="analyticsData">
+          <article class="panel claims-panel">
+            <div class="panel-heading"><h2>Claims by line</h2></div>
+            <div class="table-scroll"><table><thead><tr><th>Property occupancy / commercial liability line</th><th>Claims</th></tr></thead><tbody>
+              <tr *ngFor="let row of analyticsData.by_claim_line"><td>{{ row.claim_line }}</td><td>{{ row.claim_count | number }}</td></tr>
+              <tr *ngIf="analyticsData.by_claim_line.length === 0"><td colspan="2" class="empty">No matching claims.</td></tr>
+            </tbody></table></div>
+          </article>
+          <article class="panel claims-panel">
+            <div class="panel-heading"><h2>Commercial casualty by industry</h2></div>
+            <div class="table-scroll"><table><thead><tr><th>Industry</th><th>Claims</th></tr></thead><tbody>
+              <tr *ngFor="let row of analyticsData.by_industry"><td>{{ row.industry }}</td><td>{{ row.claim_count | number }}</td></tr>
+              <tr *ngIf="analyticsData.by_industry.length === 0"><td colspan="2" class="empty">No commercial casualty claims.</td></tr>
+            </tbody></table></div>
+          </article>
+        </section>
+
         <section class="panel claims-panel" *ngIf="analyticsData">
           <div class="panel-heading"><h2>Reported exposure by currency</h2><span class="subtle">No cross-currency totals</span></div>
           <div class="table-scroll"><table><thead><tr><th>Currency</th><th>Claims</th><th>Reported estimated loss</th></tr></thead><tbody>
