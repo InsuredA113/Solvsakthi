@@ -167,6 +167,7 @@
             <div class="full"><h3>State / local tax (optional)</h3><p class="muted">Only enter a rate after verifying the current rule for the loss location and taxable item.</p></div>
             <label>Tax name<input name="tax_name" [(ngModel)]="estimateDraft.tax_name" placeholder="State tax / GST component"></label>
             <label>Tax rate (%)<input type="number" min="0" max="100" step="0.0001" name="tax_rate" [(ngModel)]="estimateDraft.tax_rate"></label>
+            <label>Taxable base<select name="tax_basis" [(ngModel)]="estimateDraft.tax_basis"><option value="repair_subtotal">Gross repair subtotal</option><option value="depreciated_repair_subtotal">After depreciation</option><option value="fees">Taxable fees only</option></select></label>
             <label>Tax jurisdiction<input name="tax_jurisdiction" [(ngModel)]="estimateDraft.tax_jurisdiction" placeholder="State / local authority"></label>
             <label>Tax authority / rate reference<input name="tax_authority" [(ngModel)]="estimateDraft.tax_authority" placeholder="Rule, notification or approved rate schedule"></label>
             <div class="full"><h3>Other claim charges (optional)</h3></div>
