@@ -163,3 +163,22 @@ The claim lookup endpoint `GET /api/claims/{claim_id}/applicable-tax-rules?tax_p
 - API: the existing `POST /api/claims/{claim_id}/financial-estimates` endpoint applies verified registry rules automatically by default and stores rule snapshots with the result.
 
 Automatic tax application is limited to tax components and taxable bases represented by the configured rule model. It is not a worldwide tax-compliance engine; exemptions, thresholds, tax-inclusive pricing, reverse charge, special insurance taxes and local filing/reporting obligations require separately verified jurisdiction-specific logic.
+
+
+## Phase 9 – Policy registry and preliminary coverage screening
+
+- Workspace administrators can register policy records with policy number, insured name, Property/Casualty scope, country, currency, effective dates, per-occurrence and aggregate limits, aggregate usage, deductible, configured covered/excluded loss categories, endorsements and a policy wording reference.
+- Claims staff can run a preliminary coverage screening against the policy number already recorded on a claim.
+- The deterministic Python rules compare claim type, country, currency, incident date, configured loss categories, per-occurrence limit, aggregate remaining limit and deductible.
+- Each screening result is saved against the Claim ID with the policy-term snapshot used for that assessment.
+- Results are labelled **Potentially Covered**, **Potentially Excluded**, **Needs Manual Review** or **Policy Not Found**. These are screening labels only, not binding coverage decisions.
+- APIs: `POST /api/policies`, `GET /api/policies`, `POST /api/claims/{claim_id}/coverage-assessments` and `GET /api/claims/{claim_id}/coverage-assessments`.
+- The Angular **Policy Coverage** workspace includes policy registration for administrators, claim screening, and saved assessment history.
+
+### Phase 9 limitations and controls
+
+- Policy terms must be entered from approved policy schedules and endorsements. The engine does not interpret full policy wording, exclusions, conditions, sublimits, waiting periods, concurrent causes, contribution, salvage, recovery or jurisdiction-specific insurance law.
+- Aggregate usage is a supplied policy field; the current screening workflow does not reserve or decrement aggregate limits when an assessment is created.
+- Policy records are currently scoped to the shared development workspace. Insurer-level tenant isolation and duplicate policy-number handling across separate insurers must be implemented before multi-insurer production use.
+- The indicative net amount is a preliminary arithmetic illustration only. It is not an approved reserve, offer, payment or settlement.
+- All results require qualified human review. No automatic coverage approval or denial is performed.
