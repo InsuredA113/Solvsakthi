@@ -19,12 +19,14 @@ from .models import ClaimCreate, ClaimStatusUpdate
 from .claims_analytics import build_claims_analytics, is_in_scope_claim, safe_csv_cell
 from .user_models import LoginRequest, UserCreate
 from .email_intake import EmailIntakeCreate, EmailIntakeReview, extract_email_intake
+from .email_connector_routes import router as email_connector_router
 
 app = FastAPI(
     title="Solv-In API",
     description="Solv-In Property & Casualty claims platform API",
     version="0.3.0"
 )
+app.include_router(email_connector_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
