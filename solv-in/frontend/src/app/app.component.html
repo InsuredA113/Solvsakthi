@@ -1,10 +1,11 @@
+<ng-container *ngIf="isAuthenticated; else signInView">
 <div class="shell">
   <aside class="sidebar">
     <div class="brand"><div class="brand-mark">S</div><div><strong>Solv-In</strong><small>Smarter Claims. Faster Decisions.</small></div></div>
     <nav aria-label="Main navigation">
-      <button *ngFor="let item of navigation" (click)="selectPage(item)" [class.active]="activePage === item">
+      <ng-container *ngFor="let item of navigation"><button *ngIf="item !== 'Users' || isAdmin()" (click)="selectPage(item)" [class.active]="activePage === item">
         <span class="nav-icon">{{ item === 'Dashboard' ? '⌂' : item === 'Claims' ? '▤' : item === 'New FNOL' ? '+' : item === 'Reports' ? '▥' : '⚙' }}</span>{{ item }}
-      </button>
+      </button></ng-container>
     </nav>
     <div class="sidebar-foot">P&C Claims Intelligence<br><span>Development preview</span></div>
   </aside>
@@ -12,7 +13,7 @@
   <main class="main">
     <header class="topbar">
       <div class="topbar-title">Claims intelligence workspace</div>
-      <div class="profile"><span class="avatar">SA</span><span><b>Solv-In Admin</b><small>Development account</small></span></div>
+      <div class="profile"><span class="avatar">{{ currentUser?.full_name?.slice(0, 1) }}</span><span><b>{{ currentUser?.full_name }}</b><small>{{ currentUser?.role }}</small></span><button class="logout-button" (click)="logout()">Sign out</button></div>
     </header>
 
     <section class="content">
@@ -96,7 +97,48 @@
         <section class="panel placeholder"><div class="placeholder-icon">⚙</div><h2>Workspace settings</h2><p>Authentication, role permissions and insurer-level tenant configuration will be implemented before production use.</p></section>
       </ng-container>
 
+      <ng-container *ngIf="activePage === 'Users' && isAdmin()">
+        <section class="panel form-panel">
+          <div class="panel-heading"><div><h2>Create a workspace user</h2><p class="muted">Only authorised administrators can add users and assign roles.</p></div></div>
+          <form (ngSubmit)="createUser()">
+            <div class="form-grid">
+              <label>Full name *<input name="new_full_name" [(ngModel)]="newUser.full_name" required minlength="2" maxlength="120" placeholder="Full name"></label>
+              <label>Email address *<input type="email" name="new_email" [(ngModel)]="newUser.email" required placeholder="user@company.com"></label>
+              <label>Temporary password *<input type="password" name="new_password" [(ngModel)]="newUser.password" required minlength="12" placeholder="At least 12 characters with letters and numbers"></label>
+              <label>Role *<select name="new_role" [(ngModel)]="newUser.role"><option *ngFor="let role of roles" [value]="role">{{ role }}</option></select></label>
+            </div>
+            <div class="form-actions"><span class="muted">Password reset workflow is planned for a later phase.</span><button class="primary-action" type="submit" [disabled]="userBusy">{{ userBusy ? 'Creating…' : 'Create user' }}</button></div>
+          </form>
+        </section>
+        <section class="panel claims-panel" style="margin-top:14px">
+          <div class="panel-heading"><h2>Workspace users</h2><span class="subtle">{{ users.length }} accounts</span></div>
+          <div class="table-scroll"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Account status</th></tr></thead>
+            <tbody><tr *ngFor="let account of users"><td>{{ account.full_name }}</td><td>{{ account.email }}</td><td>{{ account.role }}</td><td><span class="status">{{ account.is_active ? 'Active' : 'Inactive' }}</span></td></tr>
+              <tr *ngIf="users.length === 0"><td colspan="4" class="empty">No user accounts found.</td></tr></tbody></table></div>
+        </section>
+      </ng-container>
+
       <footer class="footer"><span>© 2026 Solv-In · Development build</span><span>{{ apiStatus }}</span></footer>
     </section>
   </main>
 </div>
+</ng-container>
+
+<ng-template #signInView>
+  <main class="login-screen">
+    <section class="login-card">
+      <div class="login-brand"><div class="brand-mark">S</div><div><strong>Solv-In</strong><small>Smarter Claims. Faster Decisions.</small></div></div>
+      <p class="eyebrow">SECURE WORKSPACE</p>
+      <h1>Sign in to Solv-In</h1>
+      <p class="muted login-description">Access your Property &amp; Casualty claims workspace using your assigned account.</p>
+      <div class="alert error" *ngIf="errorMessage">{{ errorMessage }}</div>
+      <form (ngSubmit)="login()">
+        <label>Email address<input type="email" name="login_email" [(ngModel)]="loginEmail" required autocomplete="username" placeholder="you@company.com"></label>
+        <label>Password<input type="password" name="login_password" [(ngModel)]="loginPassword" required autocomplete="current-password" placeholder="Enter your password"></label>
+        <button class="primary-action login-submit" type="submit" [disabled]="loginBusy">{{ loginBusy ? 'Signing in…' : 'Sign in' }}</button>
+      </form>
+      <p class="login-foot">Access is provisioned by your Solv-In administrator.</p>
+      <p class="login-api">{{ apiStatus }}</p>
+    </section>
+  </main>
+</ng-template>
