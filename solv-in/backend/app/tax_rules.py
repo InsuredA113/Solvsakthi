@@ -14,6 +14,7 @@ class TaxRuleCreate(BaseModel):
     tax_name: str = Field(min_length=2, max_length=100)
     tax_type: str = Field(min_length=2, max_length=50)
     rate_percent: Decimal = Field(ge=Decimal("0"), le=Decimal("100"), max_digits=7, decimal_places=4)
+    calculation_order: int = Field(default=100, ge=0, le=10000)
     applies_to: Literal["repair_subtotal", "depreciated_repair_subtotal", "fees", "repair_and_fees"] = "depreciated_repair_subtotal"
     compound_on_prior_taxes: bool = False
     tax_point_type: str = Field(default="Tax point date", min_length=2, max_length=80)
@@ -89,4 +90,5 @@ def select_applicable_tax_rules(rules: list[dict], *, country_code: str, currenc
             ambiguous.append(str(group[0].get("tax_name", name)))
         else:
             selected.append(best[0])
+    selected.sort(key=lambda rule: (rule.get("calculation_order", 100), str(rule.get("tax_name", "")).casefold()))
     return selected, ambiguous
