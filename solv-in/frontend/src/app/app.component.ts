@@ -7,7 +7,9 @@ import { environment } from '../environments/environment';
 interface User { full_name: string; email: string; role: string; is_active?: boolean; }
 interface Claim {
   claim_id: string; customer_name: string; email?: string; phone?: string;
-  policy_number: string; claim_type: 'Property' | 'Casualty'; incident_date: string;
+  policy_number: string; claim_type: 'Property' | 'Casualty'; property_occupancy?: string | null;
+  casualty_segment?: 'Commercial' | null; business_name?: string | null; industry?: string | null;
+  commercial_liability_type?: string | null; incident_date: string;
   incident_description: string; loss_location: string; country_code: string; region?: string; locality?: string; postal_code?: string; estimated_loss?: number | null;
   currency: string; status: string; created_at?: string; updated_at?: string;
 }
@@ -21,7 +23,9 @@ interface DamageAssessment {
 interface FinancialEstimate { estimate_id: string; claim_id: string; currency: string; gross_repair_cost: string; depreciation: string; net_repair_cost: string; total_fees_and_charges: string; total_tax: string; interest: { amount: string }; deductible: string; total_before_deductible: string; preliminary_net_estimate: string; status: string; created_at: string; pricing_source: string; state_or_jurisdiction: string; taxes: any[]; line_items: any[]; tax_mode?: string; tax_profile_status?: string; tax_rule_warning?: string | null; tax_rule_ids?: string[]; review_status?: string; review_history?: any[]; }
 interface ClaimDraft {
   customer_name: string; email: string; phone: string; policy_number: string;
-  claim_type: 'Property' | 'Casualty'; incident_date: string; incident_description: string;
+  claim_type: 'Property' | 'Casualty'; property_occupancy: string | null;
+  casualty_segment: 'Commercial' | null; business_name: string; industry: string;
+  commercial_liability_type: string | null; incident_date: string; incident_description: string;
   loss_location: string; country_code: string; region: string; locality: string; postal_code: string; estimated_loss: number | null; currency: string;
 }
 
@@ -86,6 +90,14 @@ export class AppComponent implements OnInit {
   investigatingClaims = 0;
   pendingClaims = 0;
   closedClaims = 0;
+  unclassifiedLegacyCasualtyClaims = 0;
+  analyticsData: any = null;
+  analyticsBusy = false;
+  analyticsFromDate = '';
+  analyticsToDate = '';
+  analyticsCountry = '';
+  analyticsCurrency = '';
+  analyticsPortfolio = 'All';
   readonly navigation = ['Dashboard', 'Claims', 'New FNOL', 'AI Damage Analysis', 'Policy Coverage', 'Financial Estimate', 'Tax Rules', 'Reports', 'Users', 'Settings'];
   readonly statuses = ['FNOL Received', 'Under Review', 'Investigation', 'Assessment', 'Pending Approval', 'Approved', 'Closed'];
   draft: ClaimDraft = this.emptyDraft();
@@ -329,9 +341,27 @@ export class AppComponent implements OnInit {
   emptyDraft(): ClaimDraft {
     return {
       customer_name: '', email: '', phone: '', policy_number: '',
-      claim_type: 'Property', incident_date: '', incident_description: '',
+      claim_type: 'Property', property_occupancy: 'Residential', casualty_segment: null,
+      business_name: '', industry: '', commercial_liability_type: null,
+      incident_date: '', incident_description: '',
       loss_location: '', country_code: '', region: '', locality: '', postal_code: '', estimated_loss: null, currency: ''
     };
+  }
+
+  onClaimTypeChange(): void {
+    if (this.draft.claim_type === 'Casualty') {
+      this.draft.property_occupancy = null;
+      this.draft.casualty_segment = 'Commercial';
+      this.draft.business_name = '';
+      this.draft.industry = '';
+      this.draft.commercial_liability_type = 'Commercial General Liability';
+    } else {
+      this.draft.property_occupancy = 'Residential';
+      this.draft.casualty_segment = null;
+      this.draft.business_name = '';
+      this.draft.industry = '';
+      this.draft.commercial_liability_type = null;
+    }
   }
 
   selectPage(page: string): void {
@@ -344,6 +374,7 @@ export class AppComponent implements OnInit {
     if (page === 'Users') this.loadUsers();
     if (page === 'Tax Rules' && this.canManageTaxRules()) this.loadTaxRules();
     if (page === 'Policy Coverage') this.loadPolicies();
+    if (page === 'Reports') this.loadClaimsAnalytics();
   }
 
   loadDashboard(): void {
@@ -354,6 +385,43 @@ export class AppComponent implements OnInit {
         this.investigatingClaims = data['under_investigation'] ?? 0;
         this.pendingClaims = data['pending_approval'] ?? 0;
         this.closedClaims = data['settled_claims'] ?? 0;
+        this.unclassifiedLegacyCasualtyClaims = data['unclassified_legacy_casualty_claims'] ?? 0;
+      },
+      error: error => this.handleApiError(error)
+    });
+  }
+
+  loadClaimsAnalytics(): void {
+    this.analyticsBusy = true;
+    let params = new HttpParams().set('portfolio', this.analyticsPortfolio);
+    if (this.analyticsFromDate) params = params.set('from_date', this.analyticsFromDate);
+    if (this.analyticsToDate) params = params.set('to_date', this.analyticsToDate);
+    if (this.analyticsCountry.trim()) params = params.set('country_code', this.analyticsCountry.trim().toUpperCase());
+    if (this.analyticsCurrency.trim()) params = params.set('currency', this.analyticsCurrency.trim().toUpperCase());
+    this.http.get<any>(`${environment.apiBaseUrl}/reports/claims-analytics`, {
+      params, headers: this.authHeaders()
+    }).subscribe({
+      next: data => { this.analyticsData = data; this.analyticsBusy = false; },
+      error: error => { this.analyticsBusy = false; this.handleApiError(error); }
+    });
+  }
+
+  exportClaimsAnalytics(): void {
+    let params = new HttpParams().set('portfolio', this.analyticsPortfolio);
+    if (this.analyticsFromDate) params = params.set('from_date', this.analyticsFromDate);
+    if (this.analyticsToDate) params = params.set('to_date', this.analyticsToDate);
+    if (this.analyticsCountry.trim()) params = params.set('country_code', this.analyticsCountry.trim().toUpperCase());
+    if (this.analyticsCurrency.trim()) params = params.set('currency', this.analyticsCurrency.trim().toUpperCase());
+    this.http.get(`${environment.apiBaseUrl}/reports/claims-analytics.csv`, {
+      params, headers: this.authHeaders(), responseType: 'blob'
+    }).subscribe({
+      next: blob => {
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = 'solv-in-claims-analytics.csv';
+        anchor.click();
+        URL.revokeObjectURL(url);
       },
       error: error => this.handleApiError(error)
     });
@@ -376,7 +444,8 @@ export class AppComponent implements OnInit {
     this.successMessage = '';
     if (!this.draft.customer_name.trim() || !this.draft.policy_number.trim() ||
         !this.draft.incident_date || !this.draft.incident_description.trim() ||
-        !this.draft.loss_location.trim() || !this.draft.country_code.trim() || !/^[A-Z]{3}$/i.test(this.draft.currency.trim())) {
+        !this.draft.loss_location.trim() || !this.draft.country_code.trim() || !/^[A-Z]{3}$/i.test(this.draft.currency.trim()) ||
+        (this.draft.claim_type === 'Casualty' && (!this.draft.business_name.trim() || !this.draft.industry.trim() || !this.draft.commercial_liability_type))) {
       this.errorMessage = 'Complete all required fields before submitting the FNOL.';
       return;
     }
