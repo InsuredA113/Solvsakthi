@@ -20,18 +20,20 @@ def setting(name: str) -> str:
 
 
 def gmail_configured() -> bool:
-    return all(setting(key) for key in (
+    required = all(setting(key) for key in (
         "GMAIL_CLIENT_ID", "GMAIL_CLIENT_SECRET", "GMAIL_REFRESH_TOKEN",
         "GMAIL_MAILBOX", "GMAIL_PUBSUB_TOPIC", "GMAIL_PUBSUB_AUDIENCE",
         "GMAIL_PUBSUB_SERVICE_ACCOUNT",
     ))
+    return required and setting("GMAIL_PUBSUB_AUDIENCE").startswith("https://") and setting("GMAIL_PUBSUB_TOPIC").startswith("projects/")
 
 
 def microsoft_configured() -> bool:
-    return all(setting(key) for key in (
+    required = all(setting(key) for key in (
         "MS365_TENANT_ID", "MS365_CLIENT_ID", "MS365_CLIENT_SECRET",
         "MS365_MAILBOX", "MS365_NOTIFICATION_URL", "MS365_CLIENT_STATE",
     ))
+    return required and setting("MS365_NOTIFICATION_URL").startswith("https://") and len(setting("MS365_CLIENT_STATE")) >= 32
 
 
 def _decode_header(value: str | None) -> str:
