@@ -151,7 +151,7 @@ export class AppComponent implements OnInit {
       description: '', quantity: 1, unit: 'item', unit_rate: 0, depreciation_rate: 0, taxable: true,
       currency: '', currency_minor_units: 2, country_code: '', state_or_jurisdiction: '', region: '', locality: '', postal_code: '',
       loss_date: new Date().toISOString().slice(0, 10), tax_point_date: new Date().toISOString().slice(0, 10),
-      taxes: [], deductible: 0, fee_name: '', fee_amount: 0, interest_applicable: false,
+      taxes: [], charges: [], deductible: 0, interest_applicable: false,
       interest_rate: null, interest_principal: null, interest_days: null, interest_basis: 'simple_actual_365',
       interest_authority: '', pricing_source: '', pricing_effective_date: new Date().toISOString().slice(0, 10), notes: ''
     };
@@ -168,6 +168,15 @@ export class AppComponent implements OnInit {
 
   removeTaxComponent(index: number): void {
     this.estimateDraft.taxes.splice(index, 1);
+  }
+
+  addCharge(): void {
+    if (this.estimateDraft.charges.length >= 50) return;
+    this.estimateDraft.charges.push({ name: '', amount: 0, charge_type: 'fee', taxable: false, authority_reference: '' });
+  }
+
+  removeCharge(index: number): void {
+    this.estimateDraft.charges.splice(index, 1);
   }
 
   emptyDraft(): ClaimDraft {
@@ -277,7 +286,7 @@ export class AppComponent implements OnInit {
         ...tax, rate_percent: Number(tax.rate_percent), effective_from: tax.effective_from || null,
         effective_to: tax.effective_to || null
       })),
-      charges: Number(d.fee_amount) > 0 ? [{ name: d.fee_name || 'Other claim charge', amount: Number(d.fee_amount), charge_type: 'fee', taxable: false, authority_reference: '' }] : [],
+      charges: d.charges.filter((charge: any) => Number(charge.amount) > 0).map((charge: any) => ({ ...charge, amount: Number(charge.amount) })),
       deductible: Number(d.deductible || 0),
       interest: {
         applicable: !!d.interest_applicable,
