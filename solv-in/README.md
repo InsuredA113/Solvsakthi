@@ -210,3 +210,64 @@ Automatic tax application is limited to tax components and taxable bases represe
 - Preliminary estimate totals use only the latest saved estimate per claim to avoid double-counting multiple revisions.
 - Currency totals remain separate. No FX rates are sourced or assumed.
 - Legacy Casualty records without commercial classification are excluded and separately counted; do not bulk-classify them without policy/business evidence.
+
+
+## Phase 11 – Automated Email FNOL Intake (connector-ready)
+
+- Authenticated email-intake API accepts a normalized message from a future Gmail, Microsoft 365 or other approved mail connector.
+- Incoming messages are deduplicated by provider and provider message ID, then stored in MongoDB `email_intake`.
+- Conservative label-based extraction captures explicitly labelled details only. Classification suggestions are limited to Property, Commercial Casualty, Out of Scope or Unclassified.
+- Personal-lines casualty indicators are marked Out of Scope. Ambiguous messages remain Unclassified; an authorised reviewer must explicitly confirm Property or Commercial Casualty.
+- Reviewers can reject a message with a reason or confirm its supported claim classification. The Angular Email FNOL inbox copies extracted fields into the existing FNOL form for verification and completion.
+- Claim creation from an email intake requires the intake to be reviewed first, validates the normal ClaimCreate model and links the resulting claim to its source email intake record.
+- API routes: `POST /api/email-intake`, `GET /api/email-intake`, `GET /api/email-intake/{intake_id}`, `PATCH /api/email-intake/{intake_id}/review`, and `POST /api/email-intake/{intake_id}/create-claim`.
+- The intake API currently requires an authenticated operational user. It is a connector-ready ingestion endpoint, **not a live mailbox connection**. Gmail OAuth/Pub/Sub or Microsoft Graph subscription setup, mailbox credentials, provider webhook signature verification, retry/dead-letter handling and deployment configuration remain to be implemented before unattended email ingestion.
+- Email text is treated as untrusted input. Extraction is not AI interpretation and does not establish policy coverage, liability, fraud, causation or settlement. Human review is mandatory. Do not send real policyholder emails to an unapproved environment.
+
+
+## Phase 11 – Gmail and Microsoft 365 mailbox integrations
+
+Both provider integrations are implemented as optional, server-side connectors. They deliver new inbox messages to the same Email FNOL review queue; neither connector creates claims automatically.
+
+### Shared prerequisites
+
+- Deploy FastAPI at a stable, publicly reachable HTTPS URL. Provider webhooks cannot call localhost or a private development URL.
+- Use a dedicated claims mailbox or inbox. Every new message delivered from the configured inbox is captured as an intake item, including messages that may later be classified as Unclassified or Out of Scope.
+- Add credentials only to `solv-in/backend/.env`. Never put provider secrets in Angular, source control, screenshots or chat.
+- Restart the backend after changing environment variables.
+- Configure MongoDB backups, encryption, retention, least-privilege access and applicable privacy/legal controls before using real policyholder information.
+
+### Gmail / Google Workspace
+
+1. In Google Cloud, select the project associated with the Gmail API OAuth client and enable the Gmail API and Pub/Sub API.
+2. Create an OAuth client and obtain a refresh token for the dedicated mailbox with the `https://www.googleapis.com/auth/gmail.readonly` scope. Use Google's approved OAuth consent process; keep the refresh token private.
+3. Create a Pub/Sub topic in the same Google Cloud project used by the Gmail API integration. Grant the Gmail push service identity `gmail-api-push@system.gserviceaccount.com` permission to publish to that topic.
+4. Create a Pub/Sub push subscription targeting `https://YOUR_API_HOST/api/email-connectors/gmail/pubsub`. Configure authenticated push with an OIDC token from a dedicated service account. The token audience must exactly match `GMAIL_PUBSUB_AUDIENCE`; its verified service-account email must match `GMAIL_PUBSUB_SERVICE_ACCOUNT`.
+5. Set `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN`, `GMAIL_MAILBOX`, `GMAIL_PUBSUB_TOPIC`, `GMAIL_PUBSUB_AUDIENCE` and `GMAIL_PUBSUB_SERVICE_ACCOUNT` in backend `.env`.
+6. Sign in as a Super Administrator or Insurance Company Administrator, open **Email FNOL**, and select **Start / renew Gmail watch**.
+7. Gmail watch expires and must be renewed at least every seven days. Renew it regularly (recommended daily) using the Email FNOL connector control or an authorised operational schedule.
+
+The backend verifies the Pub/Sub OIDC token, checks the mailbox identity, reads Gmail history from a stored history cursor, fetches newly added inbox messages and stores them idempotently. If Gmail reports that a history cursor has expired, reinitialise the watch and investigate the missed interval before relying on the inbox queue.
+
+### Microsoft 365 / Exchange Online
+
+1. Register an application in Microsoft Entra ID for the Solv-In backend.
+2. Add Microsoft Graph **Application** permission `Mail.Read` and grant tenant admin consent. Delegated permission alone is not sufficient for this app-only connector.
+3. Restrict the application's mailbox access to the dedicated claims mailbox using the Exchange Online application RBAC / supported application access restriction controls for your tenant. Do not grant unrestricted mailbox access without an explicit security review.
+4. Create a client secret (or replace with certificate-based credentials for production). Set `MS365_TENANT_ID`, `MS365_CLIENT_ID`, `MS365_CLIENT_SECRET`, `MS365_MAILBOX`, `MS365_NOTIFICATION_URL` and a long random `MS365_CLIENT_STATE` in backend `.env`.
+5. Set `MS365_NOTIFICATION_URL` to `https://YOUR_API_HOST/api/email-connectors/microsoft365/notifications`. It must be publicly reachable over HTTPS.
+6. Sign in as a Super Administrator or Insurance Company Administrator, open **Email FNOL**, and select **Create / renew Microsoft subscription**.
+7. Graph message subscriptions expire. Renew them before the displayed expiry; the connector renews an existing subscription when possible and creates a new one if the previous subscription has expired.
+
+The backend handles Graph validation handshakes, checks the subscription ID and constant-time clientState match, retrieves each message through Microsoft Graph and stores it idempotently.
+
+### Connector API and safeguards
+
+- `GET /api/email-connectors/status` – authenticated, non-secret configuration and subscription status.
+- `POST /api/email-connectors/gmail/watch` – administrator starts or renews Gmail watch.
+- `POST /api/email-connectors/gmail/pubsub` – Google Pub/Sub OIDC-authenticated push endpoint.
+- `POST /api/email-connectors/microsoft365/subscribe` – administrator creates or renews a Graph subscription.
+- `GET/POST /api/email-connectors/microsoft365/notifications` – Graph validation and notification endpoint.
+- Provider messages are deduplicated by provider and message ID. Incoming mail only creates an Email FNOL intake record, never a claim.
+- Provider notification verification is not a substitute for production hardening. Add rate limiting, durable background processing/queueing, dead-letter and replay monitoring, webhook latency monitoring, credential rotation, alerting and tested subscription-renewal automation before production.
+- Email bodies and sender details are personal/confidential data. Apply data minimisation, encryption at rest/in transit, retention controls, access auditing and approved data-processing terms. Use synthetic test messages until the deployment is approved.

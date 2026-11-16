@@ -4,7 +4,7 @@
     <div class="brand"><div class="brand-mark">S</div><div><strong>Solv-In</strong><small>Smarter Claims. Faster Decisions.</small></div></div>
     <nav aria-label="Main navigation">
       <ng-container *ngFor="let item of navigation"><button *ngIf="(item !== 'Users' || isAdmin()) && (item !== 'AI Damage Analysis' || canAnalyseDamage()) && (item !== 'Tax Rules' || canManageTaxRules()) && (item !== 'Policy Coverage' || canViewPolicyCoverage())" (click)="selectPage(item)" [class.active]="activePage === item">
-        <span class="nav-icon">{{ item === 'Dashboard' ? '⌂' : item === 'Claims' ? '▤' : item === 'New FNOL' ? '+' : item === 'AI Damage Analysis' ? '◈' : item === 'Tax Rules' ? '⌁' : item === 'Policy Coverage' ? '▣' : item === 'Reports' ? '▥' : item === 'Users' ? '♙' : '⚙' }}</span>{{ item }}
+        <span class="nav-icon">{{ item === 'Dashboard' ? '⌂' : item === 'Claims' ? '▤' : item === 'New FNOL' ? '+' : item === 'Email FNOL' ? '✉' : item === 'AI Damage Analysis' ? '◈' : item === 'Tax Rules' ? '⌁' : item === 'Policy Coverage' ? '▣' : item === 'Reports' ? '▥' : item === 'Users' ? '♙' : '⚙' }}</span>{{ item }}
       </button></ng-container>
     </nav>
     <div class="sidebar-foot">P&C Claims Intelligence<br><span>Development preview</span></div>
@@ -70,6 +70,50 @@
         </section>
       </ng-container>
 
+      <ng-container *ngIf="activePage === 'Email FNOL'">
+        <section class="panel claims-panel">
+          <div class="panel-heading"><div><h2>Incoming claim emails</h2><p class="muted">Email messages are stored as intake drafts. Verify classification and details before creating a claim.</p></div><button class="secondary-action" (click)="loadEmailIntake()">Refresh</button></div>
+          <div class="panel-heading"><div><h3>Mailbox connections</h3><p class="muted">Connect Google Workspace and Microsoft 365. Credentials stay in the backend environment, never in the browser.</p></div><button class="secondary-action" (click)="loadEmailConnectorStatus()">Refresh status</button></div>
+          <div class="bottom-grid" *ngIf="emailConnectorStatus">
+            <article class="panel activity-panel">
+              <h3>Gmail / Google Workspace</h3>
+              <p class="status">{{ emailConnectorStatus.gmail.configured ? 'Credentials configured' : 'Credentials missing' }}</p>
+              <p class="muted">{{ emailConnectorStatus.gmail.watch_active ? 'Watch active until ' + (emailConnectorStatus.gmail.watch_expiration | date:'medium') : 'Gmail watch not started' }}</p>
+              <button class="primary-action" *ngIf="canManageEmailConnectors()" [disabled]="emailConnectorBusy || !emailConnectorStatus.gmail.configured" (click)="startGmailConnector()">Start / renew Gmail watch</button>
+            </article>
+            <article class="panel activity-panel">
+              <h3>Microsoft 365 / Outlook</h3>
+              <p class="status">{{ emailConnectorStatus.microsoft365.configured ? 'Credentials configured' : 'Credentials missing' }}</p>
+              <p class="muted">{{ emailConnectorStatus.microsoft365.subscription_active ? 'Subscription expires ' + (emailConnectorStatus.microsoft365.subscription_expiration | date:'medium') : 'Graph subscription not created' }}</p>
+              <button class="primary-action" *ngIf="canManageEmailConnectors()" [disabled]="emailConnectorBusy || !emailConnectorStatus.microsoft365.configured" (click)="startMicrosoftConnector()">Create / renew Microsoft subscription</button>
+            </article>
+          </div>
+          <div class="damage-disclaimer">Setup required: add provider credentials and webhook settings to solv-in/backend/.env, deploy the API at a public HTTPS address, then start each connector. See the Phase 11 setup guide in README.</div>
+          <p class="muted" *ngIf="emailIntakeBusy">Loading email intake…</p>
+          <div class="table-scroll" *ngIf="!emailIntakeBusy">
+            <table><thead><tr><th>Received</th><th>Sender / subject</th><th>Suggested classification</th><th>Status</th><th>Missing details</th><th>Actions</th></tr></thead>
+              <tbody><tr *ngFor="let item of emailIntakeItems">
+                <td>{{ item.received_at | date:'medium' }}</td>
+                <td><b>{{ item.sender_email }}</b><br>{{ item.subject || '(No subject)' }}</td>
+                <td>{{ item.confirmed_claim_type || item.suggested_claim_type }}<small class="muted">{{ item.classification_reason }}</small></td>
+                <td><span class="status">{{ item.review_status }}</span></td>
+                <td>{{ item.missing_fields.length ? item.missing_fields.join(', ') : 'None detected' }}<details><summary>Extracted fields</summary><pre>{{ item.extracted_fields | json }}</pre></details></td>
+                <td>
+                  <div class="form-actions" *ngIf="item.review_status === 'Needs Review'">
+                    <button class="secondary-action" *ngIf="item.suggested_claim_type === 'Property' || item.suggested_claim_type === 'Unclassified'" (click)="reviewEmailIntake(item, 'Property', 'Reviewed')">Confirm Property</button>
+                    <button class="secondary-action" *ngIf="item.suggested_claim_type === 'Commercial Casualty' || item.suggested_claim_type === 'Unclassified'" (click)="reviewEmailIntake(item, 'Commercial Casualty', 'Reviewed')">Confirm Commercial Casualty</button>
+                    <button class="text-button" (click)="reviewEmailIntake(item, null, 'Rejected')">Reject</button>
+                  </div>
+                  <button class="primary-action" *ngIf="item.review_status === 'Reviewed'" (click)="prepareFnolFromEmail(item)">Review details &amp; prepare FNOL</button>
+                  <span class="muted" *ngIf="item.review_status === 'Out of Scope'">Outside Solv-In scope</span>
+                  <span class="muted" *ngIf="item.review_status === 'Converted'">Created {{ item.claim_id }}</span>
+                </td>
+              </tr><tr *ngIf="emailIntakeItems.length === 0"><td colspan="6" class="empty">No incoming email records yet. Connect a mail provider or post a test email to the intake API.</td></tr></tbody>
+            </table>
+          </div>
+        </section>
+      </ng-container>
+
       <ng-container *ngIf="activePage === 'New FNOL'">
         <section class="panel form-panel">
           <div class="panel-heading"><div><h2>First Notice of Loss (FNOL)</h2><p class="muted">Register any Property claim or a Commercial Casualty claim.</p></div><span class="required-note">* Required fields</span></div>
@@ -83,7 +127,7 @@
               <label>Incident date *<input type="date" name="incident_date" [(ngModel)]="draft.incident_date" required></label>
               <label *ngIf="draft.claim_type === 'Property'">Property occupancy
                 <select name="property_occupancy" [(ngModel)]="draft.property_occupancy">
-                  <option value="Residential">Residential</option><option value="Commercial">Commercial</option>
+                  <option [ngValue]="null">Not specified</option><option value="Residential">Residential</option><option value="Commercial">Commercial</option>
                   <option value="Industrial">Industrial</option><option value="Mixed Use">Mixed Use</option><option value="Other">Other</option>
                 </select>
               </label>
@@ -93,7 +137,7 @@
               <label *ngIf="draft.claim_type === 'Casualty'">Business / insured entity name *<input name="business_name" [(ngModel)]="draft.business_name" required minlength="2" maxlength="160"></label>
               <label *ngIf="draft.claim_type === 'Casualty'">Industry / business sector *<input name="industry" [(ngModel)]="draft.industry" required minlength="2" maxlength="120" placeholder="e.g. Manufacturing, Retail, Construction"></label>
               <label *ngIf="draft.claim_type === 'Casualty'">Commercial liability line *<select name="commercial_liability_type" [(ngModel)]="draft.commercial_liability_type" required>
-                <option value="Commercial General Liability">Commercial General Liability</option>
+                <option [ngValue]="null">Select liability line</option><option value="Commercial General Liability">Commercial General Liability</option>
                 <option value="Professional Liability">Professional Liability</option>
                 <option value="Product Liability">Product Liability</option>
                 <option value="Employers Liability">Employers Liability</option>
