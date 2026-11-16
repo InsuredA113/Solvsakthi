@@ -63,3 +63,19 @@ def test_status_country_and_month_breakdowns_are_returned():
     }
     assert {x["country_code"]: x["claim_count"] for x in result["by_country"]} == {"IN": 2, "US": 1}
     assert result["by_month"] == [{"month": "2026-03", "claim_count": 2}, {"month": "2026-04", "claim_count": 1}]
+
+
+def test_claim_line_breakdown_separates_property_occupancy_and_commercial_liability():
+    result = build_claims_analytics([
+        {"claim_id": "P1", "claim_type": "Property", "property_occupancy": "Residential"},
+        {"claim_id": "P2", "claim_type": "Property", "property_occupancy": "Industrial"},
+        {"claim_id": "C1", "claim_type": "Casualty", "casualty_segment": "Commercial",
+         "commercial_liability_type": "Product Liability", "industry": "Manufacturing"}
+    ])
+    lines = {row["claim_line"]: row["claim_count"] for row in result["by_claim_line"]}
+    assert lines == {
+        "Property - Industrial": 1,
+        "Property - Residential": 1,
+        "Product Liability": 1
+    }
+    assert result["by_industry"] == [{"industry": "Manufacturing", "claim_count": 1}]
