@@ -62,7 +62,12 @@ export class AppComponent implements OnInit {
   estimateClaimId = '';
   estimateBusy = false;
   financialEstimate: FinancialEstimate | null = null;
-  financialEstimates: FinancialEstimate[] = [];\n  taxRules: any[] = [];\n  taxRuleDraft: any = this.emptyTaxRuleDraft();\n  taxRulesBusy = false;\n  taxRuleCountryFilter = '';\n  applicableTaxRules: any = null;
+  financialEstimates: FinancialEstimate[] = [];
+  taxRules: any[] = [];
+  taxRuleDraft: any = this.emptyTaxRuleDraft();
+  taxRulesBusy = false;
+  taxRuleCountryFilter = '';
+  applicableTaxRules: any = null;
   estimateDraft: any = this.emptyEstimateDraft();
   newUser = { full_name: '', email: '', password: '', role: 'Claims Manager' };
   totalClaims = 0;
@@ -146,7 +151,37 @@ export class AppComponent implements OnInit {
     return ['Super Administrator', 'Insurance Company Administrator', 'Claims Manager', 'Property Adjuster', 'Casualty Adjuster', 'Surveyor', 'Actuarial Analyst', 'Approver'].includes(this.currentUser?.role || '');
   }
 
-  emptyTaxRuleDraft(): any {\n    return { country_code: '', currency: '', admin_area: '', region: '', locality: '', tax_name: '', tax_type: 'Sales tax', rate_percent: 0, applies_to: 'depreciated_repair_subtotal', compound_on_prior_taxes: false, tax_point_type: 'Tax point date', effective_from: new Date().toISOString().slice(0, 10), effective_to: '', authority_name: '', authority_reference: '', source_url: '', notes: '' };\n  }\n\n  loadTaxRules(): void {\n    let params = new HttpParams();\n    if (this.taxRuleCountryFilter.trim()) params = params.set('country_code', this.taxRuleCountryFilter.trim().toUpperCase());\n    this.http.get<{items: any[]; count: number}>(\u0060${environment.apiBaseUrl}/tax-rules\u0060, { params, headers: this.authHeaders() }).subscribe({ next: result => this.taxRules = result.items, error: error => this.handleApiError(error) });\n  }\n\n  saveTaxRule(): void {\n    const d = this.taxRuleDraft;\n    if (!/^[A-Z]{2}$/i.test(d.country_code) || !/^[A-Z]{3}$/i.test(d.currency) || !d.tax_name.trim() || !d.effective_from || !d.authority_name.trim() || !d.authority_reference.trim()) { this.errorMessage = 'Enter valid country/currency codes, tax name, jurisdiction, effective date and official authority reference.'; return; }\n    this.taxRulesBusy = true; this.errorMessage = '';\n    const body = { ...d, country_code: d.country_code.toUpperCase(), currency: d.currency.toUpperCase(), effective_to: d.effective_to || null, source_url: d.source_url || null, rate_percent: Number(d.rate_percent) };\n    this.http.post<any>(\u0060${environment.apiBaseUrl}/tax-rules\u0060, body, { headers: this.authHeaders() }).subscribe({ next: () => { this.taxRulesBusy = false; this.successMessage = 'Tax rule saved as Draft. An authorised administrator must verify and activate it.'; this.taxRuleDraft = this.emptyTaxRuleDraft(); this.loadTaxRules(); }, error: error => { this.taxRulesBusy = false; this.handleApiError(error); } });\n  }\n\n  setTaxRuleStatus(rule: any, status: 'Active' | 'Inactive'): void {\n    const note = status === 'Active' ? 'Verified against the cited authority by authorised administrator.' : 'Deactivated by authorised administrator.';\n    this.http.patch<any>(\u0060${environment.apiBaseUrl}/tax-rules/${encodeURIComponent(rule.rule_id)}/status\u0060, { status, verification_note: note }, { headers: this.authHeaders() }).subscribe({ next: () => { this.successMessage = \u0060Tax rule ${status.toLowerCase()}.\u0060; this.loadTaxRules(); }, error: error => this.handleApiError(error) });\n  }\n\n  lookupApplicableTaxRules(): void {\n    const id = this.estimateClaimId.trim();\n    if (!id || !this.estimateDraft.tax_point_date) { this.errorMessage = 'Enter a Claim ID and tax point date.'; return; }\n    const params = new HttpParams().set('tax_point_date', this.estimateDraft.tax_point_date);\n    this.http.get<any>(\u0060${environment.apiBaseUrl}/claims/${encodeURIComponent(id)}/applicable-tax-rules\u0060, { params, headers: this.authHeaders() }).subscribe({ next: result => this.applicableTaxRules = result, error: error => this.handleApiError(error) });\n  }\n\n  emptyEstimateDraft(): any {
+  emptyTaxRuleDraft(): any {
+    return { country_code: '', currency: '', admin_area: '', region: '', locality: '', tax_name: '', tax_type: 'Sales tax', rate_percent: 0, applies_to: 'depreciated_repair_subtotal', compound_on_prior_taxes: false, tax_point_type: 'Tax point date', effective_from: new Date().toISOString().slice(0, 10), effective_to: '', authority_name: '', authority_reference: '', source_url: '', notes: '' };
+  }
+
+  loadTaxRules(): void {
+    let params = new HttpParams();
+    if (this.taxRuleCountryFilter.trim()) params = params.set('country_code', this.taxRuleCountryFilter.trim().toUpperCase());
+    this.http.get<{items: any[]; count: number}>(`${environment.apiBaseUrl}/tax-rules`, { params, headers: this.authHeaders() }).subscribe({ next: result => this.taxRules = result.items, error: error => this.handleApiError(error) });
+  }
+
+  saveTaxRule(): void {
+    const d = this.taxRuleDraft;
+    if (!/^[A-Z]{2}$/i.test(d.country_code) || !/^[A-Z]{3}$/i.test(d.currency) || !d.tax_name.trim() || !d.effective_from || !d.authority_name.trim() || !d.authority_reference.trim()) { this.errorMessage = 'Enter valid country/currency codes, tax name, jurisdiction, effective date and official authority reference.'; return; }
+    this.taxRulesBusy = true; this.errorMessage = '';
+    const body = { ...d, country_code: d.country_code.toUpperCase(), currency: d.currency.toUpperCase(), effective_to: d.effective_to || null, source_url: d.source_url || null, rate_percent: Number(d.rate_percent) };
+    this.http.post<any>(`${environment.apiBaseUrl}/tax-rules`, body, { headers: this.authHeaders() }).subscribe({ next: () => { this.taxRulesBusy = false; this.successMessage = 'Tax rule saved as Draft. An authorised administrator must verify and activate it.'; this.taxRuleDraft = this.emptyTaxRuleDraft(); this.loadTaxRules(); }, error: error => { this.taxRulesBusy = false; this.handleApiError(error); } });
+  }
+
+  setTaxRuleStatus(rule: any, status: 'Active' | 'Inactive'): void {
+    const note = status === 'Active' ? 'Verified against the cited authority by authorised administrator.' : 'Deactivated by authorised administrator.';
+    this.http.patch<any>(`${environment.apiBaseUrl}/tax-rules/${encodeURIComponent(rule.rule_id)}/status`, { status, verification_note: note }, { headers: this.authHeaders() }).subscribe({ next: () => { this.successMessage = `Tax rule ${status.toLowerCase()}.`; this.loadTaxRules(); }, error: error => this.handleApiError(error) });
+  }
+
+  lookupApplicableTaxRules(): void {
+    const id = this.estimateClaimId.trim();
+    if (!id || !this.estimateDraft.tax_point_date) { this.errorMessage = 'Enter a Claim ID and tax point date.'; return; }
+    const params = new HttpParams().set('tax_point_date', this.estimateDraft.tax_point_date);
+    this.http.get<any>(`${environment.apiBaseUrl}/claims/${encodeURIComponent(id)}/applicable-tax-rules`, { params, headers: this.authHeaders() }).subscribe({ next: result => this.applicableTaxRules = result, error: error => this.handleApiError(error) });
+  }
+
+  emptyEstimateDraft(): any {
     return {
       description: '', quantity: 1, unit: 'item', unit_rate: 0, depreciation_rate: 0, taxable: true,
       currency: '', currency_minor_units: 2, country_code: '', state_or_jurisdiction: '', region: '', locality: '', postal_code: '',
@@ -194,7 +229,8 @@ export class AppComponent implements OnInit {
     this.successMessage = '';
     if (page === 'Claims') this.loadClaims();
     if (page === 'AI Damage Analysis' && this.damageClaimId.trim()) this.loadDamageAssessments();
-    if (page === 'Users') this.loadUsers();\n    if (page === 'Tax Rules' && this.canManageTaxRules()) this.loadTaxRules();
+    if (page === 'Users') this.loadUsers();
+    if (page === 'Tax Rules' && this.canManageTaxRules()) this.loadTaxRules();
   }
 
   loadDashboard(): void {
