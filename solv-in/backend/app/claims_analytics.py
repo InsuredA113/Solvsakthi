@@ -126,7 +126,7 @@ def safe_csv_cell(value):
     """Neutralise spreadsheet formula prefixes in user-controlled CSV text."""
     if not isinstance(value, str):
         return value
-    first_non_whitespace = value.lstrip(" \\t\\r\\n")
+    first_non_whitespace = value.lstrip(" \t\r\n")
     if first_non_whitespace.startswith(("=", "+", "-", "@")):
         return "'" + value
     return value
