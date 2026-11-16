@@ -253,7 +253,7 @@ export class AppComponent implements OnInit {
     const countryCode = (claim?.country_code || d.country_code || '').toUpperCase();
     if (!this.estimateClaimId.trim() || !d.description.trim() || !countryCode ||
         !d.state_or_jurisdiction.trim() || !currency || !/^[A-Z]{3}$/.test(currency) ||
-        !/^\d{2}$/.test(countryCode) || !d.loss_date || !d.tax_point_date ||
+        !/^[A-Z]{2}$/.test(countryCode) || !d.loss_date || !d.tax_point_date ||
         !d.pricing_source.trim() || !d.pricing_effective_date ||
         Number(d.quantity) <= 0 || Number(d.unit_rate) < 0) {
       this.errorMessage = 'Enter a Claim ID, repair details, ISO country and currency codes, loss/tax dates, jurisdiction and verified pricing source.';
