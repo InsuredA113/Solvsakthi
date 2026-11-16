@@ -12,7 +12,7 @@ class TaxRuleCreate(BaseModel):
     locality: str = Field(default="", max_length=120)
     tax_name: str = Field(min_length=2, max_length=100)
     tax_type: str = Field(min_length=2, max_length=50)
-    rate_percent: float = Field(ge=0, le=100)
+    rate_percent: Decimal = Field(ge=Decimal("0"), le=Decimal("100"), max_digits=7, decimal_places=4)
     applies_to: Literal["repair_subtotal", "depreciated_repair_subtotal", "fees", "repair_and_fees"] = "depreciated_repair_subtotal"
     compound_on_prior_taxes: bool = False
     tax_point_type: str = Field(default="Tax point date", min_length=2, max_length=80)
