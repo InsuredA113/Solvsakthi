@@ -499,6 +499,11 @@ def create_financial_estimate(
     record = {
         **result, "claim_id": claim_id, "claim_type": claim.get("claim_type"),
         "created_at": now, "created_by": user["email"], "status": "Preliminary - Pending Review",
+        "tax_application_confirmation": {
+            "confirmed": bool(payload.tax_mode == "automatic" and payload.confirm_automatic_tax_application and tax_rule_snapshots),
+            "confirmed_by": user["email"] if payload.tax_mode == "automatic" and payload.confirm_automatic_tax_application and tax_rule_snapshots else None,
+            "confirmed_at": now if payload.tax_mode == "automatic" and payload.confirm_automatic_tax_application and tax_rule_snapshots else None
+        },
         "review_history": []
     }
     try:
