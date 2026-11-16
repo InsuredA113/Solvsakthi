@@ -59,3 +59,22 @@ def test_selected_tax_rules_follow_configured_calculation_order():
     )
     assert [rule["tax_name"] for rule in selected] == ["State tax", "Local tax"]
     assert ambiguous == []
+
+
+def test_tax_rule_activation_requires_a_verification_note():
+    import pytest
+    from pydantic import ValidationError
+    from app.tax_rules import TaxRuleStatusUpdate
+
+    with pytest.raises(ValidationError):
+        TaxRuleStatusUpdate(status="Active")
+
+
+def test_tax_rule_activation_accepts_and_preserves_verification_note():
+    from app.tax_rules import TaxRuleStatusUpdate
+
+    payload = TaxRuleStatusUpdate(
+        status="Active",
+        verification_note="Checked against the official tax authority publication."
+    )
+    assert payload.verification_note.startswith("Checked against")
