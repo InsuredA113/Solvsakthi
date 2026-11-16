@@ -239,13 +239,25 @@ def dashboard_summary(user: dict = Depends(require_roles(*READ_ROLES))):
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     try:
         claims = get_database()["claims"]
+        scope_query = {"$or": [
+            {"claim_type": "Property"},
+            {"claim_type": "Casualty", "casualty_segment": "Commercial"}
+        ]}
+        def scoped_count(status_query=None):
+            filters = [scope_query]
+            if status_query:
+                filters.append(status_query)
+            return claims.count_documents({"$and": filters})
         return {
             "data_mode": "live",
-            "total_claims": claims.count_documents({}),
-            "new_claims": claims.count_documents({"status": "FNOL Received"}),
-            "under_investigation": claims.count_documents({"status": {"$in": ["Under Review", "Investigation", "Assessment"]}}),
-            "pending_approval": claims.count_documents({"status": "Pending Approval"}),
-            "settled_claims": claims.count_documents({"status": "Closed"})
+            "total_claims": scoped_count(),
+            "new_claims": scoped_count({"status": "FNOL Received"}),
+            "under_investigation": scoped_count({"status": {"$in": ["Under Review", "Investigation", "Assessment"]}}),
+            "pending_approval": scoped_count({"status": "Pending Approval"}),
+            "settled_claims": scoped_count({"status": "Closed"}),
+            "unclassified_legacy_casualty_claims": claims.count_documents({
+                "claim_type": "Casualty", "casualty_segment": {"$ne": "Commercial"}
+            })
         }
     except PyMongoError as exc:
         raise HTTPException(status_code=503, detail="Unable to load dashboard metrics.") from exc
@@ -260,17 +272,20 @@ def list_claims(
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
-    query = {}
+    query = {"$and": [{"$or": [
+        {"claim_type": "Property"},
+        {"claim_type": "Casualty", "casualty_segment": "Commercial"}
+    ]}]}
     if claim_type:
-        query["claim_type"] = claim_type
+        query["$and"].append({"claim_type": claim_type})
     if status:
-        query["status"] = status
+        query["$and"].append({"status": status})
     if search:
-        query["$or"] = [
+        query["$and"].append({"$or": [
             {"claim_id": {"$regex": search, "$options": "i"}},
             {"customer_name": {"$regex": search, "$options": "i"}},
             {"policy_number": {"$regex": search, "$options": "i"}}
-        ]
+        ]})
     try:
         rows = list(get_database()["claims"].find(query, {"_id": 0}).sort("created_at", DESCENDING).limit(limit))
         return {"items": rows, "count": len(rows)}
