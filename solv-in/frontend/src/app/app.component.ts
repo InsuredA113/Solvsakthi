@@ -170,6 +170,11 @@ export class AppComponent implements OnInit {
     return ['Super Administrator', 'Insurance Company Administrator', 'Claims Manager', 'Property Adjuster', 'Casualty Adjuster', 'Surveyor', 'Actuarial Analyst', 'Approver', 'Auditor'].includes(this.currentUser?.role || '');
   }
 
+  latestFinancialReview(estimate: FinancialEstimate): any | null {
+    const history = estimate.review_history;
+    return history?.length ? history[history.length - 1] : null;
+  }
+
   canAnalyseDamage(): boolean {
     return ['Super Administrator', 'Insurance Company Administrator', 'Claims Manager', 'Property Adjuster', 'Casualty Adjuster', 'Surveyor', 'Actuarial Analyst', 'Approver'].includes(this.currentUser?.role || '');
   }
