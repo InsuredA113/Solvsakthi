@@ -66,6 +66,7 @@ class FinancialEstimateRequest(BaseModel):
     locality: str = Field(default="", max_length=120)
     postal_code: str = Field(default="", max_length=30)
     loss_date: str = Field(min_length=10, max_length=10)
+    tax_point_date: str = Field(min_length=10, max_length=10)
     interest: InterestTerms = Field(default_factory=InterestTerms)
     notes: str = Field(default="", max_length=2000)
     pricing_source: str = Field(min_length=3, max_length=250)
@@ -92,15 +93,14 @@ class FinancialEstimateRequest(BaseModel):
         from datetime import date
         try:
             loss_date = date.fromisoformat(self.loss_date)
-            pricing_date = date.fromisoformat(self.pricing_effective_date)
+            date.fromisoformat(self.pricing_effective_date)
+            tax_point_date = date.fromisoformat(self.tax_point_date)
         except ValueError as exc:
             raise ValueError("Loss date and pricing effective date must use YYYY-MM-DD.") from exc
-        if pricing_date > loss_date:
-            raise ValueError("Pricing effective date cannot be later than the loss date for this estimate.")
         for tax in self.taxes:
-            if tax.effective_from and date.fromisoformat(tax.effective_from) > loss_date:
+            if tax.effective_from and date.fromisoformat(tax.effective_from) > tax_point_date:
                 raise ValueError(f"Tax rule '{tax.name}' is not effective on the loss date.")
-            if tax.effective_to and date.fromisoformat(tax.effective_to) < loss_date:
+            if tax.effective_to and date.fromisoformat(tax.effective_to) < tax_point_date:
                 raise ValueError(f"Tax rule '{tax.name}' expired before the loss date.")
         return self
 
@@ -172,7 +172,7 @@ def calculate_estimate(payload: FinancialEstimateRequest) -> dict:
     return {
         "currency": currency, "country_code": payload.country_code,
         "state_or_jurisdiction": payload.state_or_jurisdiction, "region": payload.region,
-        "locality": payload.locality, "postal_code": payload.postal_code, "loss_date": payload.loss_date,
+        "locality": payload.locality, "postal_code": payload.postal_code, "loss_date": payload.loss_date, "tax_point_date": payload.tax_point_date,
         "currency_minor_units": __import__("babel.numbers", fromlist=["get_currency_precision"]).get_currency_precision(currency),
         "line_items": detail, "gross_repair_cost": str(gross), "depreciation": str(depreciation),
         "net_repair_cost": str(repair_net), "charges": [c.model_dump(mode="json") for c in payload.charges],
