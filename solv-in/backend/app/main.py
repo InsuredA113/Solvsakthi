@@ -214,3 +214,132 @@ def update_claim_status(
         raise
     except PyMongoError as exc:
         raise HTTPException(status_code=503, detail="Unable to update claim status.") from exc
+
+
+# Phase 4: AI-assisted visual damage analysis
+from typing import Any
+import json
+from fastapi import File, Form, UploadFile
+from google import genai
+from google.genai import types
+from .config import GEMINI_API_KEY, GEMINI_MODEL
+
+DAMAGE_ANALYSIS_ROLES = (
+    "Super Administrator", "Insurance Company Administrator", "Claims Manager",
+    "Property Adjuster", "Casualty Adjuster", "Surveyor", "Actuarial Analyst"
+)
+ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
+MAX_DAMAGE_IMAGE_BYTES = 10 * 1024 * 1024
+
+@app.post("/api/ai/damage-analysis")
+async def analyse_damage_image(
+    image: UploadFile = File(...),
+    claim_id: str | None = Form(default=None, max_length=40),
+    user: dict = Depends(require_roles(*DAMAGE_ANALYSIS_ROLES))
+):
+    if not GEMINI_API_KEY:
+        raise HTTPException(status_code=503, detail="AI damage analysis is not configured. Add GEMINI_API_KEY to backend/.env.")
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable. The assessment cannot be saved.")
+    content_type = (image.content_type or "").lower()
+    if content_type not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(status_code=415, detail="Upload a JPG, PNG or WEBP image.")
+    image_bytes = await image.read(MAX_DAMAGE_IMAGE_BYTES + 1)
+    if not image_bytes:
+        raise HTTPException(status_code=400, detail="The uploaded image is empty.")
+    if len(image_bytes) > MAX_DAMAGE_IMAGE_BYTES:
+        raise HTTPException(status_code=413, detail="Image size must not exceed 10 MB.")
+    if claim_id:
+        claim = get_database()["claims"].find_one({"claim_id": claim_id}, {"_id": 0, "claim_id": 1})
+        if not claim:
+            raise HTTPException(status_code=404, detail="The selected claim ID was not found.")
+    prompt = """
+You are an assistant supporting a licensed Property & Casualty insurance claims adjuster.
+Inspect only what is visibly supported by the supplied image. Return one valid JSON object
+with these keys and types:
+{
+  "damage_category": "short category or Undetermined",
+  "affected_areas": ["visible area"],
+  "visible_observations": ["objective visual observation"],
+  "severity": "Minor|Moderate|Severe|Critical|Undetermined",
+  "confidence": "Low|Medium|High",
+  "possible_cause": "carefully qualified possibility or Undetermined",
+  "recommended_next_steps": ["practical evidence or inspection step"],
+  "limitations": ["what cannot be determined from this image"]
+}
+Do not infer policy coverage, liability, fraud, exact dimensions, hidden damage, repair quantities,
+or repair costs. Do not make a final claim decision. If the image is unclear or not relevant to
+property/casualty damage, state that in limitations and use Undetermined where appropriate.
+Keep findings concise and distinguish observation from hypothesis.
+"""
+    try:
+        client = genai.Client(api_key=GEMINI_API_KEY)
+        response = client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=[
+                types.Part.from_bytes(data=image_bytes, mime_type=content_type),
+                prompt
+            ],
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.1
+            )
+        )
+        raw_text = response.text or ""
+        result: dict[str, Any] = json.loads(raw_text)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=502, detail="The AI service returned an unreadable assessment. Please retry.") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="The AI damage analysis service could not complete the request.") from exc
+
+    allowed_severity = {"Minor", "Moderate", "Severe", "Critical", "Undetermined"}
+    allowed_confidence = {"Low", "Medium", "High"}
+    if result.get("severity") not in allowed_severity:
+        result["severity"] = "Undetermined"
+    if result.get("confidence") not in allowed_confidence:
+        result["confidence"] = "Low"
+    for key in ("affected_areas", "visible_observations", "recommended_next_steps", "limitations"):
+        if not isinstance(result.get(key), list):
+            result[key] = []
+    result["damage_category"] = str(result.get("damage_category") or "Undetermined")[:120]
+    result["possible_cause"] = str(result.get("possible_cause") or "Undetermined")[:500]
+    record = {
+        "claim_id": claim_id,
+        "file_name": (image.filename or "uploaded-image")[:255],
+        "mime_type": content_type,
+        "damage_category": result["damage_category"],
+        "affected_areas": result["affected_areas"][:20],
+        "visible_observations": result["visible_observations"][:20],
+        "severity": result["severity"],
+        "confidence": result["confidence"],
+        "possible_cause": result["possible_cause"],
+        "recommended_next_steps": result["recommended_next_steps"][:20],
+        "limitations": result["limitations"][:20],
+        "repair_cost_estimate": None,
+        "status": "Preliminary - adjuster review required",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_by": user["email"]
+    }
+    try:
+        saved = get_database()["damage_assessments"].insert_one(record)
+    except PyMongoError as exc:
+        raise HTTPException(status_code=503, detail="Unable to save the AI assessment to MongoDB.") from exc
+    record.pop("_id", None)
+    record["assessment_id"] = str(saved.inserted_id)
+    return record
+
+@app.get("/api/claims/{claim_id}/damage-assessments")
+def list_damage_assessments(
+    claim_id: str,
+    user: dict = Depends(require_roles(*READ_ROLES))
+):
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    if not get_database()["claims"].find_one({"claim_id": claim_id}, {"_id": 1}):
+        raise HTTPException(status_code=404, detail="Claim not found.")
+    rows = list(get_database()["damage_assessments"].find(
+        {"claim_id": claim_id}, {"_id": 1}
+    ).sort("created_at", DESCENDING).limit(100))
+    for row in rows:
+        row["assessment_id"] = str(row.pop("_id"))
+    return {"items": rows, "count": len(rows)}
