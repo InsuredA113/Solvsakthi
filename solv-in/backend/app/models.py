@@ -20,7 +20,7 @@ class ClaimCreate(BaseModel):
     incident_date: date
     incident_description: str = Field(min_length=5, max_length=5000)
     loss_location: str = Field(min_length=2, max_length=250)
-    country_code: str | None = Field(default=None, min_length=2, max_length=2)
+    country_code: str = Field(min_length=2, max_length=2)
     region: str | None = Field(default=None, max_length=120)
     locality: str | None = Field(default=None, max_length=120)
     postal_code: str | None = Field(default=None, max_length=30)
@@ -37,9 +37,9 @@ class ClaimCreate(BaseModel):
 
     @field_validator("country_code")
     @classmethod
-    def normalize_country(cls, value: str | None) -> str | None:
-        if value is None or not value.strip():
-            return None
+    def normalize_country(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Country code is required.")
         value = value.upper()
         if not re.fullmatch(r"[A-Z]{2}", value):
             raise ValueError("Country must be a two-letter ISO 3166-1 alpha-2 code.")
