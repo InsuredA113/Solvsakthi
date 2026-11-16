@@ -1,4 +1,4 @@
-from app.claims_analytics import build_claims_analytics, is_in_scope_claim
+from app.claims_analytics import build_claims_analytics, is_in_scope_claim, safe_csv_cell
 
 
 def test_scope_includes_all_property_and_commercial_casualty_only():
@@ -79,3 +79,11 @@ def test_claim_line_breakdown_separates_property_occupancy_and_commercial_liabil
         "Product Liability": 1
     }
     assert result["by_industry"] == [{"industry": "Manufacturing", "claim_count": 1}]
+
+
+def test_csv_cells_neutralise_spreadsheet_formula_prefixes():
+    assert safe_csv_cell("=HYPERLINK(\"https://example.com\")") == "'=HYPERLINK(\"https://example.com\")"
+    assert safe_csv_cell("  +SUM(1,2)") == "'  +SUM(1,2)"
+    assert safe_csv_cell("\t@SUM(1,2)") == "'\t@SUM(1,2)"
+    assert safe_csv_cell("Manufacturing") == "Manufacturing"
+    assert safe_csv_cell(123) == 123
