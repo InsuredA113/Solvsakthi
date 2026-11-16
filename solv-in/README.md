@@ -136,3 +136,12 @@ Never commit the API key or upload real policyholder evidence to an unapproved e
 
 This is a globally extensible calculation framework, not a substitute for local tax/legal advice or a live worldwide tax-compliance database.
 
+
+
+## Phase 7 – Global Tax Rules Database
+
+Solv-In now includes a configurable tax-rule registry for jurisdiction-specific tax profiles. Administrators can create draft rules with ISO country/currency codes, administrative area, region/locality, tax name/type, rate, taxable base, compounding, tax-point description, effective dates, and authority/source references. Only authorised administrators can activate or deactivate rules. Active rules are immutable; create a new version rather than editing a rule already in use.
+
+The claim lookup endpoint `GET /api/claims/{claim_id}/applicable-tax-rules?tax_point_date=YYYY-MM-DD` returns active rules matching the claim country, currency, jurisdiction and effective date. It prefers more specific jurisdiction matches and flags same-specificity duplicates as ambiguous. If no verified rule matches, it returns `No verified matching tax profile`.
+
+**Important:** This is a rule registry and matching framework, not a preloaded global tax database or legal/tax advice. Rates must be verified against official authorities before activation. No rates are invented or automatically scraped. The existing financial estimate calculator remains a separate calculation workflow; rule lookup is advisory and does not silently add taxes to an estimate.
