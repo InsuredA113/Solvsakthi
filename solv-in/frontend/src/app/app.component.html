@@ -1,0 +1,102 @@
+<div class="shell">
+  <aside class="sidebar">
+    <div class="brand"><div class="brand-mark">S</div><div><strong>Solv-In</strong><small>Smarter Claims. Faster Decisions.</small></div></div>
+    <nav aria-label="Main navigation">
+      <button *ngFor="let item of navigation" (click)="selectPage(item)" [class.active]="activePage === item">
+        <span class="nav-icon">{{ item === 'Dashboard' ? '⌂' : item === 'Claims' ? '▤' : item === 'New FNOL' ? '+' : item === 'Reports' ? '▥' : '⚙' }}</span>{{ item }}
+      </button>
+    </nav>
+    <div class="sidebar-foot">P&C Claims Intelligence<br><span>Development preview</span></div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="topbar-title">Claims intelligence workspace</div>
+      <div class="profile"><span class="avatar">SA</span><span><b>Solv-In Admin</b><small>Development account</small></span></div>
+    </header>
+
+    <section class="content">
+      <div class="welcome">
+        <div><p class="eyebrow">SOLV-IN WORKSPACE</p><h1>{{ activePage === 'Dashboard' ? 'Welcome to Solv-In' : activePage }}</h1>
+        <p class="muted">{{ activePage === 'Dashboard' ? 'Your Property & Casualty claims at a glance' : 'Manage claim intake and operational workflows' }}</p></div>
+        <button class="primary-action" *ngIf="activePage !== 'New FNOL'" (click)="selectPage('New FNOL')">＋ New FNOL</button>
+      </div>
+
+      <div class="alert error" *ngIf="errorMessage">{{ errorMessage }}</div>
+      <div class="alert success" *ngIf="successMessage">{{ successMessage }}</div>
+
+      <ng-container *ngIf="activePage === 'Dashboard'">
+        <section class="metrics">
+          <article class="metric"><span class="metric-icon blue">▤</span><div><small>Total claims</small><strong>{{ totalClaims | number }}</strong><em>Live MongoDB records</em></div></article>
+          <article class="metric"><span class="metric-icon teal">＋</span><div><small>New FNOL</small><strong>{{ newClaims | number }}</strong><em>Received claims</em></div></article>
+          <article class="metric"><span class="metric-icon orange">⌕</span><div><small>In progress</small><strong>{{ investigatingClaims | number }}</strong><em>Review, investigation, assessment</em></div></article>
+          <article class="metric"><span class="metric-icon purple">◷</span><div><small>Pending approval</small><strong>{{ pendingClaims | number }}</strong><em>Requires authorised review</em></div></article>
+          <article class="metric"><span class="metric-icon green">✓</span><div><small>Closed</small><strong>{{ closedClaims | number }}</strong><em>Completed workflow</em></div></article>
+        </section>
+        <section class="bottom-grid">
+          <article class="panel claims-panel">
+            <div class="panel-heading"><h2>Recent claims</h2><button class="text-button" (click)="selectPage('Claims')">View all →</button></div>
+            <div class="table-scroll"><table><thead><tr><th>Claim ID</th><th>Customer</th><th>Type</th><th>Status</th></tr></thead>
+              <tbody><tr *ngFor="let claim of claims.slice(0,5)"><td>{{ claim.claim_id }}</td><td>{{ claim.customer_name }}</td><td>{{ claim.claim_type }}</td><td><span class="status">{{ claim.status }}</span></td></tr>
+                <tr *ngIf="claims.length === 0"><td colspan="4" class="empty">No saved claims yet. Create your first FNOL.</td></tr></tbody>
+            </table></div>
+          </article>
+          <article class="panel activity-panel"><h2>Workflow safeguards</h2>
+            <div class="activity"><span class="activity-dot"></span><div><b>Human review required</b><small>AI-supported findings remain preliminary.</small></div></div>
+            <div class="activity"><span class="activity-dot teal-bg"></span><div><b>Verified claim information</b><small>Do not infer missing facts or policy terms.</small></div></div>
+            <div class="activity"><span class="activity-dot orange-bg"></span><div><b>Financial integrity</b><small>Calculations will use deterministic backend logic.</small></div></div>
+          </article>
+        </section>
+      </ng-container>
+
+      <ng-container *ngIf="activePage === 'Claims'">
+        <section class="panel filters">
+          <input aria-label="Search claims" placeholder="Search claim ID, customer or policy…" [(ngModel)]="searchTerm" (keyup.enter)="loadClaims()">
+          <select aria-label="Filter claim type" [(ngModel)]="typeFilter" (change)="loadClaims()"><option value="">All claim types</option><option value="Property">Property</option><option value="Casualty">Casualty</option></select>
+          <select aria-label="Filter status" [(ngModel)]="statusFilter" (change)="loadClaims()"><option value="">All statuses</option><option *ngFor="let status of statuses" [value]="status">{{ status }}</option></select>
+          <button class="secondary-action" (click)="loadClaims()">Search</button>
+        </section>
+        <section class="panel claims-panel">
+          <div class="panel-heading"><h2>Claims register</h2><span class="subtle">{{ claims.length }} records shown</span></div>
+          <p class="muted" *ngIf="loadingClaims">Loading claims…</p>
+          <div class="table-scroll" *ngIf="!loadingClaims"><table><thead><tr><th>Claim ID</th><th>Customer</th><th>Policy</th><th>Type</th><th>Incident date</th><th>Estimated loss</th><th>Status</th></tr></thead>
+            <tbody><tr *ngFor="let claim of claims">
+              <td><b>{{ claim.claim_id }}</b></td><td>{{ claim.customer_name }}</td><td>{{ claim.policy_number }}</td><td>{{ claim.claim_type }}</td><td>{{ claim.incident_date }}</td><td>{{ formatAmount(claim.estimated_loss, claim.currency) }}</td>
+              <td><select class="status-select" [ngModel]="claim.status" (ngModelChange)="changeStatus(claim, $event)" [attr.aria-label]="'Update status for ' + claim.claim_id"><option *ngFor="let status of statuses" [value]="status">{{ status }}</option></select></td>
+            </tr><tr *ngIf="claims.length === 0"><td colspan="7" class="empty">No claims match your search. Create a new FNOL to get started.</td></tr></tbody>
+          </table></div>
+        </section>
+      </ng-container>
+
+      <ng-container *ngIf="activePage === 'New FNOL'">
+        <section class="panel form-panel">
+          <div class="panel-heading"><div><h2>First Notice of Loss (FNOL)</h2><p class="muted">Register a new Property or Casualty claim.</p></div><span class="required-note">* Required fields</span></div>
+          <form (ngSubmit)="submitFnol()" #fnolForm="ngForm">
+            <div class="form-grid">
+              <label>Customer name *<input name="customer_name" [(ngModel)]="draft.customer_name" required minlength="2" maxlength="120" placeholder="Enter customer name"></label>
+              <label>Policy number *<input name="policy_number" [(ngModel)]="draft.policy_number" required placeholder="Enter policy number"></label>
+              <label>Email address<input type="email" name="email" [(ngModel)]="draft.email" placeholder="customer@example.com"></label>
+              <label>Phone number<input name="phone" [(ngModel)]="draft.phone" placeholder="Contact number"></label>
+              <label>Claim type *<select name="claim_type" [(ngModel)]="draft.claim_type"><option value="Property">Property</option><option value="Casualty">Casualty</option></select></label>
+              <label>Incident date *<input type="date" name="incident_date" [(ngModel)]="draft.incident_date" required></label>
+              <label class="full">Loss location *<input name="loss_location" [(ngModel)]="draft.loss_location" required placeholder="Address or location of incident"></label>
+              <label>Estimated loss amount<input type="number" name="estimated_loss" [(ngModel)]="draft.estimated_loss" min="0" step="0.01" placeholder="Optional"></label>
+              <label>Currency<select name="currency" [(ngModel)]="draft.currency"><option value="INR">INR – Indian Rupee</option><option value="USD">USD – US Dollar</option><option value="EUR">EUR – Euro</option><option value="GBP">GBP – British Pound</option></select></label>
+              <label class="full">Incident description *<textarea name="incident_description" [(ngModel)]="draft.incident_description" required minlength="5" maxlength="5000" rows="4" placeholder="Describe what happened using the information reported. Do not assume missing details."></textarea></label>
+            </div>
+            <div class="form-actions"><span class="muted">Claim ID will be generated after successful database save.</span><button class="primary-action" type="submit" [disabled]="savingClaim || fnolForm.invalid">{{ savingClaim ? 'Saving…' : 'Create claim' }}</button></div>
+          </form>
+        </section>
+      </ng-container>
+
+      <ng-container *ngIf="activePage === 'Reports'">
+        <section class="panel placeholder"><div class="placeholder-icon">▥</div><h2>Reports module</h2><p>Reporting and preliminary assessment reports are planned for a later phase. No report is generated from unverified claim information.</p></section>
+      </ng-container>
+      <ng-container *ngIf="activePage === 'Settings'">
+        <section class="panel placeholder"><div class="placeholder-icon">⚙</div><h2>Workspace settings</h2><p>Authentication, role permissions and insurer-level tenant configuration will be implemented before production use.</p></section>
+      </ng-container>
+
+      <footer class="footer"><span>© 2026 Solv-In · Development build</span><span>{{ apiStatus }}</span></footer>
+    </section>
+  </main>
+</div>
