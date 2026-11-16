@@ -82,7 +82,7 @@
                 <td><b>{{ item.sender_email }}</b><br>{{ item.subject || '(No subject)' }}</td>
                 <td>{{ item.confirmed_claim_type || item.suggested_claim_type }}<small class="muted">{{ item.classification_reason }}</small></td>
                 <td><span class="status">{{ item.review_status }}</span></td>
-                <td>{{ item.missing_fields.length ? item.missing_fields.join(', ') : 'None detected' }}</td>
+                <td>{{ item.missing_fields.length ? item.missing_fields.join(', ') : 'None detected' }}<details><summary>Extracted fields</summary><pre>{{ item.extracted_fields | json }}</pre></details></td>
                 <td>
                   <div class="form-actions" *ngIf="item.review_status === 'Needs Review'">
                     <button class="secondary-action" *ngIf="item.suggested_claim_type === 'Property' || item.suggested_claim_type === 'Unclassified'" (click)="reviewEmailIntake(item, 'Property', 'Reviewed')">Confirm Property</button>
@@ -112,7 +112,7 @@
               <label>Incident date *<input type="date" name="incident_date" [(ngModel)]="draft.incident_date" required></label>
               <label *ngIf="draft.claim_type === 'Property'">Property occupancy
                 <select name="property_occupancy" [(ngModel)]="draft.property_occupancy">
-                  <option value="Residential">Residential</option><option value="Commercial">Commercial</option>
+                  <option [ngValue]="null">Not specified</option><option value="Residential">Residential</option><option value="Commercial">Commercial</option>
                   <option value="Industrial">Industrial</option><option value="Mixed Use">Mixed Use</option><option value="Other">Other</option>
                 </select>
               </label>
@@ -122,7 +122,7 @@
               <label *ngIf="draft.claim_type === 'Casualty'">Business / insured entity name *<input name="business_name" [(ngModel)]="draft.business_name" required minlength="2" maxlength="160"></label>
               <label *ngIf="draft.claim_type === 'Casualty'">Industry / business sector *<input name="industry" [(ngModel)]="draft.industry" required minlength="2" maxlength="120" placeholder="e.g. Manufacturing, Retail, Construction"></label>
               <label *ngIf="draft.claim_type === 'Casualty'">Commercial liability line *<select name="commercial_liability_type" [(ngModel)]="draft.commercial_liability_type" required>
-                <option value="Commercial General Liability">Commercial General Liability</option>
+                <option [ngValue]="null">Select liability line</option><option value="Commercial General Liability">Commercial General Liability</option>
                 <option value="Professional Liability">Professional Liability</option>
                 <option value="Product Liability">Product Liability</option>
                 <option value="Employers Liability">Employers Liability</option>
