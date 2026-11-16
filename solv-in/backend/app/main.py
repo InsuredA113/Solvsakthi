@@ -222,6 +222,10 @@ def export_claims_analytics_csv(
         writer.writerow(["Country", row["country_code"], "", row["claim_count"], ""])
     for row in data["by_month"]:
         writer.writerow(["Month", row["month"], "", row["claim_count"], ""])
+    for row in data["by_claim_line"]:
+        writer.writerow(["Claim line", row["claim_line"], "", row["claim_count"], ""])
+    for row in data["by_industry"]:
+        writer.writerow(["Commercial casualty industry", row["industry"], "", row["claim_count"], ""])
     for row in data["reported_exposure_by_currency"]:
         writer.writerow(["Reported exposure", "Claim-reported estimated loss", row["currency"], row["claim_count"], row["reported_estimated_loss"]])
     for row in data["latest_preliminary_estimates_by_currency"]:
