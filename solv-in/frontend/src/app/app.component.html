@@ -3,8 +3,8 @@
   <aside class="sidebar">
     <div class="brand"><div class="brand-mark">S</div><div><strong>Solv-In</strong><small>Smarter Claims. Faster Decisions.</small></div></div>
     <nav aria-label="Main navigation">
-      <ng-container *ngFor="let item of navigation"><button *ngIf="(item !== 'Users' || isAdmin()) && (item !== 'AI Damage Analysis' || canAnalyseDamage())" (click)="selectPage(item)" [class.active]="activePage === item">
-        <span class="nav-icon">{{ item === 'Dashboard' ? '⌂' : item === 'Claims' ? '▤' : item === 'New FNOL' ? '+' : item === 'AI Damage Analysis' ? '◈' : item === 'Reports' ? '▥' : item === 'Users' ? '♙' : '⚙' }}</span>{{ item }}
+      <ng-container *ngFor="let item of navigation"><button *ngIf="(item !== 'Users' || isAdmin()) && (item !== 'AI Damage Analysis' || canAnalyseDamage()) && (item !== 'Tax Rules' || isAdmin())" (click)="selectPage(item)" [class.active]="activePage === item">
+        <span class="nav-icon">{{ item === 'Dashboard' ? '⌂' : item === 'Claims' ? '▤' : item === 'New FNOL' ? '+' : item === 'AI Damage Analysis' ? '◈' : item === 'Tax Rules' ? '⌁' : item === 'Reports' ? '▥' : item === 'Users' ? '♙' : '⚙' }}</span>{{ item }}
       </button></ng-container>
     </nav>
     <div class="sidebar-foot">P&C Claims Intelligence<br><span>Development preview</span></div>
@@ -174,7 +174,7 @@
             <label>Verified unit rate *<input type="number" min="0" step="0.01" name="estimate_rate" [(ngModel)]="estimateDraft.unit_rate"></label>
             <label>Depreciation (%)<input type="number" min="0" max="100" step="0.01" name="estimate_depreciation" [(ngModel)]="estimateDraft.depreciation_rate"></label>
             <label class="full"><span><input type="checkbox" name="estimate_taxable" [(ngModel)]="estimateDraft.taxable"> Repair item is taxable under the applicable rule</span></label>
-            <div class="full"><h3>Applicable taxes (optional)</h3><p class="muted">Add every applicable national, state/provincial, regional, municipal or other tax component. Tax-on-tax can be enabled where the verified local rule requires it. Maximum 20 components.</p></div>
+            <div class="full"><button class="secondary-action" type="button" (click)="lookupApplicableTaxRules()">Find verified tax rules for this claim</button><div *ngIf="applicableTaxRules" class="assessment-history-card"><b>{{ applicableTaxRules.profile_status }}</b><p class="muted">{{ applicableTaxRules.message }}</p><p *ngFor="let rule of applicableTaxRules.items">{{ rule.tax_name }} · {{ rule.rate_percent }}% · {{ rule.admin_area }} · {{ rule.authority_name }}</p><p *ngIf="applicableTaxRules.ambiguous_tax_names?.length" class="muted">Ambiguous rules: {{ applicableTaxRules.ambiguous_tax_names.join(', ') }}</p></div></div>            <div class="full"><h3>Applicable taxes (optional)</h3><p class="muted">Add every applicable national, state/provincial, regional, municipal or other tax component. Tax-on-tax can be enabled where the verified local rule requires it. Maximum 20 components.</p></div>
             <div class="full">
               <button type="button" class="secondary-action" (click)="addTaxComponent()" [disabled]="estimateDraft.taxes.length >= 20">Add tax component</button>
             </div>
@@ -241,6 +241,41 @@
           <article class="assessment-history-card" *ngFor="let estimate of financialEstimates">
             <div class="panel-heading"><div><b>{{ formatAmount(+estimate.preliminary_net_estimate, estimate.currency) }}</b><p class="muted">{{ estimate.created_at | date:'medium' }} · {{ estimate.pricing_source }}</p></div><span class="status">{{ estimate.status }}</span></div>
           </article>
+        </section>
+      </ng-container>
+
+
+      <ng-container *ngIf="activePage === 'Tax Rules' && isAdmin()">
+        <section class="panel form-panel">
+          <div class="panel-heading"><div><h2>Global tax rule registry</h2><p class="muted">Create jurisdiction profiles using verified official sources. New rules are saved as Draft and must be activated by an authorised administrator.</p></div></div>
+          <div class="damage-disclaimer">Solv-In does not preload or guess worldwide tax rates. Verify each rate, jurisdiction, taxable base and effective date against the relevant official authority before activation. Active rules are immutable; create a new version for changes.</div>
+          <div class="form-grid">
+            <label>Country code (ISO alpha-2) *<input name="rule_country" maxlength="2" [(ngModel)]="taxRuleDraft.country_code" placeholder="US, GB, IN, AU"></label>
+            <label>Currency (ISO 4217) *<input name="rule_currency" maxlength="3" [(ngModel)]="taxRuleDraft.currency" placeholder="USD, GBP, INR"></label>
+            <label>State / province / admin area *<input name="rule_admin_area" [(ngModel)]="taxRuleDraft.admin_area" placeholder="State, province, canton or national scope"></label>
+            <label>Region / county<input name="rule_region" [(ngModel)]="taxRuleDraft.region"></label>
+            <label>City / locality<input name="rule_locality" [(ngModel)]="taxRuleDraft.locality"></label>
+            <label>Tax name *<input name="rule_name" [(ngModel)]="taxRuleDraft.tax_name" placeholder="VAT, GST, sales tax"></label>
+            <label>Tax type<input name="rule_type" [(ngModel)]="taxRuleDraft.tax_type"></label>
+            <label>Rate (%) *<input type="number" min="0" max="100" step="0.0001" name="rule_rate" [(ngModel)]="taxRuleDraft.rate_percent"></label>
+            <label>Taxable base<select name="rule_basis" [(ngModel)]="taxRuleDraft.applies_to"><option value="repair_subtotal">Gross repair subtotal</option><option value="depreciated_repair_subtotal">After depreciation</option><option value="fees">Taxable fees</option><option value="repair_and_fees">Repairs and fees</option></select></label>
+            <label>Tax point type<input name="rule_point" [(ngModel)]="taxRuleDraft.tax_point_type" placeholder="Tax point date / invoice date"></label>
+            <label>Effective from *<input type="date" name="rule_from" [(ngModel)]="taxRuleDraft.effective_from"></label>
+            <label>Effective to<input type="date" name="rule_to" [(ngModel)]="taxRuleDraft.effective_to"></label>
+            <label>Official authority name *<input name="rule_authority" [(ngModel)]="taxRuleDraft.authority_name" placeholder="Tax authority / government body"></label>
+            <label>Official source URL<input type="url" name="rule_url" [(ngModel)]="taxRuleDraft.source_url" placeholder="https://..."></label>
+            <label class="full">Law / notice / schedule reference *<input name="rule_reference" [(ngModel)]="taxRuleDraft.authority_reference" placeholder="Statute, regulation, official schedule and section"></label>
+            <label class="full">Notes<textarea rows="2" name="rule_notes" [(ngModel)]="taxRuleDraft.notes"></textarea></label>
+            <label class="full"><span><input type="checkbox" name="rule_compound" [(ngModel)]="taxRuleDraft.compound_on_prior_taxes"> Tax compounds on prior tax components (only where official rule requires it)</span></label>
+          </div>
+          <div class="form-actions"><span class="muted">Draft rules are not used in matching.</span><button class="primary-action" type="button" (click)="saveTaxRule()" [disabled]="taxRulesBusy">{{ taxRulesBusy ? 'Saving…' : 'Save draft rule' }}</button></div>
+        </section>
+        <section class="panel claims-panel">
+          <div class="panel-heading"><h2>Configured tax rules</h2><div class="damage-claim-lookup"><input maxlength="2" placeholder="Filter country e.g. US" [(ngModel)]="taxRuleCountryFilter"><button class="secondary-action" type="button" (click)="loadTaxRules()">Load rules</button></div></div>
+          <div class="table-scroll"><table><thead><tr><th>Country / jurisdiction</th><th>Tax</th><th>Rate</th><th>Effective</th><th>Authority</th><th>Status</th><th>Action</th></tr></thead><tbody>
+            <tr *ngFor="let rule of taxRules"><td>{{ rule.country_code }} · {{ rule.admin_area }}<small>{{ rule.region }} {{ rule.locality }}</small></td><td>{{ rule.tax_name }}</td><td>{{ rule.rate_percent }}%</td><td>{{ rule.effective_from }} – {{ rule.effective_to || 'Open-ended' }}</td><td>{{ rule.authority_name }}<small>{{ rule.authority_reference }}</small></td><td><span class="status">{{ rule.status }}</span></td><td><button *ngIf="rule.status === 'Draft' || rule.status === 'Inactive'" class="secondary-action" type="button" (click)="setTaxRuleStatus(rule, 'Active')">Verify &amp; activate</button><button *ngIf="rule.status === 'Active'" class="danger-action" type="button" (click)="setTaxRuleStatus(rule, 'Inactive')">Deactivate</button></td></tr>
+            <tr *ngIf="taxRules.length === 0"><td colspan="7" class="empty">No tax rules found. Add a verified jurisdiction rule above.</td></tr>
+          </tbody></table></div>
         </section>
       </ng-container>
 
