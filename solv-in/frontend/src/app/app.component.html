@@ -96,7 +96,7 @@
           <div class="damage-disclaimer">AI findings are indicative only. They do not establish coverage, liability, causation, repair costs or claim outcomes. An authorised adjuster must verify every finding.</div>
           <div class="form-grid damage-inputs">
             <label class="full">Related Claim ID (optional)
-              <input name="damage_claim_id" [(ngModel)]="damageClaimId" placeholder="Example: CLM-2026-000001">
+              <div class="damage-claim-lookup"><input name="damage_claim_id" [(ngModel)]="damageClaimId" placeholder="Example: CLM-2026-000001"><button class="secondary-action" type="button" (click)="loadDamageAssessments()">Load claim assessments</button></div>
             </label>
             <label class="full">Damage image *
               <input type="file" accept="image/jpeg,image/png,image/webp" (change)="onDamageImageSelected($event)" aria-label="Select a damage image">
@@ -123,6 +123,28 @@
             <article class="full"><h3>Limitations</h3><ul><li *ngFor="let item of damageAssessment.limitations">{{ item }}</li></ul></article>
           </div>
           <p class="damage-disclaimer">This assessment is stored in MongoDB. It is not an adjuster approval or a final claim decision.</p>
+        </section>
+        <section class="panel damage-results" *ngIf="damageAssessments.length">
+          <div class="panel-heading"><div><h2>Assessment history</h2><p class="muted">Saved assessments for claim {{ damageClaimId }}</p></div><span class="subtle">{{ damageAssessments.length }} records</span></div>
+          <article class="assessment-history-card" *ngFor="let item of damageAssessments">
+            <div class="panel-heading"><div><b>{{ item.damage_category }}</b><p class="muted">{{ item.created_at | date:'medium' }} · {{ item.severity }} · {{ item.confidence }} confidence</p></div><span class="status">{{ item.status }}</span></div>
+            <p class="muted">{{ item.visible_observations.join(' · ') }}</p>
+            <div class="review-history" *ngIf="item.review_history?.length">
+              <b>Review history</b>
+              <div *ngFor="let review of item.review_history"><small>{{ review.status }} · {{ review.reviewed_by }} ({{ review.reviewer_role }}) · {{ review.reviewed_at | date:'medium' }}</small><p>{{ review.notes || 'No additional notes.' }}</p></div>
+            </div>
+            <div class="review-actions" *ngIf="item.status !== 'Approved' && item.status !== 'Rejected'">
+              <label class="review-note-label">Reviewer notes
+                <textarea rows="2" maxlength="2000" [(ngModel)]="damageReviewNotes" [name]="'review_notes_' + item.assessment_id" placeholder="Record what was checked, evidence needed or reason for decision"></textarea>
+              </label>
+              <div class="review-buttons">
+                <button *ngIf="canReviewDamage()" class="secondary-action" type="button" (click)="reviewDamageAssessment(item, 'Reviewed')" [disabled]="damageReviewBusyId === item.assessment_id">Mark reviewed</button>
+                <button *ngIf="canReviewDamage()" class="secondary-action" type="button" (click)="reviewDamageAssessment(item, 'More Evidence Required')" [disabled]="damageReviewBusyId === item.assessment_id">Request evidence</button>
+                <button *ngIf="canApproveDamage()" class="primary-action" type="button" (click)="reviewDamageAssessment(item, 'Approved')" [disabled]="damageReviewBusyId === item.assessment_id">Approve assessment</button>
+                <button *ngIf="canApproveDamage()" class="danger-action" type="button" (click)="reviewDamageAssessment(item, 'Rejected')" [disabled]="damageReviewBusyId === item.assessment_id">Reject assessment</button>
+              </div>
+            </div>
+          </article>
         </section>
       </ng-container>
 
