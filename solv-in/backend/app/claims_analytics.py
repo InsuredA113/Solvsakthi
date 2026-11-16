@@ -28,10 +28,17 @@ def build_claims_analytics(claims: list[dict], estimates: list[dict] | None = No
     status_counts = defaultdict(int)
     country_counts = defaultdict(int)
     monthly_counts = defaultdict(int)
+    line_counts = defaultdict(int)
+    industry_counts = defaultdict(int)
     currency_rows = defaultdict(lambda: {"claim_count": 0, "reported_estimated_loss": Decimal("0")})
     for claim in scoped:
         status_counts[claim.get("status") or "Unknown"] += 1
         country_counts[claim.get("country_code") or "Unknown"] += 1
+        if claim.get("claim_type") == "Property":
+            line_counts["Property - " + (claim.get("property_occupancy") or "Unspecified")] += 1
+        else:
+            line_counts[claim.get("commercial_liability_type") or "Commercial Casualty - Unspecified"] += 1
+            industry_counts[claim.get("industry") or "Unspecified"] += 1
         incident_date = str(claim.get("incident_date") or "")
         if len(incident_date) >= 7:
             monthly_counts[incident_date[:7]] += 1
@@ -86,6 +93,14 @@ def build_claims_analytics(claims: list[dict], estimates: list[dict] | None = No
         "by_country": [
             {"country_code": key, "claim_count": value}
             for key, value in sorted(country_counts.items(), key=lambda item: (-item[1], item[0]))
+        ],
+        "by_claim_line": [
+            {"claim_line": key, "claim_count": value}
+            for key, value in sorted(line_counts.items(), key=lambda item: (-item[1], item[0]))
+        ],
+        "by_industry": [
+            {"industry": key, "claim_count": value}
+            for key, value in sorted(industry_counts.items(), key=lambda item: (-item[1], item[0]))
         ],
         "reported_exposure_by_currency": [
             {"currency": key, "claim_count": value["claim_count"],
