@@ -1,5 +1,7 @@
 from datetime import date, datetime, timezone
-from fastapi import Depends, FastAPI, HTTPException, Query
+import csv
+import io
+from fastapi import Depends, FastAPI, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 from bson import ObjectId
 from bson.errors import InvalidId
@@ -14,6 +16,7 @@ from .bootstrap import seed_initial_admin
 from .config import CORS_ORIGINS, ACCESS_TOKEN_MINUTES
 from .database import get_database, database_is_available
 from .models import ClaimCreate, ClaimStatusUpdate
+from .claims_analytics import build_claims_analytics
 from .user_models import LoginRequest, UserCreate
 
 app = FastAPI(
@@ -131,6 +134,104 @@ def create_user(payload: UserCreate, actor: dict = Depends(require_roles(*ADMIN_
     except PyMongoError as exc:
         raise HTTPException(status_code=503, detail="Unable to create user.") from exc
     return {key: value for key, value in record.items() if key != "password_hash"}
+
+def _load_claims_analytics(
+    from_date: date | None,
+    to_date: date | None,
+    country_code: str | None,
+    currency: str | None,
+    portfolio: str
+):
+    if from_date and to_date and from_date > to_date:
+        raise HTTPException(status_code=422, detail="From date must be on or before to date.")
+    query = {}
+    date_filter = {}
+    if from_date:
+        date_filter["$gte"] = from_date.isoformat()
+    if to_date:
+        date_filter["$lte"] = to_date.isoformat()
+    if date_filter:
+        query["incident_date"] = date_filter
+    if country_code:
+        query["country_code"] = country_code.upper()
+    if currency:
+        query["currency"] = currency.upper()
+    try:
+        claims = list(get_database()["claims"].find(query, {"_id": 0}).sort("incident_date", 1).limit(50000))
+        if portfolio == "Property":
+            claims = [claim for claim in claims if claim.get("claim_type") == "Property"]
+        elif portfolio == "Commercial Casualty":
+            claims = [
+                claim for claim in claims
+                if claim.get("claim_type") == "Casualty" and claim.get("casualty_segment") == "Commercial"
+            ]
+        claim_ids = [claim.get("claim_id") for claim in claims if claim.get("claim_id")]
+        estimates = []
+        if claim_ids:
+            estimates = list(get_database()["financial_estimates"].find(
+                {"claim_id": {"$in": claim_ids}}, {"_id": 0}
+            ).sort("created_at", 1).limit(100000))
+        result = build_claims_analytics(claims, estimates)
+        result["filters"] = {
+            "from_date": from_date.isoformat() if from_date else None,
+            "to_date": to_date.isoformat() if to_date else None,
+            "country_code": country_code.upper() if country_code else None,
+            "currency": currency.upper() if currency else None,
+            "portfolio": portfolio
+        }
+        return result
+    except PyMongoError as exc:
+        raise HTTPException(status_code=503, detail="Unable to build claims analytics.") from exc
+
+
+@app.get("/api/reports/claims-analytics")
+def claims_analytics(
+    from_date: date | None = Query(default=None),
+    to_date: date | None = Query(default=None),
+    country_code: str | None = Query(default=None, min_length=2, max_length=2),
+    currency: str | None = Query(default=None, min_length=3, max_length=3),
+    portfolio: str = Query(default="All", pattern="^(All|Property|Commercial Casualty)$"),
+    user: dict = Depends(require_roles(*READ_ROLES))
+):
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    return _load_claims_analytics(from_date, to_date, country_code, currency, portfolio)
+
+
+@app.get("/api/reports/claims-analytics.csv")
+def export_claims_analytics_csv(
+    from_date: date | None = Query(default=None),
+    to_date: date | None = Query(default=None),
+    country_code: str | None = Query(default=None, min_length=2, max_length=2),
+    currency: str | None = Query(default=None, min_length=3, max_length=3),
+    portfolio: str = Query(default="All", pattern="^(All|Property|Commercial Casualty)$"),
+    user: dict = Depends(require_roles(*READ_ROLES))
+):
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    data = _load_claims_analytics(from_date, to_date, country_code, currency, portfolio)
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Section", "Dimension", "Currency", "Claim count", "Amount"])
+    summary = data["summary"]
+    for key, value in summary.items():
+        writer.writerow(["Summary", key, "", value, ""])
+    for row in data["by_status"]:
+        writer.writerow(["Status", row["status"], "", row["claim_count"], ""])
+    for row in data["by_country"]:
+        writer.writerow(["Country", row["country_code"], "", row["claim_count"], ""])
+    for row in data["by_month"]:
+        writer.writerow(["Month", row["month"], "", row["claim_count"], ""])
+    for row in data["reported_exposure_by_currency"]:
+        writer.writerow(["Reported exposure", "Claim-reported estimated loss", row["currency"], row["claim_count"], row["reported_estimated_loss"]])
+    for row in data["latest_preliminary_estimates_by_currency"]:
+        writer.writerow(["Latest preliminary estimates", "Latest estimate per claim", row["currency"], row["claim_count"], row["latest_preliminary_estimate_total"]])
+    writer.writerow(["Scope", data["scope"], "", "", ""])
+    return Response(
+        content=output.getvalue(), media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="solv-in-claims-analytics.csv"'}
+    )
+
 
 @app.get("/api/dashboard/summary")
 def dashboard_summary(user: dict = Depends(require_roles(*READ_ROLES))):
