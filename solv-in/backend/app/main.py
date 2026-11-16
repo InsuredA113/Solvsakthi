@@ -460,6 +460,7 @@ def create_financial_estimate(
                 "admin_area": rule.get("admin_area", ""), "region": rule.get("region", ""),
                 "locality": rule.get("locality", ""), "tax_name": rule["tax_name"],
                 "tax_type": rule["tax_type"], "rate_percent": str(rule["rate_percent"]),
+                "calculation_order": rule.get("calculation_order", 100),
                 "applies_to": rule["applies_to"],
                 "compound_on_prior_taxes": bool(rule.get("compound_on_prior_taxes", False)),
                 "effective_from": str(rule["effective_from"])[:10],
