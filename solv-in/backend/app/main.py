@@ -411,11 +411,13 @@ def create_financial_estimate(
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable. The estimate was not saved.")
     db = get_database()
-    claim = db["claims"].find_one({"claim_id": claim_id}, {"_id": 0, "claim_id": 1, "currency": 1, "loss_location": 1, "claim_type": 1})
+    claim = db["claims"].find_one({"claim_id": claim_id}, {"_id": 0, "claim_id": 1, "currency": 1, "country_code": 1, "loss_location": 1, "claim_type": 1})
     if not claim:
         raise HTTPException(status_code=404, detail="Claim not found.")
     if (claim.get("currency") or "").upper() != payload.currency:
         raise HTTPException(status_code=422, detail="Estimate currency must match the claim currency.")
+    if (claim.get("country_code") and claim["country_code"].upper() != payload.country_code):
+        raise HTTPException(status_code=422, detail="Estimate country must match the claim's recorded loss country.")
     result = calculate_estimate(payload)
     now = datetime.now(timezone.utc).isoformat()
     record = {
