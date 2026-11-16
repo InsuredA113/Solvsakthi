@@ -293,7 +293,7 @@
         </section>
         <section class="panel damage-results" *ngIf="financialEstimate">
           <div class="panel-heading"><div><h2>Calculation breakdown</h2><p class="muted">{{ financialEstimate.claim_id }} · {{ financialEstimate.state_or_jurisdiction }}</p></div><span class="status">{{ financialEstimate.status }}</span></div>
-          <div class="damage-disclaimer"><b>Tax profile: {{ financialEstimate.tax_profile_status || 'Not recorded' }}</b><p *ngIf="financialEstimate.tax_rule_warning">{{ financialEstimate.tax_rule_warning }}</p><p *ngIf="financialEstimate.tax_rule_ids?.length">Applied verified tax rule versions: {{ financialEstimate.tax_rule_ids.join(', ') }}</p><p *ngIf="financialEstimate.tax_mode === 'manual'">Manual tax override: independently verify the entered tax schedule before approval.</p></div>
+          <div class="damage-disclaimer"><b>Tax profile: {{ financialEstimate.tax_profile_status || 'Not recorded' }}</b><p *ngIf="financialEstimate.tax_rule_warning">{{ financialEstimate.tax_rule_warning }}</p><p *ngIf="financialEstimate.tax_rule_ids?.length">Applied verified tax rule versions: {{ financialEstimate.tax_rule_ids?.join(', ') }}</p><p *ngIf="financialEstimate.tax_mode === 'manual'">Manual tax override: independently verify the entered tax schedule before approval.</p></div>
           <div class="damage-summary"><div><small>Gross repairs</small><b>{{ formatAmount(+financialEstimate.gross_repair_cost, financialEstimate.currency) }}</b></div><div><small>Depreciation</small><b>{{ formatAmount(+financialEstimate.depreciation, financialEstimate.currency) }}</b></div><div><small>Net repair cost</small><b>{{ formatAmount(+financialEstimate.net_repair_cost, financialEstimate.currency) }}</b></div></div>
           <div class="table-scroll"><table><tbody>
             <tr><td>Fees and other charges</td><td>{{ formatAmount(+financialEstimate.total_fees_and_charges, financialEstimate.currency) }}</td></tr>
@@ -317,7 +317,7 @@
                 <button *ngIf="canApproveFinancialEstimate()" class="danger-action" type="button" (click)="reviewFinancialEstimate(estimate, 'Rejected')" [disabled]="financialReviewBusyId === estimate.estimate_id">Reject estimate</button>
               </div>
             </div>
-            <p *ngIf="estimate.review_history?.length" class="muted">Latest review: {{ estimate.review_history[estimate.review_history.length - 1].reviewer_email }} · {{ estimate.review_history[estimate.review_history.length - 1].status }}</p>
+            <p *ngIf="estimate.review_history?.length" class="muted">Latest review: {{ estimate.review_history[estimate.review_history.length - 1]?.reviewer_email }} · {{ estimate.review_history[estimate.review_history.length - 1]?.status }}</p>
           </article>
         </section>
       </ng-container>
