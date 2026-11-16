@@ -21,7 +21,8 @@ interface DamageAssessment {
   review_history?: { status: string; notes: string; reviewed_at: string; reviewed_by: string; reviewer_role: string }[];
 }
 interface FinancialEstimate { estimate_id: string; claim_id: string; currency: string; gross_repair_cost: string; depreciation: string; net_repair_cost: string; total_fees_and_charges: string; total_tax: string; interest: { amount: string }; deductible: string; total_before_deductible: string; preliminary_net_estimate: string; status: string; created_at: string; pricing_source: string; state_or_jurisdiction: string; taxes: any[]; line_items: any[]; tax_mode?: string; tax_profile_status?: string; tax_rule_warning?: string | null; tax_rule_ids?: string[]; review_status?: string; review_history?: any[]; }
-interface EmailIntakeItem { intake_id: string; sender_email: string; subject: string; received_at: string; suggested_claim_type: string; confirmed_claim_type?: string; classification_reason: string; missing_fields: string[]; review_status: string; extracted_fields: Record<string, string | null>; claim_id?: string; }\ninterface ClaimDraft {
+interface EmailIntakeItem { intake_id: string; sender_email: string; subject: string; received_at: string; suggested_claim_type: string; confirmed_claim_type?: string; classification_reason: string; missing_fields: string[]; review_status: string; extracted_fields: Record<string, string | null>; claim_id?: string; }
+interface ClaimDraft {
   customer_name: string; email: string; phone: string; policy_number: string;
   claim_type: 'Property' | 'Casualty'; property_occupancy: string | null;
   casualty_segment: 'Commercial' | null; business_name: string; industry: string;
@@ -91,7 +92,10 @@ export class AppComponent implements OnInit {
   pendingClaims = 0;
   closedClaims = 0;
   unclassifiedLegacyCasualtyClaims = 0;
-  analyticsData: any = null;\n  emailIntakeItems: EmailIntakeItem[] = [];\n  emailIntakeBusy = false;\n  selectedEmailIntakeId = '';
+  analyticsData: any = null;
+  emailIntakeItems: EmailIntakeItem[] = [];
+  emailIntakeBusy = false;
+  selectedEmailIntakeId = '';
   analyticsBusy = false;
   analyticsFromDate = '';
   analyticsToDate = '';
@@ -369,7 +373,8 @@ export class AppComponent implements OnInit {
     this.activePage = page;
     this.errorMessage = '';
     this.successMessage = '';
-    if (page === 'Claims') this.loadClaims();\n    if (page === 'Email FNOL') this.loadEmailIntake();
+    if (page === 'Claims') this.loadClaims();
+    if (page === 'Email FNOL') this.loadEmailIntake();
     if (page === 'AI Damage Analysis' && this.damageClaimId.trim()) this.loadDamageAssessments();
     if (page === 'Users') this.loadUsers();
     if (page === 'Tax Rules' && this.canManageTaxRules()) this.loadTaxRules();
@@ -450,11 +455,15 @@ export class AppComponent implements OnInit {
       return;
     }
     this.savingClaim = true;
-    const url = this.selectedEmailIntakeId\n      ? `${environment.apiBaseUrl}/email-intake/${encodeURIComponent(this.selectedEmailIntakeId)}/create-claim`\n      : `${environment.apiBaseUrl}/claims`;\n    this.http.post<Claim>(url, this.draft, { headers: this.authHeaders() }).subscribe({
+    const url = this.selectedEmailIntakeId
+      ? `${environment.apiBaseUrl}/email-intake/${encodeURIComponent(this.selectedEmailIntakeId)}/create-claim`
+      : `${environment.apiBaseUrl}/claims`;
+    this.http.post<Claim>(url, this.draft, { headers: this.authHeaders() }).subscribe({
       next: claim => {
         this.savingClaim = false;
         this.successMessage = `Claim ${claim.claim_id} was created successfully.`;
         this.draft = this.emptyDraft();
+        this.selectedEmailIntakeId = '';
         this.loadClaims();
         this.loadDashboard();
       },
