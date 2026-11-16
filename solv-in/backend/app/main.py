@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from fastapi import Depends, FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 from bson import ObjectId
