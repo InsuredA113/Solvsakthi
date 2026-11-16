@@ -147,7 +147,7 @@ export class AppComponent implements OnInit {
   }
 
   emptyEstimateDraft(): any {
-    return { description: '', quantity: 1, unit: 'item', unit_rate: 0, depreciation_rate: 0, taxable: true, currency: 'INR', state_or_jurisdiction: '', tax_name: 'State tax', tax_jurisdiction: '', tax_rate: 0, tax_basis: 'depreciated_repair_subtotal', tax_authority: '', deductible: 0, fee_name: '', fee_amount: 0, interest_applicable: false, interest_rate: null, interest_principal: null, interest_days: null, interest_authority: '', pricing_source: '', pricing_effective_date: new Date().toISOString().slice(0, 10), notes: '' };
+    return { description: '', quantity: 1, unit: 'item', unit_rate: 0, depreciation_rate: 0, taxable: true, currency: 'INR', state_or_jurisdiction: '', tax_name: 'State tax', tax_jurisdiction: '', tax_rate: 0, tax_basis: 'depreciated_repair_subtotal', tax_authority: '', local_tax_name: 'Local tax', local_tax_jurisdiction: '', local_tax_rate: 0, local_tax_basis: 'depreciated_repair_subtotal', local_tax_authority: '', deductible: 0, fee_name: '', fee_amount: 0, interest_applicable: false, interest_rate: null, interest_principal: null, interest_days: null, interest_authority: '', pricing_source: '', pricing_effective_date: new Date().toISOString().slice(0, 10), notes: '' };
   }
 
   emptyDraft(): ClaimDraft {
@@ -233,7 +233,7 @@ export class AppComponent implements OnInit {
       this.errorMessage = 'Enter a Claim ID, repair description, jurisdiction, valid quantity/rate and pricing source/date.';
       return;
     }
-    if (Number(d.tax_rate) > 0 && (!d.tax_jurisdiction.trim() || !d.tax_authority.trim())) {
+    if ((Number(d.tax_rate) > 0 && (!d.tax_jurisdiction.trim() || !d.tax_authority.trim())) || (Number(d.local_tax_rate) > 0 && (!d.local_tax_jurisdiction.trim() || !d.local_tax_authority.trim()))) {
       this.errorMessage = 'For a tax rate above zero, provide the tax jurisdiction and legal/rate source.';
       return;
     }
@@ -246,7 +246,10 @@ export class AppComponent implements OnInit {
     const body: any = {
       currency, state_or_jurisdiction: d.state_or_jurisdiction,
       line_items: [{ description: d.description, quantity: Number(d.quantity), unit: d.unit, unit_rate: Number(d.unit_rate), taxable: !!d.taxable, depreciation_rate: Number(d.depreciation_rate) }],
-      taxes: Number(d.tax_rate) > 0 ? [{ name: d.tax_name, jurisdiction: d.tax_jurisdiction, rate_percent: Number(d.tax_rate), applies_to: d.tax_basis, authority_reference: d.tax_authority }] : [],
+      taxes: [
+        ...(Number(d.tax_rate) > 0 ? [{ name: d.tax_name, jurisdiction: d.tax_jurisdiction, rate_percent: Number(d.tax_rate), applies_to: d.tax_basis, authority_reference: d.tax_authority }] : []),
+        ...(Number(d.local_tax_rate) > 0 ? [{ name: d.local_tax_name, jurisdiction: d.local_tax_jurisdiction, rate_percent: Number(d.local_tax_rate), applies_to: d.local_tax_basis, authority_reference: d.local_tax_authority }] : [])
+      ],
       charges: Number(d.fee_amount) > 0 ? [{ name: d.fee_name || 'Other claim charge', amount: Number(d.fee_amount), charge_type: 'fee', taxable: false, authority_reference: '' }] : [],
       deductible: Number(d.deductible || 0),
       interest: { applicable: !!d.interest_applicable, annual_rate_percent: d.interest_applicable ? Number(d.interest_rate) : null, principal: d.interest_applicable ? Number(d.interest_principal) : null, days: d.interest_applicable ? Number(d.interest_days) : null, basis: 'simple_actual_365', authority_reference: d.interest_authority || '' },
