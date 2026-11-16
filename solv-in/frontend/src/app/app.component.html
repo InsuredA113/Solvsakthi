@@ -27,6 +27,7 @@
       <div class="alert success" *ngIf="successMessage">{{ successMessage }}</div>
 
       <ng-container *ngIf="activePage === 'Dashboard'">
+        <div class="damage-disclaimer" *ngIf="unclassifiedLegacyCasualtyClaims > 0">{{ unclassifiedLegacyCasualtyClaims }} legacy Casualty claim(s) are excluded from the dashboard until verified as commercial or otherwise classified.</div>
         <section class="metrics">
           <article class="metric"><span class="metric-icon blue">▤</span><div><small>Total claims</small><strong>{{ totalClaims | number }}</strong><em>Live MongoDB records</em></div></article>
           <article class="metric"><span class="metric-icon teal">＋</span><div><small>New FNOL</small><strong>{{ newClaims | number }}</strong><em>Received claims</em></div></article>
@@ -78,8 +79,27 @@
               <label>Policy number *<input name="policy_number" [(ngModel)]="draft.policy_number" required placeholder="Enter policy number"></label>
               <label>Email address<input type="email" name="email" [(ngModel)]="draft.email" placeholder="customer@example.com"></label>
               <label>Phone number<input name="phone" [(ngModel)]="draft.phone" placeholder="Contact number"></label>
-              <label>Claim type *<select name="claim_type" [(ngModel)]="draft.claim_type"><option value="Property">Property</option><option value="Casualty">Casualty</option></select></label>
+              <label>Claim type *<select name="claim_type" [(ngModel)]="draft.claim_type" (ngModelChange)="onClaimTypeChange()"><option value="Property">Property</option><option value="Casualty">Commercial Casualty</option></select></label>
               <label>Incident date *<input type="date" name="incident_date" [(ngModel)]="draft.incident_date" required></label>
+              <label *ngIf="draft.claim_type === 'Property'">Property occupancy
+                <select name="property_occupancy" [(ngModel)]="draft.property_occupancy">
+                  <option value="Residential">Residential</option><option value="Commercial">Commercial</option>
+                  <option value="Industrial">Industrial</option><option value="Mixed Use">Mixed Use</option><option value="Other">Other</option>
+                </select>
+              </label>
+              <div class="full damage-disclaimer" *ngIf="draft.claim_type === 'Casualty'">
+                <b>Commercial casualty only.</b> Solv-In does not accept personal-lines casualty claims. Provide the business and liability details below.
+              </div>
+              <label *ngIf="draft.claim_type === 'Casualty'">Business / insured entity name *<input name="business_name" [(ngModel)]="draft.business_name" required minlength="2" maxlength="160"></label>
+              <label *ngIf="draft.claim_type === 'Casualty'">Industry / business sector *<input name="industry" [(ngModel)]="draft.industry" required minlength="2" maxlength="120" placeholder="e.g. Manufacturing, Retail, Construction"></label>
+              <label *ngIf="draft.claim_type === 'Casualty'">Commercial liability line *<select name="commercial_liability_type" [(ngModel)]="draft.commercial_liability_type" required>
+                <option value="Commercial General Liability">Commercial General Liability</option>
+                <option value="Professional Liability">Professional Liability</option>
+                <option value="Product Liability">Product Liability</option>
+                <option value="Employers Liability">Employers Liability</option>
+                <option value="Public Liability">Public Liability</option>
+                <option value="Other Commercial Liability">Other Commercial Liability</option>
+              </select></label>
               <label class="full">Loss location / address *<input name="loss_location" [(ngModel)]="draft.loss_location" required placeholder="Street address or incident location"></label>
               <label>Country code (ISO 3166-1 alpha-2) *<input name="claim_country" [(ngModel)]="draft.country_code" maxlength="2" required placeholder="e.g. US, GB, IN, AU"></label>
               <label>State / province / region<input name="claim_region" [(ngModel)]="draft.region" placeholder="State, province, territory or region"></label>
@@ -359,7 +379,78 @@
       </ng-container>
 
       <ng-container *ngIf="activePage === 'Reports'">
-        <section class="panel placeholder"><div class="placeholder-icon">▥</div><h2>Reports module</h2><p>Reporting and preliminary assessment reports are planned for a later phase. No report is generated from unverified claim information.</p></section>
+        <section class="panel form-panel">
+          <div class="panel-heading"><div><h2>Claims portfolio analytics</h2><p class="muted">All Property claims and Commercial Casualty claims only. Currency totals are kept separate; no foreign-exchange conversion is applied.</p></div></div>
+          <div class="form-grid">
+            <label>Portfolio
+              <select name="analytics_portfolio" [(ngModel)]="analyticsPortfolio">
+                <option value="All">All in-scope claims</option><option value="Property">Property only</option><option value="Commercial Casualty">Commercial Casualty only</option>
+              </select>
+            </label>
+            <label>From incident date<input type="date" name="analytics_from" [(ngModel)]="analyticsFromDate"></label>
+            <label>To incident date<input type="date" name="analytics_to" [(ngModel)]="analyticsToDate"></label>
+            <label>Country code<input name="analytics_country" maxlength="2" [(ngModel)]="analyticsCountry" placeholder="e.g. US, IN, GB"></label>
+            <label>Currency code<input name="analytics_currency" maxlength="3" [(ngModel)]="analyticsCurrency" placeholder="e.g. USD, INR, GBP"></label>
+          </div>
+          <div class="form-actions">
+            <span class="muted">Exposure is based on reported estimated loss, not paid or approved settlement.</span>
+            <button class="secondary-action" type="button" (click)="exportClaimsAnalytics()" [disabled]="!analyticsData">Export CSV</button>
+            <button class="primary-action" type="button" (click)="loadClaimsAnalytics()" [disabled]="analyticsBusy">{{ analyticsBusy ? 'Loading…' : 'Apply filters' }}</button>
+          </div>
+        </section>
+
+        <div class="damage-disclaimer" *ngIf="analyticsData?.summary?.unclassified_legacy_casualty_claims">
+          {{ analyticsData.summary.unclassified_legacy_casualty_claims }} legacy Casualty claim(s) have no commercial classification. They are excluded from this portfolio until an authorised user verifies and classifies them.
+        </div>
+
+        <section class="metrics" *ngIf="analyticsData">
+          <article class="metric"><span class="metric-icon blue">▤</span><div><small>In-scope claims</small><strong>{{ analyticsData.summary.total_in_scope_claims | number }}</strong><em>Property + commercial casualty</em></div></article>
+          <article class="metric"><span class="metric-icon teal">⌂</span><div><small>Property claims</small><strong>{{ analyticsData.summary.property_claims | number }}</strong><em>All property occupancy types</em></div></article>
+          <article class="metric"><span class="metric-icon orange">▣</span><div><small>Commercial casualty</small><strong>{{ analyticsData.summary.commercial_casualty_claims | number }}</strong><em>Business liability claims only</em></div></article>
+          <article class="metric"><span class="metric-icon purple">◷</span><div><small>Open claims</small><strong>{{ analyticsData.summary.open_claims | number }}</strong><em>Not marked closed</em></div></article>
+          <article class="metric"><span class="metric-icon green">✓</span><div><small>Closed claims</small><strong>{{ analyticsData.summary.closed_claims | number }}</strong><em>Workflow status: Closed</em></div></article>
+        </section>
+
+        <section class="bottom-grid" *ngIf="analyticsData">
+          <article class="panel claims-panel">
+            <div class="panel-heading"><h2>Claims by status</h2></div>
+            <div class="table-scroll"><table><thead><tr><th>Status</th><th>Claims</th></tr></thead><tbody>
+              <tr *ngFor="let row of analyticsData.by_status"><td>{{ row.status }}</td><td>{{ row.claim_count | number }}</td></tr>
+              <tr *ngIf="analyticsData.by_status.length === 0"><td colspan="2" class="empty">No matching claims.</td></tr>
+            </tbody></table></div>
+          </article>
+          <article class="panel claims-panel">
+            <div class="panel-heading"><h2>Claims by country</h2></div>
+            <div class="table-scroll"><table><thead><tr><th>Country</th><th>Claims</th></tr></thead><tbody>
+              <tr *ngFor="let row of analyticsData.by_country"><td>{{ row.country_code }}</td><td>{{ row.claim_count | number }}</td></tr>
+              <tr *ngIf="analyticsData.by_country.length === 0"><td colspan="2" class="empty">No matching claims.</td></tr>
+            </tbody></table></div>
+          </article>
+        </section>
+
+        <section class="panel claims-panel" *ngIf="analyticsData">
+          <div class="panel-heading"><h2>Reported exposure by currency</h2><span class="subtle">No cross-currency totals</span></div>
+          <div class="table-scroll"><table><thead><tr><th>Currency</th><th>Claims</th><th>Reported estimated loss</th></tr></thead><tbody>
+            <tr *ngFor="let row of analyticsData.reported_exposure_by_currency"><td>{{ row.currency }}</td><td>{{ row.claim_count | number }}</td><td>{{ formatAmount(+row.reported_estimated_loss, row.currency) }}</td></tr>
+            <tr *ngIf="analyticsData.reported_exposure_by_currency.length === 0"><td colspan="3" class="empty">No reported exposure values.</td></tr>
+          </tbody></table></div>
+        </section>
+
+        <section class="panel claims-panel" *ngIf="analyticsData">
+          <div class="panel-heading"><h2>Latest preliminary estimates by currency</h2><span class="subtle">Latest saved estimate per claim only</span></div>
+          <div class="table-scroll"><table><thead><tr><th>Currency</th><th>Claims with estimates</th><th>Latest preliminary estimate total</th><th>Pending review</th><th>Approved estimates</th></tr></thead><tbody>
+            <tr *ngFor="let row of analyticsData.latest_preliminary_estimates_by_currency"><td>{{ row.currency }}</td><td>{{ row.claim_count | number }}</td><td>{{ formatAmount(+row.latest_preliminary_estimate_total, row.currency) }}</td><td>{{ row.pending_review_count | number }}</td><td>{{ row.approved_estimate_count | number }}</td></tr>
+            <tr *ngIf="analyticsData.latest_preliminary_estimates_by_currency.length === 0"><td colspan="5" class="empty">No saved preliminary estimates for this filter.</td></tr>
+          </tbody></table></div>
+        </section>
+
+        <section class="panel claims-panel" *ngIf="analyticsData">
+          <div class="panel-heading"><h2>Claims by incident month</h2></div>
+          <div class="table-scroll"><table><thead><tr><th>Month</th><th>Claims</th></tr></thead><tbody>
+            <tr *ngFor="let row of analyticsData.by_month"><td>{{ row.month }}</td><td>{{ row.claim_count | number }}</td></tr>
+            <tr *ngIf="analyticsData.by_month.length === 0"><td colspan="2" class="empty">No matching claims.</td></tr>
+          </tbody></table></div>
+        </section>
       </ng-container>
       <ng-container *ngIf="activePage === 'Settings'">
         <section class="panel placeholder"><div class="placeholder-icon">⚙</div><h2>Workspace settings</h2><p>Authentication, role permissions and insurer-level tenant configuration will be implemented before production use.</p></section>
