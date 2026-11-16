@@ -152,6 +152,10 @@ The claim lookup endpoint `GET /api/claims/{claim_id}/applicable-tax-rules?tax_p
 - Financial estimates default to **automatic tax mode**. The API matches active tax rules by claim country, currency, administrative area, region/locality and tax-point date.
 - Matching rules are converted into deterministic Python Decimal tax components and calculated using each rule's configured taxable base, compounding setting and explicit calculation order (lower order runs first).
 - The saved estimate contains exact rule identifiers, versions, jurisdiction, rate, effective dates, authority references, source URLs and verification metadata as an audit snapshot.
+- Configurable calculation order determines the sequence for tax-on-tax compounding; lower order values are applied first.
+- Financial estimate review is separate from the preliminary calculation status. Reviewers can mark reviewed or request evidence; only designated approver roles can approve/reject the estimate. Rejected or approved estimate reviews are final; revised calculations require a new estimate.
+- API: `PATCH /api/claims/{claim_id}/financial-estimates/{estimate_id}/review`.
+
 - Conflicting active rules for the same tax at the same jurisdiction specificity stop automatic calculation with a conflict response. Administrators must resolve the tax registry instead of allowing Solv-In to guess.
 - If no active verified rule matches, the estimate is still preliminary but explicitly marked **No verified matching tax profile**. No rate is assumed; the warning requires human review before approval.
 - A deliberate **manual tax mode** is available for authorised staff using an approved external tax schedule. Such estimates are labelled **Manual tax override - verify before approval** and are not represented as registry-verified.
