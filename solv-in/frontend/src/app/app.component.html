@@ -3,7 +3,7 @@
   <aside class="sidebar">
     <div class="brand"><div class="brand-mark">S</div><div><strong>Solv-In</strong><small>Smarter Claims. Faster Decisions.</small></div></div>
     <nav aria-label="Main navigation">
-      <ng-container *ngFor="let item of navigation"><button *ngIf="item !== 'Users' || isAdmin()" (click)="selectPage(item)" [class.active]="activePage === item">
+      <ng-container *ngFor="let item of navigation"><button *ngIf="(item !== 'Users' || isAdmin()) && (item !== 'AI Damage Analysis' || canAnalyseDamage())" (click)="selectPage(item)" [class.active]="activePage === item">
         <span class="nav-icon">{{ item === 'Dashboard' ? '⌂' : item === 'Claims' ? '▤' : item === 'New FNOL' ? '+' : item === 'AI Damage Analysis' ? '◈' : item === 'Reports' ? '▥' : item === 'Users' ? '♙' : '⚙' }}</span>{{ item }}
       </button></ng-container>
     </nav>
