@@ -147,7 +147,27 @@ export class AppComponent implements OnInit {
   }
 
   emptyEstimateDraft(): any {
-    return { description: '', quantity: 1, unit: 'item', unit_rate: 0, depreciation_rate: 0, taxable: true, currency: 'INR', state_or_jurisdiction: '', tax_name: 'State tax', tax_jurisdiction: '', tax_rate: 0, tax_basis: 'depreciated_repair_subtotal', tax_authority: '', local_tax_name: 'Local tax', local_tax_jurisdiction: '', local_tax_rate: 0, local_tax_basis: 'depreciated_repair_subtotal', local_tax_authority: '', deductible: 0, fee_name: '', fee_amount: 0, interest_applicable: false, interest_rate: null, interest_principal: null, interest_days: null, interest_authority: '', pricing_source: '', pricing_effective_date: new Date().toISOString().slice(0, 10), notes: '' };
+    return {
+      description: '', quantity: 1, unit: 'item', unit_rate: 0, depreciation_rate: 0, taxable: true,
+      currency: '', currency_minor_units: 2, country_code: '', state_or_jurisdiction: '', region: '', locality: '', postal_code: '',
+      loss_date: new Date().toISOString().slice(0, 10), tax_point_date: new Date().toISOString().slice(0, 10),
+      taxes: [], deductible: 0, fee_name: '', fee_amount: 0, interest_applicable: false,
+      interest_rate: null, interest_principal: null, interest_days: null, interest_basis: 'simple_actual_365',
+      interest_authority: '', pricing_source: '', pricing_effective_date: new Date().toISOString().slice(0, 10), notes: ''
+    };
+  }
+
+  addTaxComponent(): void {
+    if (this.estimateDraft.taxes.length >= 20) return;
+    this.estimateDraft.taxes.push({
+      name: '', tax_type: 'Other', jurisdiction: '', rate_percent: 0,
+      applies_to: 'depreciated_repair_subtotal', compound_on_prior_taxes: false,
+      authority_reference: '', effective_from: '', effective_to: ''
+    });
+  }
+
+  removeTaxComponent(index: number): void {
+    this.estimateDraft.taxes.splice(index, 1);
   }
 
   emptyDraft(): ClaimDraft {
@@ -228,36 +248,48 @@ export class AppComponent implements OnInit {
 
   calculateFinancialEstimate(): void {
     const d = this.estimateDraft;
-    if (!this.estimateClaimId.trim() || !d.description.trim() || !d.state_or_jurisdiction.trim() ||
-        !d.pricing_source.trim() || !d.pricing_effective_date || Number(d.quantity) <= 0 || Number(d.unit_rate) < 0) {
-      this.errorMessage = 'Enter a Claim ID, repair description, jurisdiction, valid quantity/rate and pricing source/date.';
+    const claim = this.claims.find(x => x.claim_id === this.estimateClaimId.trim());
+    const currency = (claim?.currency || d.currency || '').toUpperCase();
+    if (!this.estimateClaimId.trim() || !d.description.trim() || !d.country_code.trim() ||
+        !d.state_or_jurisdiction.trim() || !currency || !/^[A-Z]{3}$/.test(currency) ||
+        !/^\d{2}$/.test(d.country_code.trim()) || !d.loss_date || !d.tax_point_date ||
+        !d.pricing_source.trim() || !d.pricing_effective_date ||
+        Number(d.quantity) <= 0 || Number(d.unit_rate) < 0) {
+      this.errorMessage = 'Enter a Claim ID, repair details, ISO country and currency codes, loss/tax dates, jurisdiction and verified pricing source.';
       return;
     }
-    if ((Number(d.tax_rate) > 0 && (!d.tax_jurisdiction.trim() || !d.tax_authority.trim())) || (Number(d.local_tax_rate) > 0 && (!d.local_tax_jurisdiction.trim() || !d.local_tax_authority.trim()))) {
-      this.errorMessage = 'For a tax rate above zero, provide the tax jurisdiction and legal/rate source.';
+    if (d.taxes.some((tax: any) => Number(tax.rate_percent) > 0 &&
+      (!tax.name.trim() || !tax.jurisdiction.trim() || !tax.authority_reference.trim()))) {
+      this.errorMessage = 'Each tax component needs a name, jurisdiction and legal/rate authority reference.';
       return;
     }
     if (d.interest_applicable && (!d.interest_authority.trim() || d.interest_rate === null || d.interest_principal === null || d.interest_days === null)) {
       this.errorMessage = 'Applicable interest requires rate, principal, days and a policy/legal authority reference.';
       return;
     }
-    const claim = this.claims.find(x => x.claim_id === this.estimateClaimId.trim());
-    const currency = claim?.currency || d.currency;
     const body: any = {
-      currency, state_or_jurisdiction: d.state_or_jurisdiction,
+      currency, country_code: d.country_code.trim().toUpperCase(),
+      state_or_jurisdiction: d.state_or_jurisdiction, region: d.region, locality: d.locality,
+      postal_code: d.postal_code, loss_date: d.loss_date, tax_point_date: d.tax_point_date,
       line_items: [{ description: d.description, quantity: Number(d.quantity), unit: d.unit, unit_rate: Number(d.unit_rate), taxable: !!d.taxable, depreciation_rate: Number(d.depreciation_rate) }],
-      taxes: [
-        ...(Number(d.tax_rate) > 0 ? [{ name: d.tax_name, jurisdiction: d.tax_jurisdiction, rate_percent: Number(d.tax_rate), applies_to: d.tax_basis, authority_reference: d.tax_authority }] : []),
-        ...(Number(d.local_tax_rate) > 0 ? [{ name: d.local_tax_name, jurisdiction: d.local_tax_jurisdiction, rate_percent: Number(d.local_tax_rate), applies_to: d.local_tax_basis, authority_reference: d.local_tax_authority }] : [])
-      ],
+      taxes: d.taxes.filter((tax: any) => Number(tax.rate_percent) > 0).map((tax: any) => ({
+        ...tax, rate_percent: Number(tax.rate_percent), effective_from: tax.effective_from || null,
+        effective_to: tax.effective_to || null
+      })),
       charges: Number(d.fee_amount) > 0 ? [{ name: d.fee_name || 'Other claim charge', amount: Number(d.fee_amount), charge_type: 'fee', taxable: false, authority_reference: '' }] : [],
       deductible: Number(d.deductible || 0),
-      interest: { applicable: !!d.interest_applicable, annual_rate_percent: d.interest_applicable ? Number(d.interest_rate) : null, principal: d.interest_applicable ? Number(d.interest_principal) : null, days: d.interest_applicable ? Number(d.interest_days) : null, basis: 'simple_actual_365', authority_reference: d.interest_authority || '' },
+      interest: {
+        applicable: !!d.interest_applicable,
+        annual_rate_percent: d.interest_applicable ? Number(d.interest_rate) : null,
+        principal: d.interest_applicable ? Number(d.interest_principal) : null,
+        days: d.interest_applicable ? Number(d.interest_days) : null,
+        basis: d.interest_basis, authority_reference: d.interest_authority || ''
+      },
       pricing_source: d.pricing_source, pricing_effective_date: d.pricing_effective_date, notes: d.notes
     };
     this.estimateBusy = true; this.errorMessage = ''; this.successMessage = '';
     this.http.post<FinancialEstimate>(`${environment.apiBaseUrl}/claims/${encodeURIComponent(this.estimateClaimId.trim())}/financial-estimates`, body, { headers: this.authHeaders() }).subscribe({
-      next: result => { this.financialEstimate = result; this.estimateBusy = false; this.successMessage = 'Preliminary financial estimate calculated and saved for adjuster review.'; this.loadFinancialEstimates(); },
+      next: result => { this.financialEstimate = result; this.estimateBusy = false; this.successMessage = 'Preliminary financial estimate calculated and saved for authorised review.'; this.loadFinancialEstimates(); },
       error: error => { this.estimateBusy = false; this.handleApiError(error); }
     });
   }
@@ -418,7 +450,7 @@ export class AppComponent implements OnInit {
 
   formatAmount(amount: number | null | undefined, currency: string): string {
     if (amount === null || amount === undefined) return 'Not provided';
-    try { return new Intl.NumberFormat('en-IN', { style: 'currency', currency }).format(amount); }
-    catch { return `${currency} ${amount.toLocaleString('en-IN')}`; }
+    try { return new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(amount); }
+    catch { return `${currency} ${amount.toLocaleString()}`; }
   }
 }
