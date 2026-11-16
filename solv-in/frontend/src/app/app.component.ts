@@ -16,6 +16,7 @@ interface DamageAssessment {
   affected_areas: string[]; visible_observations: string[]; severity: string;
   confidence: string; possible_cause: string; recommended_next_steps: string[];
   limitations: string[]; repair_cost_estimate: number | null; status: string; created_at: string;
+  review_history?: { status: string; notes: string; reviewed_at: string; reviewed_by: string; reviewer_role: string }[];
 }
 interface ClaimDraft {
   customer_name: string; email: string; phone: string; policy_number: string;
@@ -136,7 +137,7 @@ export class AppComponent implements OnInit {
   }
 
   canAnalyseDamage(): boolean {
-    return ['Super Administrator', 'Insurance Company Administrator', 'Claims Manager', 'Property Adjuster', 'Casualty Adjuster', 'Surveyor', 'Actuarial Analyst'].includes(this.currentUser?.role || '');
+    return ['Super Administrator', 'Insurance Company Administrator', 'Claims Manager', 'Property Adjuster', 'Casualty Adjuster', 'Surveyor', 'Actuarial Analyst', 'Approver'].includes(this.currentUser?.role || '');
   }
 
   emptyDraft(): ClaimDraft {
