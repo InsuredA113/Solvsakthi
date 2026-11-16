@@ -1,5 +1,8 @@
 from datetime import datetime, timezone
 from fastapi import Depends, FastAPI, HTTPException, Query
+from pydantic import BaseModel, Field
+from bson import ObjectId
+from bson.errors import InvalidId
 from fastapi.middleware.cors import CORSMiddleware
 from pymongo import DESCENDING, ReturnDocument
 from pymongo.errors import PyMongoError
@@ -40,6 +43,14 @@ STATUS_ROLES = (
     "Property Adjuster", "Casualty Adjuster", "Approver"
 )
 ADMIN_ROLES = ("Super Administrator",)
+
+DAMAGE_REVIEW_ROLES = DAMAGE_ANALYSIS_ROLES + ("Approver",)
+DAMAGE_APPROVAL_ROLES = ("Super Administrator", "Insurance Company Administrator", "Claims Manager", "Approver")
+
+class DamageReviewUpdate(BaseModel):
+    status: str = Field(..., max_length=40)
+    notes: str = Field(default="", max_length=2000)
+
 
 @app.on_event("startup")
 def startup():
@@ -318,7 +329,8 @@ Keep findings concise and distinguish observation from hypothesis.
         "recommended_next_steps": result["recommended_next_steps"][:20],
         "limitations": result["limitations"][:20],
         "repair_cost_estimate": None,
-        "status": "Preliminary - adjuster review required",
+        "status": "Pending Adjuster Review",
+        "review_history": [],
         "created_at": datetime.now(timezone.utc).isoformat(),
         "created_by": user["email"]
     }
@@ -340,8 +352,39 @@ def list_damage_assessments(
     if not get_database()["claims"].find_one({"claim_id": claim_id}, {"_id": 0}):
         raise HTTPException(status_code=404, detail="Claim not found.")
     rows = list(get_database()["damage_assessments"].find(
-        {"claim_id": claim_id}, {"_id": 1}
+        {"claim_id": claim_id}, {"_id": 0}
     ).sort("created_at", DESCENDING).limit(100))
     for row in rows:
         row["assessment_id"] = str(row.pop("_id"))
     return {"items": rows, "count": len(rows)}
+
+@app.patch("/api/damage-assessments/{assessment_id}/review")
+def review_damage_assessment(assessment_id: str, payload: DamageReviewUpdate, user: dict = Depends(require_roles(*DAMAGE_REVIEW_ROLES))):
+    allowed_statuses = {"Reviewed", "More Evidence Required", "Approved", "Rejected"}
+    if payload.status not in allowed_statuses:
+        raise HTTPException(status_code=422, detail="Choose a valid assessment review status.")
+    if payload.status in {"Approved", "Rejected"} and user["role"] not in DAMAGE_APPROVAL_ROLES:
+        raise HTTPException(status_code=403, detail="Only an authorised approver can approve or reject an AI assessment.")
+    if payload.status in {"More Evidence Required", "Rejected"} and not payload.notes.strip():
+        raise HTTPException(status_code=422, detail="Reviewer notes are required for this decision.")
+    try:
+        object_id = ObjectId(assessment_id)
+    except InvalidId as exc:
+        raise HTTPException(status_code=400, detail="Invalid damage assessment ID.") from exc
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    now = datetime.now(timezone.utc).isoformat()
+    review_entry = {"status": payload.status, "notes": payload.notes.strip(), "reviewed_at": now, "reviewed_by": user["email"], "reviewer_role": user["role"]}
+    try:
+        updated = get_database()["damage_assessments"].find_one_and_update(
+            {"_id": object_id},
+            {"$set": {"status": payload.status, "updated_at": now, "updated_by": user["email"]}, "$push": {"review_history": review_entry}},
+            return_document=ReturnDocument.AFTER, projection={"_id": 0}
+        )
+        if not updated:
+            raise HTTPException(status_code=404, detail="Damage assessment not found.")
+        return updated
+    except HTTPException:
+        raise
+    except PyMongoError as exc:
+        raise HTTPException(status_code=503, detail="Unable to save the assessment review.") from exc
