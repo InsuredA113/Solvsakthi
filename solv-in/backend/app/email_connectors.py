@@ -70,7 +70,7 @@ class _TextExtractor(HTMLParser):
 def html_to_text(value: str) -> str:
     parser = _TextExtractor()
     parser.feed(value)
-    return re.sub(r"\\n{3,}", "\n\n", html.unescape("".join(parser.parts))).strip()
+    return re.sub("\n{3,}", "\n\n", html.unescape("".join(parser.parts))).strip()
 
 
 def _gmail_part_text(part: dict[str, Any]) -> tuple[str, str]:
