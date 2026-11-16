@@ -210,3 +210,16 @@ Automatic tax application is limited to tax components and taxable bases represe
 - Preliminary estimate totals use only the latest saved estimate per claim to avoid double-counting multiple revisions.
 - Currency totals remain separate. No FX rates are sourced or assumed.
 - Legacy Casualty records without commercial classification are excluded and separately counted; do not bulk-classify them without policy/business evidence.
+
+
+## Phase 11 – Automated Email FNOL Intake (connector-ready)
+
+- Authenticated email-intake API accepts a normalized message from a future Gmail, Microsoft 365 or other approved mail connector.
+- Incoming messages are deduplicated by provider and provider message ID, then stored in MongoDB `email_intake`.
+- Conservative label-based extraction captures explicitly labelled details only. Classification suggestions are limited to Property, Commercial Casualty, Out of Scope or Unclassified.
+- Personal-lines casualty indicators are marked Out of Scope. Ambiguous messages remain Unclassified; an authorised reviewer must explicitly confirm Property or Commercial Casualty.
+- Reviewers can reject a message with a reason or confirm its supported claim classification. The Angular Email FNOL inbox copies extracted fields into the existing FNOL form for verification and completion.
+- Claim creation from an email intake requires the intake to be reviewed first, validates the normal ClaimCreate model and links the resulting claim to its source email intake record.
+- API routes: `POST /api/email-intake`, `GET /api/email-intake`, `GET /api/email-intake/{intake_id}`, `PATCH /api/email-intake/{intake_id}/review`, and `POST /api/email-intake/{intake_id}/create-claim`.
+- The intake API currently requires an authenticated operational user. It is a connector-ready ingestion endpoint, **not a live mailbox connection**. Gmail OAuth/Pub/Sub or Microsoft Graph subscription setup, mailbox credentials, provider webhook signature verification, retry/dead-letter handling and deployment configuration remain to be implemented before unattended email ingestion.
+- Email text is treated as untrusted input. Extraction is not AI interpretation and does not establish policy coverage, liability, fraud, causation or settlement. Human review is mandatory. Do not send real policyholder emails to an unapproved environment.
