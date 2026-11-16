@@ -51,6 +51,12 @@ class TaxRuleStatusUpdate(BaseModel):
     status: Literal["Active", "Inactive"]
     verification_note: str = Field(default="", max_length=1000)
 
+    @model_validator(mode="after")
+    def require_verification_note_for_activation(self):
+        if self.status == "Active" and not self.verification_note.strip():
+            raise ValueError("A verification note is required before activating a tax rule.")
+        return self
+
 def rule_is_applicable(rule: dict, *, country_code: str, currency: str, admin_area: str,
                        region: str, locality: str, tax_point_date: date) -> bool:
     if rule.get("status") != "Active":
