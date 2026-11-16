@@ -30,10 +30,18 @@ class ClaimCreate(BaseModel):
     @field_validator("currency")
     @classmethod
     def normalize_currency(cls, value: str) -> str:
-        value = value.upper()\n        if not re.fullmatch(r"[A-Z]{3}", value):\n            raise ValueError("Currency must be a three-letter ISO 4217 code.")\n        return value\n\n    @field_validator("country_code")\n    @classmethod\n    def normalize_country(cls, value: str | None) -> str | None:\n        if value is None or not value.strip():\n            return None\n        value = value.upper()\n        if not re.fullmatch(r"[A-Z]{2}", value):\n            raise ValueError("Country must be a two-letter ISO 3166-1 alpha-2 code.")\n        return value\n\nclass ClaimStatusUpdate(BaseModel):
-    status: ClaimStatus
+        value = value.upper()
+        if not re.fullmatch(r"[A-Z]{3}", value):
+            raise ValueError("Currency must be a three-letter ISO 4217 code.")
+        return value
 
-class ClaimRecord(ClaimCreate):
-    claim_id: str
-    status: ClaimStatus = "FNOL Received"
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    @field_validator("country_code")
+    @classmethod
+    def normalize_country(cls, value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return None
+        value = value.upper()
+        if not re.fullmatch(r"[A-Z]{2}", value):
+            raise ValueError("Country must be a two-letter ISO 3166-1 alpha-2 code.")
+        return value
+
