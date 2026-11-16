@@ -52,6 +52,11 @@ class DamageReviewUpdate(BaseModel):
     notes: str = Field(default="", max_length=2000)
 
 
+class FinancialEstimateReviewUpdate(BaseModel):
+    status: str = Field(..., max_length=40)
+    notes: str = Field(default="", max_length=2000)
+
+
 @app.on_event("startup")
 def startup():
     seed_initial_admin()
@@ -510,6 +515,54 @@ def list_financial_estimates(
     for row in rows:
         row["estimate_id"] = str(row.pop("_id"))
     return {"items": rows, "count": len(rows)}
+
+
+@app.patch("/api/claims/{claim_id}/financial-estimates/{estimate_id}/review")
+def review_financial_estimate(
+    claim_id: str,
+    estimate_id: str,
+    payload: FinancialEstimateReviewUpdate,
+    user: dict = Depends(require_roles(
+        "Super Administrator", "Insurance Company Administrator", "Claims Manager",
+        "Property Adjuster", "Casualty Adjuster", "Surveyor", "Actuarial Analyst", "Approver"
+    ))
+):
+    allowed = {"Reviewed", "More Evidence Required", "Approved", "Rejected"}
+    if payload.status not in allowed:
+        raise HTTPException(status_code=422, detail=f"Status must be one of: {', '.join(sorted(allowed))}.")
+    if payload.status in {"More Evidence Required", "Rejected"} and not payload.notes.strip():
+        raise HTTPException(status_code=422, detail="Reviewer notes are required for this decision.")
+    if payload.status in {"Approved", "Rejected"} and user.get("role") not in {
+        "Super Administrator", "Insurance Company Administrator", "Claims Manager", "Approver"
+    }:
+        raise HTTPException(status_code=403, detail="Your role cannot approve or reject financial estimates.")
+    try:
+        object_id = ObjectId(estimate_id)
+    except InvalidId as exc:
+        raise HTTPException(status_code=400, detail="Invalid financial estimate ID.") from exc
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    collection = get_database()["financial_estimates"]
+    existing = collection.find_one({"_id": object_id, "claim_id": claim_id})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Financial estimate not found for this claim.")
+    if existing.get("review_status") in {"Approved", "Rejected"}:
+        raise HTTPException(status_code=409, detail="This estimate review is final. Create a new estimate to make revised calculations.")
+    now = datetime.now(timezone.utc).isoformat()
+    event = {
+        "status": payload.status, "notes": payload.notes.strip(),
+        "reviewer_email": user["email"], "reviewer_role": user["role"], "reviewed_at": now
+    }
+    updated = collection.find_one_and_update(
+        {"_id": object_id, "claim_id": claim_id, "review_status": existing.get("review_status")},
+        {"$set": {"review_status": payload.status, "updated_at": now},
+         "$push": {"review_history": event}},
+        return_document=ReturnDocument.AFTER
+    )
+    if not updated:
+        raise HTTPException(status_code=409, detail="Estimate changed concurrently. Refresh and retry.")
+    updated["estimate_id"] = str(updated.pop("_id"))
+    return updated
 
 
 # Phase 7: verified global tax rules and jurisdiction profiles
