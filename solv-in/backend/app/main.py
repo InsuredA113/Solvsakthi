@@ -1079,7 +1079,8 @@ def review_email_intake(
         raise HTTPException(status_code=409, detail="Out-of-scope messages cannot be marked as reviewed.")
     if record.get("claim_id") or record.get("review_status") in ("Rejected", "Converted"):
         raise HTTPException(status_code=409, detail="This email intake record is locked.")
-    if payload.status == "Reviewed" and record.get("suggested_claim_type") not in ("Property", "Commercial Casualty"):
+    confirmed_type = payload.confirmed_claim_type or record.get("confirmed_claim_type") or record.get("suggested_claim_type")
+    if payload.status == "Reviewed" and confirmed_type not in ("Property", "Commercial Casualty"):
         raise HTTPException(status_code=422, detail="Confirm a supported Property or Commercial Casualty classification before review.")
     history = record.get("review_history", [])
     history.append({
@@ -1090,6 +1091,7 @@ def review_email_intake(
     updated = collection.find_one_and_update(
         {"intake_id": intake_id, "claim_id": {"$exists": False}},
         {"$set": {"review_status": payload.status, "review_history": history,
+                  "confirmed_claim_type": confirmed_type if payload.status == "Reviewed" else record.get("confirmed_claim_type"),
                   "reviewed_at": datetime.now(timezone.utc).isoformat(),
                   "reviewed_by": user["email"]}},
         return_document=ReturnDocument.AFTER,
@@ -1117,8 +1119,9 @@ def create_claim_from_email_intake(
     )
     if not record:
         raise HTTPException(status_code=409, detail="The email must be reviewed first and must not already be converted.")
-    if ((record.get("suggested_claim_type") == "Property" and payload.claim_type != "Property") or
-        (record.get("suggested_claim_type") == "Commercial Casualty" and
+    confirmed_type = record.get("confirmed_claim_type") or record.get("suggested_claim_type")
+    if ((confirmed_type == "Property" and payload.claim_type != "Property") or
+        (confirmed_type == "Commercial Casualty" and
          (payload.claim_type != "Casualty" or payload.casualty_segment != "Commercial"))):
         collection.update_one({"intake_id": intake_id}, {"$set": {"conversion_state": "Failed"}})
         raise HTTPException(status_code=422, detail="The claim type must match the reviewed email classification.")
