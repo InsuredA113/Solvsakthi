@@ -95,7 +95,7 @@ def start_gmail_watch(user: dict = Depends(require_roles(*ADMIN_ROLES))):
     try:
         result = gmail_api("POST", "watch", gmail_access_token(), json_body={
             "topicName": setting("GMAIL_PUBSUB_TOPIC"),
-            "labelIds": ["INBOX"], "labelFilterBehavior": "INCLUDE",
+            "labelIds": ["INBOX"], "labelFilterBehavior": "include",
         })
         mailbox = setting("GMAIL_MAILBOX").lower()
         get_database()["email_connector_state"].update_one(
