@@ -156,7 +156,7 @@ export class AppComponent implements OnInit {
   }
 
   emptyTaxRuleDraft(): any {
-    return { country_code: '', currency: '', admin_area: '', region: '', locality: '', tax_name: '', tax_type: 'Sales tax', rate_percent: 0, applies_to: 'depreciated_repair_subtotal', compound_on_prior_taxes: false, tax_point_type: 'Tax point date', effective_from: new Date().toISOString().slice(0, 10), effective_to: '', authority_name: '', authority_reference: '', source_url: '', notes: '' };
+    return { country_code: '', currency: '', admin_area: '', region: '', locality: '', tax_name: '', tax_type: 'Sales tax', rate_percent: 0, calculation_order: 100, applies_to: 'depreciated_repair_subtotal', compound_on_prior_taxes: false, tax_point_type: 'Tax point date', effective_from: new Date().toISOString().slice(0, 10), effective_to: '', authority_name: '', authority_reference: '', source_url: '', notes: '' };
   }
 
   loadTaxRules(): void {
