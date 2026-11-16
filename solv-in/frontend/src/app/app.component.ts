@@ -132,6 +132,10 @@ export class AppComponent implements OnInit {
     return this.currentUser?.role === 'Super Administrator';
   }
 
+  canAnalyseDamage(): boolean {
+    return ['Super Administrator', 'Insurance Company Administrator', 'Claims Manager', 'Property Adjuster', 'Casualty Adjuster', 'Surveyor', 'Actuarial Analyst'].includes(this.currentUser?.role || '');
+  }
+
   emptyDraft(): ClaimDraft {
     return {
       customer_name: '', email: '', phone: '', policy_number: '',
