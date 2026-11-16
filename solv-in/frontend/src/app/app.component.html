@@ -170,6 +170,12 @@
             <label>Taxable base<select name="tax_basis" [(ngModel)]="estimateDraft.tax_basis"><option value="repair_subtotal">Gross repair subtotal</option><option value="depreciated_repair_subtotal">After depreciation</option><option value="fees">Taxable fees only</option></select></label>
             <label>Tax jurisdiction<input name="tax_jurisdiction" [(ngModel)]="estimateDraft.tax_jurisdiction" placeholder="State / local authority"></label>
             <label>Tax authority / rate reference<input name="tax_authority" [(ngModel)]="estimateDraft.tax_authority" placeholder="Rule, notification or approved rate schedule"></label>
+            <div class="full"><h3>Additional local / municipal tax (optional)</h3></div>
+            <label>Local tax name<input name="local_tax_name" [(ngModel)]="estimateDraft.local_tax_name" placeholder="Local tax"></label>
+            <label>Local tax rate (%)<input type="number" min="0" max="100" step="0.0001" name="local_tax_rate" [(ngModel)]="estimateDraft.local_tax_rate"></label>
+            <label>Local tax jurisdiction<input name="local_tax_jurisdiction" [(ngModel)]="estimateDraft.local_tax_jurisdiction" placeholder="Municipality / local authority"></label>
+            <label>Local tax base<select name="local_tax_basis" [(ngModel)]="estimateDraft.local_tax_basis"><option value="repair_subtotal">Gross repair subtotal</option><option value="depreciated_repair_subtotal">After depreciation</option><option value="fees">Taxable fees only</option></select></label>
+            <label class="full">Local tax authority / rate reference<input name="local_tax_authority" [(ngModel)]="estimateDraft.local_tax_authority" placeholder="Verified rule or approved rate schedule"></label>
             <div class="full"><h3>Other claim charges (optional)</h3></div>
             <label>Charge name<input name="fee_name" [(ngModel)]="estimateDraft.fee_name" placeholder="Inspection / mitigation / approved fee"></label>
             <label>Charge amount<input type="number" min="0" step="0.01" name="fee_amount" [(ngModel)]="estimateDraft.fee_amount"></label>
