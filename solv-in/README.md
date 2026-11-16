@@ -10,7 +10,7 @@ Phase 1 foundation and dashboard are in place. Phase 2 adds a working claims reg
 - Angular + TypeScript frontend
 - Python + FastAPI backend
 - MongoDB database
-- Gemini integration planned for later phases
+- Gemini Vision integration for preliminary image damage analysis
 
 ## Phase 2 functionality
 - Create Property and Casualty claims through the FNOL form.
