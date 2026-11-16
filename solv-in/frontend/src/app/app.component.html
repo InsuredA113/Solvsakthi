@@ -150,32 +150,46 @@
 
       <ng-container *ngIf="activePage === 'Financial Estimate'">
         <section class="panel form-panel">
-          <div class="panel-heading"><div><h2>Claims financial calculation</h2><p class="muted">Deterministic Python Decimal calculations. Enter verified repair rates and applicable policy/jurisdiction rules.</p></div></div>
-          <div class="damage-disclaimer">This is a preliminary estimate, not a coverage decision or settlement offer. Solv-In does not automatically assume a tax rate, fee or interest charge. Verify each rule against the applicable tax authority, policy wording and claim facts.</div>
+          <div class="panel-heading"><div><h2>Claims financial calculation</h2><p class="muted">Worldwide-ready Python Decimal calculations with configurable country, regional and local tax rules and ISO currency support.</p></div></div>
+          <div class="damage-disclaimer">This is a preliminary estimate, not a coverage decision or settlement offer. Solv-In does not automatically assume a tax rate, fee or interest charge. Configure rules for the claim's country and loss jurisdiction using the correct tax point date, current law and policy wording. No country-specific rate is assumed.</div>
           <div class="form-grid">
             <label class="full">Claim ID *
               <div class="damage-claim-lookup"><input name="estimate_claim_id" [(ngModel)]="estimateClaimId" placeholder="Example: CLM-2026-000001"><button type="button" class="secondary-action" (click)="loadFinancialEstimates()">Load saved estimates</button></div>
             </label>
-            <label>State / jurisdiction *<input name="estimate_jurisdiction" [(ngModel)]="estimateDraft.state_or_jurisdiction" placeholder="e.g. Tamil Nadu, India"></label>
-            <label>Currency<select name="estimate_currency" [(ngModel)]="estimateDraft.currency"><option value="INR">INR</option><option value="USD">USD</option><option value="EUR">EUR</option><option value="GBP">GBP</option></select><small class="muted">Claim currency is used automatically when the Claim ID is found.</small></label>
+            <label>Country code (ISO 3166-1 alpha-2) *<input name="estimate_country" maxlength="2" [(ngModel)]="estimateDraft.country_code" placeholder="e.g. US, GB, IN, AU"></label>
+            <label>Currency code (ISO 4217) *<input name="estimate_currency" maxlength="3" [(ngModel)]="estimateDraft.currency" placeholder="e.g. USD, GBP, INR, JPY, EUR"><small class="muted">The linked claim currency takes priority. Enter a three-letter code.</small></label>
+            <label>State / province / territory / jurisdiction *<input name="estimate_jurisdiction" [(ngModel)]="estimateDraft.state_or_jurisdiction" placeholder="State, province, canton, territory or national jurisdiction"></label>
+            <label>Region / county / district<input name="estimate_region" [(ngModel)]="estimateDraft.region" placeholder="Optional administrative region"></label>
+            <label>City / locality<input name="estimate_locality" [(ngModel)]="estimateDraft.locality" placeholder="City or municipality"></label>
+            <label>Postal / ZIP code<input name="estimate_postal" [(ngModel)]="estimateDraft.postal_code" placeholder="Optional postal code"></label>
+            <label>Loss date *<input type="date" name="estimate_loss_date" [(ngModel)]="estimateDraft.loss_date"></label>
+            <label>Tax point / taxable event date *<input type="date" name="estimate_tax_point_date" [(ngModel)]="estimateDraft.tax_point_date"><small class="muted">Tax rule effective dates are checked against this date, not automatically against the loss date.</small></label>
             <label class="full">Repair item description *<input name="estimate_description" [(ngModel)]="estimateDraft.description" placeholder="e.g. Replace damaged roof tiles"></label>
             <label>Quantity *<input type="number" min="0.0001" step="0.0001" name="estimate_quantity" [(ngModel)]="estimateDraft.quantity"></label>
             <label>Unit<input name="estimate_unit" [(ngModel)]="estimateDraft.unit" placeholder="item, sq ft, hour"></label>
             <label>Verified unit rate *<input type="number" min="0" step="0.01" name="estimate_rate" [(ngModel)]="estimateDraft.unit_rate"></label>
             <label>Depreciation (%)<input type="number" min="0" max="100" step="0.01" name="estimate_depreciation" [(ngModel)]="estimateDraft.depreciation_rate"></label>
             <label class="full"><span><input type="checkbox" name="estimate_taxable" [(ngModel)]="estimateDraft.taxable"> Repair item is taxable under the applicable rule</span></label>
-            <div class="full"><h3>State / local tax (optional)</h3><p class="muted">Only enter a rate after verifying the current rule for the loss location and taxable item.</p></div>
-            <label>Tax name<input name="tax_name" [(ngModel)]="estimateDraft.tax_name" placeholder="State tax / GST component"></label>
-            <label>Tax rate (%)<input type="number" min="0" max="100" step="0.0001" name="tax_rate" [(ngModel)]="estimateDraft.tax_rate"></label>
-            <label>Taxable base<select name="tax_basis" [(ngModel)]="estimateDraft.tax_basis"><option value="repair_subtotal">Gross repair subtotal</option><option value="depreciated_repair_subtotal">After depreciation</option><option value="fees">Taxable fees only</option></select></label>
-            <label>Tax jurisdiction<input name="tax_jurisdiction" [(ngModel)]="estimateDraft.tax_jurisdiction" placeholder="State / local authority"></label>
-            <label>Tax authority / rate reference<input name="tax_authority" [(ngModel)]="estimateDraft.tax_authority" placeholder="Rule, notification or approved rate schedule"></label>
-            <div class="full"><h3>Additional local / municipal tax (optional)</h3></div>
-            <label>Local tax name<input name="local_tax_name" [(ngModel)]="estimateDraft.local_tax_name" placeholder="Local tax"></label>
-            <label>Local tax rate (%)<input type="number" min="0" max="100" step="0.0001" name="local_tax_rate" [(ngModel)]="estimateDraft.local_tax_rate"></label>
-            <label>Local tax jurisdiction<input name="local_tax_jurisdiction" [(ngModel)]="estimateDraft.local_tax_jurisdiction" placeholder="Municipality / local authority"></label>
-            <label>Local tax base<select name="local_tax_basis" [(ngModel)]="estimateDraft.local_tax_basis"><option value="repair_subtotal">Gross repair subtotal</option><option value="depreciated_repair_subtotal">After depreciation</option><option value="fees">Taxable fees only</option></select></label>
-            <label class="full">Local tax authority / rate reference<input name="local_tax_authority" [(ngModel)]="estimateDraft.local_tax_authority" placeholder="Verified rule or approved rate schedule"></label>
+            <div class="full"><h3>Applicable taxes (optional)</h3><p class="muted">Add every applicable national, state/provincial, regional, municipal or other tax component. Tax-on-tax can be enabled where the verified local rule requires it. Maximum 20 components.</p></div>
+            <div class="full">
+              <button type="button" class="secondary-action" (click)="addTaxComponent()" [disabled]="estimateDraft.taxes.length >= 20">Add tax component</button>
+            </div>
+            <div class="full" *ngFor="let tax of estimateDraft.taxes; let i = index">
+              <div class="assessment-history-card">
+                <div class="panel-heading"><b>Tax component {{ i + 1 }}</b><button type="button" class="danger-action" (click)="removeTaxComponent(i)">Remove</button></div>
+                <div class="form-grid">
+                  <label>Tax name<input [name]="'tax_name_' + i" [(ngModel)]="tax.name" placeholder="VAT, GST, sales tax, insurance premium tax…"></label>
+                  <label>Tax type<input [name]="'tax_type_' + i" [(ngModel)]="tax.tax_type" placeholder="VAT / GST / sales / other"></label>
+                  <label>Jurisdiction<input [name]="'tax_jurisdiction_' + i" [(ngModel)]="tax.jurisdiction" placeholder="Country, state, province or municipality"></label>
+                  <label>Rate (%)<input type="number" min="0" max="100" step="0.0001" [name]="'tax_rate_' + i" [(ngModel)]="tax.rate_percent"></label>
+                  <label>Taxable base<select [name]="'tax_basis_' + i" [(ngModel)]="tax.applies_to"><option value="repair_subtotal">Gross repair subtotal</option><option value="depreciated_repair_subtotal">After depreciation</option><option value="fees">Taxable fees</option><option value="repair_and_fees">Repairs and taxable fees</option></select></label>
+                  <label><span><input type="checkbox" [name]="'tax_compound_' + i" [(ngModel)]="tax.compound_on_prior_taxes"> Tax applies on prior tax components</span></label>
+                  <label>Rule effective from<input type="date" [name]="'tax_from_' + i" [(ngModel)]="tax.effective_from"></label>
+                  <label>Rule effective to<input type="date" [name]="'tax_to_' + i" [(ngModel)]="tax.effective_to"></label>
+                  <label class="full">Law / tax authority / approved schedule reference<input [name]="'tax_authority_' + i" [(ngModel)]="tax.authority_reference" placeholder="Official legal source or insurer-approved tax rule"></label>
+                </div>
+              </div>
+            </div>
             <div class="full"><h3>Other claim charges (optional)</h3></div>
             <label>Charge name<input name="fee_name" [(ngModel)]="estimateDraft.fee_name" placeholder="Inspection / mitigation / approved fee"></label>
             <label>Charge amount<input type="number" min="0" step="0.01" name="fee_amount" [(ngModel)]="estimateDraft.fee_amount"></label>
@@ -185,6 +199,7 @@
               <label>Annual interest rate (%)<input type="number" min="0" max="100" step="0.0001" name="interest_rate" [(ngModel)]="estimateDraft.interest_rate"></label>
               <label>Principal amount<input type="number" min="0" step="0.01" name="interest_principal" [(ngModel)]="estimateDraft.interest_principal"></label>
               <label>Number of days<input type="number" min="0" step="1" name="interest_days" [(ngModel)]="estimateDraft.interest_days"></label>
+              <label>Day-count convention<select name="interest_basis" [(ngModel)]="estimateDraft.interest_basis"><option value="simple_actual_365">Actual / 365</option><option value="simple_actual_360">Actual / 360</option><option value="simple_actual_366">Actual / 366</option><option value="simple_30_360">30 / 360</option></select></label>
               <label>Policy / legal authority reference<input name="interest_authority" [(ngModel)]="estimateDraft.interest_authority" placeholder="Clause / statute / approved rule"></label>
             </ng-container>
             <div class="full"><h3>Pricing evidence *</h3></div>
@@ -192,7 +207,7 @@
             <label>Pricing effective date *<input type="date" name="pricing_date" [(ngModel)]="estimateDraft.pricing_effective_date"></label>
             <label class="full">Calculation notes<textarea rows="2" name="estimate_notes" [(ngModel)]="estimateDraft.notes" placeholder="Explain assumptions, exclusions and evidence references"></textarea></label>
           </div>
-          <div class="form-actions"><span class="muted">No rates are pre-filled as legal or market facts.</span><button class="primary-action" type="button" (click)="calculateFinancialEstimate()" [disabled]="estimateBusy">{{ estimateBusy ? 'Calculating…' : 'Calculate and save estimate' }}</button></div>
+          <div class="form-actions"><span class="muted">No tax rates or pricing values are assumed. Currency rounding follows the ISO currency's standard minor units.</span><button class="primary-action" type="button" (click)="calculateFinancialEstimate()" [disabled]="estimateBusy">{{ estimateBusy ? 'Calculating…' : 'Calculate and save estimate' }}</button></div>
         </section>
         <section class="panel damage-results" *ngIf="financialEstimate">
           <div class="panel-heading"><div><h2>Calculation breakdown</h2><p class="muted">{{ financialEstimate.claim_id }} · {{ financialEstimate.state_or_jurisdiction }}</p></div><span class="status">{{ financialEstimate.status }}</span></div>
