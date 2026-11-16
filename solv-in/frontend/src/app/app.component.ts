@@ -11,6 +11,12 @@ interface Claim {
   incident_description: string; loss_location: string; estimated_loss?: number | null;
   currency: string; status: string; created_at?: string; updated_at?: string;
 }
+interface DamageAssessment {
+  assessment_id: string; claim_id?: string | null; damage_category: string;
+  affected_areas: string[]; visible_observations: string[]; severity: string;
+  confidence: string; possible_cause: string; recommended_next_steps: string[];
+  limitations: string[]; repair_cost_estimate: number | null; status: string; created_at: string;
+}
 interface ClaimDraft {
   customer_name: string; email: string; phone: string; policy_number: string;
   claim_type: 'Property' | 'Casualty'; incident_date: string; incident_description: string;
@@ -43,13 +49,18 @@ export class AppComponent implements OnInit {
   users: User[] = [];
   roles: string[] = [];
   userBusy = false;
+  selectedDamageImage: File | null = null;
+  damageImagePreview = '';
+  damageClaimId = '';
+  damageBusy = false;
+  damageAssessment: DamageAssessment | null = null;
   newUser = { full_name: '', email: '', password: '', role: 'Claims Manager' };
   totalClaims = 0;
   newClaims = 0;
   investigatingClaims = 0;
   pendingClaims = 0;
   closedClaims = 0;
-  readonly navigation = ['Dashboard', 'Claims', 'New FNOL', 'Reports', 'Users', 'Settings'];
+  readonly navigation = ['Dashboard', 'Claims', 'New FNOL', 'AI Damage Analysis', 'Reports', 'Users', 'Settings'];
   readonly statuses = ['FNOL Received', 'Under Review', 'Investigation', 'Assessment', 'Pending Approval', 'Approved', 'Closed'];
   draft: ClaimDraft = this.emptyDraft();
 
@@ -194,6 +205,62 @@ export class AppComponent implements OnInit {
       },
       error: error => this.handleApiError(error)
     });
+  }
+
+  onDamageImageSelected(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0] || null;
+    this.damageAssessment = null;
+    this.errorMessage = '';
+    if (this.damageImagePreview) URL.revokeObjectURL(this.damageImagePreview);
+    this.damageImagePreview = '';
+    this.selectedDamageImage = null;
+    if (!file) return;
+    const allowed = ['image/jpeg', 'image/png', 'image/webp'];
+    if (!allowed.includes(file.type)) {
+      this.errorMessage = 'Choose a JPG, PNG or WEBP image.';
+      input.value = '';
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      this.errorMessage = 'Image size must not exceed 10 MB.';
+      input.value = '';
+      return;
+    }
+    this.selectedDamageImage = file;
+    this.damageImagePreview = URL.createObjectURL(file);
+  }
+
+  analyseDamage(): void {
+    if (!this.selectedDamageImage) {
+      this.errorMessage = 'Select a damage image before starting the analysis.';
+      return;
+    }
+    this.errorMessage = '';
+    this.successMessage = '';
+    this.damageBusy = true;
+    const body = new FormData();
+    body.append('image', this.selectedDamageImage);
+    if (this.damageClaimId.trim()) body.append('claim_id', this.damageClaimId.trim());
+    this.http.post<DamageAssessment>(`${environment.apiBaseUrl}/ai/damage-analysis`, body, { headers: this.authHeaders() }).subscribe({
+      next: result => {
+        this.damageAssessment = result;
+        this.damageBusy = false;
+        this.successMessage = 'Preliminary visual assessment saved. An authorised adjuster must review the findings.';
+      },
+      error: error => {
+        this.damageBusy = false;
+        this.handleApiError(error);
+      }
+    });
+  }
+
+  clearDamageAnalysis(): void {
+    if (this.damageImagePreview) URL.revokeObjectURL(this.damageImagePreview);
+    this.selectedDamageImage = null;
+    this.damageImagePreview = '';
+    this.damageAssessment = null;
+    this.damageClaimId = '';
   }
 
   loadUsers(): void {
