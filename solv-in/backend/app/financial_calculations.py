@@ -157,7 +157,7 @@ def calculate_estimate(payload: FinancialEstimateRequest) -> dict:
             "effective_from": tax.effective_from, "effective_to": tax.effective_to
         })
     total_tax = money(total_tax, currency)
-    interest_amount = ZERO
+    interest_amount = money(ZERO, currency)
     if payload.interest.applicable:
         denominator = {
             "simple_actual_365": Decimal("365"),
