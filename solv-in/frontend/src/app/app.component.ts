@@ -21,7 +21,7 @@ interface DamageAssessment {
   review_history?: { status: string; notes: string; reviewed_at: string; reviewed_by: string; reviewer_role: string }[];
 }
 interface FinancialEstimate { estimate_id: string; claim_id: string; currency: string; gross_repair_cost: string; depreciation: string; net_repair_cost: string; total_fees_and_charges: string; total_tax: string; interest: { amount: string }; deductible: string; total_before_deductible: string; preliminary_net_estimate: string; status: string; created_at: string; pricing_source: string; state_or_jurisdiction: string; taxes: any[]; line_items: any[]; tax_mode?: string; tax_profile_status?: string; tax_rule_warning?: string | null; tax_rule_ids?: string[]; review_status?: string; review_history?: any[]; }
-interface EmailIntakeItem { intake_id: string; sender_email: string; subject: string; received_at: string; suggested_claim_type: string; confirmed_claim_type?: string; classification_reason: string; missing_fields: string[]; review_status: string; extracted_fields: Record<string, string | null>; claim_id?: string; }
+interface EmailConnectorStatus { gmail: { configured: boolean; watch_active: boolean; watch_expiration?: string | null }; microsoft365: { configured: boolean; subscription_active: boolean; subscription_expiration?: string | null }; note: string; }\ninterface EmailIntakeItem { intake_id: string; sender_email: string; subject: string; received_at: string; suggested_claim_type: string; confirmed_claim_type?: string; classification_reason: string; missing_fields: string[]; review_status: string; extracted_fields: Record<string, string | null>; claim_id?: string; }
 interface ClaimDraft {
   customer_name: string; email: string; phone: string; policy_number: string;
   claim_type: 'Property' | 'Casualty'; property_occupancy: string | null;
@@ -94,7 +94,7 @@ export class AppComponent implements OnInit {
   unclassifiedLegacyCasualtyClaims = 0;
   analyticsData: any = null;
   emailIntakeItems: EmailIntakeItem[] = [];
-  emailIntakeBusy = false;
+  emailIntakeBusy = false;\n  emailConnectorStatus: EmailConnectorStatus | null = null;\n  emailConnectorBusy = false;
   selectedEmailIntakeId = '';
   analyticsBusy = false;
   analyticsFromDate = '';
@@ -374,7 +374,7 @@ export class AppComponent implements OnInit {
     this.errorMessage = '';
     this.successMessage = '';
     if (page === 'Claims') this.loadClaims();
-    if (page === 'Email FNOL') this.loadEmailIntake();
+    if (page === 'Email FNOL') { this.loadEmailIntake(); this.loadEmailConnectorStatus(); }
     if (page === 'AI Damage Analysis' && this.damageClaimId.trim()) this.loadDamageAssessments();
     if (page === 'Users') this.loadUsers();
     if (page === 'Tax Rules' && this.canManageTaxRules()) this.loadTaxRules();
@@ -471,6 +471,34 @@ export class AppComponent implements OnInit {
     });
   }
 
+
+
+  canManageEmailConnectors(): boolean {
+    return ['Super Administrator', 'Insurance Company Administrator'].includes(this.currentUser?.role || '');
+  }
+
+  loadEmailConnectorStatus(): void {
+    this.http.get<EmailConnectorStatus>(`${environment.apiBaseUrl}/email-connectors/status`, { headers: this.authHeaders() }).subscribe({
+      next: status => this.emailConnectorStatus = status,
+      error: error => this.handleApiError(error)
+    });
+  }
+
+  startGmailConnector(): void {
+    this.emailConnectorBusy = true;
+    this.http.post<any>(`${environment.apiBaseUrl}/email-connectors/gmail/watch`, {}, { headers: this.authHeaders() }).subscribe({
+      next: result => { this.emailConnectorBusy = false; this.successMessage = 'Gmail watch started. Configure the Google Pub/Sub push subscription to deliver notifications to Solv-In.'; this.loadEmailConnectorStatus(); },
+      error: error => { this.emailConnectorBusy = false; this.handleApiError(error); }
+    });
+  }
+
+  startMicrosoftConnector(): void {
+    this.emailConnectorBusy = true;
+    this.http.post<any>(`${environment.apiBaseUrl}/email-connectors/microsoft365/subscribe`, {}, { headers: this.authHeaders() }).subscribe({
+      next: result => { this.emailConnectorBusy = false; this.successMessage = 'Microsoft 365 inbox subscription created.'; this.loadEmailConnectorStatus(); },
+      error: error => { this.emailConnectorBusy = false; this.handleApiError(error); }
+    });
+  }
 
   loadEmailIntake(): void {
     this.emailIntakeBusy = true;
