@@ -147,7 +147,7 @@ export class AppComponent implements OnInit {
   }
 
   emptyEstimateDraft(): any {
-    return { description: '', quantity: 1, unit: 'item', unit_rate: 0, depreciation_rate: 0, taxable: true, currency: 'INR', state_or_jurisdiction: '', tax_name: 'State tax', tax_jurisdiction: '', tax_rate: 0, tax_authority: '', deductible: 0, fee_name: '', fee_amount: 0, interest_applicable: false, interest_rate: null, interest_principal: null, interest_days: null, interest_authority: '', pricing_source: '', pricing_effective_date: new Date().toISOString().slice(0, 10), notes: '' };
+    return { description: '', quantity: 1, unit: 'item', unit_rate: 0, depreciation_rate: 0, taxable: true, currency: 'INR', state_or_jurisdiction: '', tax_name: 'State tax', tax_jurisdiction: '', tax_rate: 0, tax_basis: 'depreciated_repair_subtotal', tax_authority: '', deductible: 0, fee_name: '', fee_amount: 0, interest_applicable: false, interest_rate: null, interest_principal: null, interest_days: null, interest_authority: '', pricing_source: '', pricing_effective_date: new Date().toISOString().slice(0, 10), notes: '' };
   }
 
   emptyDraft(): ClaimDraft {
@@ -246,7 +246,7 @@ export class AppComponent implements OnInit {
     const body: any = {
       currency, state_or_jurisdiction: d.state_or_jurisdiction,
       line_items: [{ description: d.description, quantity: Number(d.quantity), unit: d.unit, unit_rate: Number(d.unit_rate), taxable: !!d.taxable, depreciation_rate: Number(d.depreciation_rate) }],
-      taxes: Number(d.tax_rate) > 0 ? [{ name: d.tax_name, jurisdiction: d.tax_jurisdiction, rate_percent: Number(d.tax_rate), applies_to: 'depreciated_repair_subtotal', authority_reference: d.tax_authority }] : [],
+      taxes: Number(d.tax_rate) > 0 ? [{ name: d.tax_name, jurisdiction: d.tax_jurisdiction, rate_percent: Number(d.tax_rate), applies_to: d.tax_basis, authority_reference: d.tax_authority }] : [],
       charges: Number(d.fee_amount) > 0 ? [{ name: d.fee_name || 'Other claim charge', amount: Number(d.fee_amount), charge_type: 'fee', taxable: false, authority_reference: '' }] : [],
       deductible: Number(d.deductible || 0),
       interest: { applicable: !!d.interest_applicable, annual_rate_percent: d.interest_applicable ? Number(d.interest_rate) : null, principal: d.interest_applicable ? Number(d.interest_principal) : null, days: d.interest_applicable ? Number(d.interest_days) : null, basis: 'simple_actual_365', authority_reference: d.interest_authority || '' },
