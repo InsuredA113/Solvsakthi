@@ -445,6 +445,13 @@ def create_financial_estimate(
                 "message": "Conflicting active tax rules exist. Resolve the jurisdiction profile before calculating automatically.",
                 "ambiguous_tax_names": ambiguous_tax_names
             })
+        if selected_rules and not payload.confirm_automatic_tax_application:
+            raise HTTPException(status_code=428, detail={
+                "message": "Review the matched tax rules and explicitly confirm their application before saving this estimate.",
+                "required_confirmation": "confirm_automatic_tax_application",
+                "matched_tax_names": [rule["tax_name"] for rule in selected_rules],
+                "tax_point_date": payload.tax_point_date
+            })
         automatic_taxes = []
         for rule in selected_rules:
             automatic_taxes.append(TaxComponent(
