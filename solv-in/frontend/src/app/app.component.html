@@ -260,6 +260,7 @@
             <label>Tax name *<input name="rule_name" [(ngModel)]="taxRuleDraft.tax_name" placeholder="VAT, GST, sales tax"></label>
             <label>Tax type<input name="rule_type" [(ngModel)]="taxRuleDraft.tax_type"></label>
             <label>Rate (%) *<input type="number" min="0" max="100" step="0.0001" name="rule_rate" [(ngModel)]="taxRuleDraft.rate_percent"></label>
+            <label>Calculation order (lower runs first)<input type="number" min="0" max="10000" name="rule_order" [(ngModel)]="taxRuleDraft.calculation_order"></label>
             <label>Taxable base<select name="rule_basis" [(ngModel)]="taxRuleDraft.applies_to"><option value="repair_subtotal">Gross repair subtotal</option><option value="depreciated_repair_subtotal">After depreciation</option><option value="fees">Taxable fees</option><option value="repair_and_fees">Repairs and fees</option></select></label>
             <label>Tax point type<input name="rule_point" [(ngModel)]="taxRuleDraft.tax_point_type" placeholder="Tax point date / invoice date"></label>
             <label>Effective from *<input type="date" name="rule_from" [(ngModel)]="taxRuleDraft.effective_from"></label>
