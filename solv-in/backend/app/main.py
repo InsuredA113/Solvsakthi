@@ -395,7 +395,7 @@ def review_damage_assessment(assessment_id: str, payload: DamageReviewUpdate, us
 
 
 # Phase 6: deterministic financial estimates (Python Decimal; no LLM arithmetic)
-from .financial_calculations import FinancialEstimateRequest, calculate_estimate
+from .financial_calculations import FinancialEstimateRequest, TaxComponent, calculate_estimate
 
 FINANCIAL_ESTIMATE_ROLES = (
     "Super Administrator", "Insurance Company Administrator", "Claims Manager",
@@ -418,7 +418,70 @@ def create_financial_estimate(
         raise HTTPException(status_code=422, detail="Estimate currency must match the claim currency.")
     if (claim.get("country_code") and claim["country_code"].upper() != payload.country_code):
         raise HTTPException(status_code=422, detail="Estimate country must match the claim's recorded loss country.")
-    result = calculate_estimate(payload)
+    calculation_payload = payload
+    tax_rule_snapshots = []
+    if payload.tax_mode == "automatic":
+        try:
+            point_date = date.fromisoformat(payload.tax_point_date)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="Tax point date must use YYYY-MM-DD.") from exc
+        rules = list(db["tax_rules"].find({
+            "country_code": payload.country_code,
+            "currency": payload.currency,
+            "status": "Active"
+        }))
+        selected_rules, ambiguous_tax_names = select_applicable_tax_rules(
+            rules, country_code=payload.country_code, currency=payload.currency,
+            admin_area=payload.state_or_jurisdiction, region=payload.region,
+            locality=payload.locality, tax_point_date=point_date
+        )
+        if ambiguous_tax_names:
+            raise HTTPException(status_code=409, detail={
+                "message": "Conflicting active tax rules exist. Resolve the jurisdiction profile before calculating automatically.",
+                "ambiguous_tax_names": ambiguous_tax_names
+            })
+        automatic_taxes = []
+        for rule in selected_rules:
+            automatic_taxes.append(TaxComponent(
+                name=rule["tax_name"], tax_type=rule["tax_type"],
+                jurisdiction=" / ".join(part for part in [
+                    rule.get("admin_area", ""), rule.get("region", ""),
+                    rule.get("locality", ""), rule["country_code"]
+                ] if part),
+                rate_percent=rule["rate_percent"], applies_to=rule["applies_to"],
+                compound_on_prior_taxes=bool(rule.get("compound_on_prior_taxes", False)),
+                authority_reference=rule["authority_reference"],
+                effective_from=str(rule["effective_from"])[:10],
+                effective_to=str(rule["effective_to"])[:10] if rule.get("effective_to") else None
+            ))
+            tax_rule_snapshots.append({
+                "rule_id": str(rule["_id"]), "version": rule.get("version", 1),
+                "country_code": rule["country_code"], "currency": rule["currency"],
+                "admin_area": rule.get("admin_area", ""), "region": rule.get("region", ""),
+                "locality": rule.get("locality", ""), "tax_name": rule["tax_name"],
+                "tax_type": rule["tax_type"], "rate_percent": str(rule["rate_percent"]),
+                "applies_to": rule["applies_to"],
+                "compound_on_prior_taxes": bool(rule.get("compound_on_prior_taxes", False)),
+                "effective_from": str(rule["effective_from"])[:10],
+                "effective_to": str(rule["effective_to"])[:10] if rule.get("effective_to") else None,
+                "authority_name": rule["authority_name"],
+                "authority_reference": rule["authority_reference"],
+                "source_url": rule.get("source_url"),
+                "verified_by": rule.get("verified_by"), "verified_at": rule.get("verified_at")
+            })
+        calculation_payload = payload.model_copy(update={"taxes": automatic_taxes})
+    result = calculate_estimate(calculation_payload)
+    result["tax_mode"] = payload.tax_mode
+    result["tax_profile_status"] = (
+        "Configured" if tax_rule_snapshots else
+        ("No verified matching tax profile" if payload.tax_mode == "automatic" else "Manual tax override - verify before approval")
+    )
+    result["tax_rule_snapshots"] = tax_rule_snapshots
+    result["tax_rule_ids"] = [rule["rule_id"] for rule in tax_rule_snapshots]
+    result["tax_rule_warning"] = (
+        None if tax_rule_snapshots or payload.tax_mode == "manual"
+        else "No active verified tax rule matched this claim jurisdiction and tax point date. No tax has been assumed; confirm whether tax applies before approval."
+    )
     now = datetime.now(timezone.utc).isoformat()
     record = {
         **result, "claim_id": claim_id, "claim_type": claim.get("claim_type"),
@@ -450,7 +513,7 @@ def list_financial_estimates(
 
 # Phase 7: verified global tax rules and jurisdiction profiles
 from datetime import date
-from .tax_rules import TaxRuleCreate, TaxRuleStatusUpdate, rule_is_applicable, rule_specificity
+from .tax_rules import TaxRuleCreate, TaxRuleStatusUpdate, rule_is_applicable, rule_specificity, select_applicable_tax_rules
 
 TAX_RULE_READ_ROLES = (
     "Super Administrator", "Insurance Company Administrator", "Claims Manager",
@@ -550,23 +613,11 @@ def applicable_tax_rules(
         "currency": (claim.get("currency") or "").upper(),
         "status": "Active"
     }))
-    applicable = [r for r in candidates if rule_is_applicable(
-        r, country_code=claim.get("country_code", ""), currency=claim.get("currency", ""),
+    selected, ambiguous = select_applicable_tax_rules(
+        candidates, country_code=claim.get("country_code", ""), currency=claim.get("currency", ""),
         admin_area=claim.get("state_or_jurisdiction", "") or claim.get("region", ""),
         region=claim.get("region", ""), locality=claim.get("locality", ""), tax_point_date=point_date
-    )]
-    applicable.sort(key=rule_specificity, reverse=True)
-    # A broad country-level rule and a more specific local rule for the same tax are ambiguous;
-    # return the most specific match for each tax name, and flag duplicate same-specificity matches.
-    selected, ambiguous = [], []
-    for name in sorted({r["tax_name"].casefold() for r in applicable}):
-        group = [r for r in applicable if r["tax_name"].casefold() == name]
-        top = rule_specificity(group[0])
-        best = [r for r in group if rule_specificity(r) == top]
-        if len(best) > 1:
-            ambiguous.append(group[0]["tax_name"])
-            continue
-        selected.append(best[0])
+    )
     for row in selected:
         row["rule_id"] = str(row.pop("_id"))
     return {
