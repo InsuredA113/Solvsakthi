@@ -3,7 +3,7 @@
   <aside class="sidebar">
     <div class="brand"><div class="brand-mark">S</div><div><strong>Solv-In</strong><small>Smarter Claims. Faster Decisions.</small></div></div>
     <nav aria-label="Main navigation">
-      <ng-container *ngFor="let item of navigation"><button *ngIf="(item !== 'Users' || isAdmin()) && (item !== 'AI Damage Analysis' || canAnalyseDamage()) && (item !== 'Tax Rules' || isAdmin())" (click)="selectPage(item)" [class.active]="activePage === item">
+      <ng-container *ngFor="let item of navigation"><button *ngIf="(item !== 'Users' || isAdmin()) && (item !== 'AI Damage Analysis' || canAnalyseDamage()) && (item !== 'Tax Rules' || canManageTaxRules())" (click)="selectPage(item)" [class.active]="activePage === item">
         <span class="nav-icon">{{ item === 'Dashboard' ? '⌂' : item === 'Claims' ? '▤' : item === 'New FNOL' ? '+' : item === 'AI Damage Analysis' ? '◈' : item === 'Tax Rules' ? '⌁' : item === 'Reports' ? '▥' : item === 'Users' ? '♙' : '⚙' }}</span>{{ item }}
       </button></ng-container>
     </nav>
@@ -245,14 +245,14 @@
       </ng-container>
 
 
-      <ng-container *ngIf="activePage === 'Tax Rules' && isAdmin()">
+      <ng-container *ngIf="activePage === 'Tax Rules' && canManageTaxRules()">
         <section class="panel form-panel">
           <div class="panel-heading"><div><h2>Global tax rule registry</h2><p class="muted">Create jurisdiction profiles using verified official sources. New rules are saved as Draft and must be activated by an authorised administrator.</p></div></div>
           <div class="damage-disclaimer">Solv-In does not preload or guess worldwide tax rates. Verify each rate, jurisdiction, taxable base and effective date against the relevant official authority before activation. Active rules are immutable; create a new version for changes.</div>
           <div class="form-grid">
             <label>Country code (ISO alpha-2) *<input name="rule_country" maxlength="2" [(ngModel)]="taxRuleDraft.country_code" placeholder="US, GB, IN, AU"></label>
             <label>Currency (ISO 4217) *<input name="rule_currency" maxlength="3" [(ngModel)]="taxRuleDraft.currency" placeholder="USD, GBP, INR"></label>
-            <label>State / province / admin area *<input name="rule_admin_area" [(ngModel)]="taxRuleDraft.admin_area" placeholder="State, province, canton or national scope"></label>
+            <label>State / province / admin area (optional)<input name="rule_admin_area" [(ngModel)]="taxRuleDraft.admin_area" placeholder="State, province, canton or national scope"></label>
             <label>Region / county<input name="rule_region" [(ngModel)]="taxRuleDraft.region"></label>
             <label>City / locality<input name="rule_locality" [(ngModel)]="taxRuleDraft.locality"></label>
             <label>Tax name *<input name="rule_name" [(ngModel)]="taxRuleDraft.tax_name" placeholder="VAT, GST, sales tax"></label>
