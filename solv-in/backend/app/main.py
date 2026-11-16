@@ -16,7 +16,7 @@ from .bootstrap import seed_initial_admin
 from .config import CORS_ORIGINS, ACCESS_TOKEN_MINUTES
 from .database import get_database, database_is_available
 from .models import ClaimCreate, ClaimStatusUpdate
-from .claims_analytics import build_claims_analytics, is_in_scope_claim
+from .claims_analytics import build_claims_analytics, is_in_scope_claim, safe_csv_cell
 from .user_models import LoginRequest, UserCreate
 
 app = FastAPI(
@@ -240,25 +240,27 @@ def export_claims_analytics_csv(
     data = _load_claims_analytics(from_date, to_date, country_code, currency, portfolio)
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["Section", "Dimension", "Currency", "Claim count", "Amount"])
+    def write_row(values):
+        writer.writerow([safe_csv_cell(value) for value in values])
+    write_row(["Section", "Dimension", "Currency", "Claim count", "Amount"])
     summary = data["summary"]
     for key, value in summary.items():
-        writer.writerow(["Summary", key, "", value, ""])
+        write_row(["Summary", key, "", value, ""])
     for row in data["by_status"]:
-        writer.writerow(["Status", row["status"], "", row["claim_count"], ""])
+        write_row(["Status", row["status"], "", row["claim_count"], ""])
     for row in data["by_country"]:
-        writer.writerow(["Country", row["country_code"], "", row["claim_count"], ""])
+        write_row(["Country", row["country_code"], "", row["claim_count"], ""])
     for row in data["by_month"]:
-        writer.writerow(["Month", row["month"], "", row["claim_count"], ""])
+        write_row(["Month", row["month"], "", row["claim_count"], ""])
     for row in data["by_claim_line"]:
-        writer.writerow(["Claim line", row["claim_line"], "", row["claim_count"], ""])
+        write_row(["Claim line", row["claim_line"], "", row["claim_count"], ""])
     for row in data["by_industry"]:
-        writer.writerow(["Commercial casualty industry", row["industry"], "", row["claim_count"], ""])
+        write_row(["Commercial casualty industry", row["industry"], "", row["claim_count"], ""])
     for row in data["reported_exposure_by_currency"]:
-        writer.writerow(["Reported exposure", "Claim-reported estimated loss", row["currency"], row["claim_count"], row["reported_estimated_loss"]])
+        write_row(["Reported exposure", "Claim-reported estimated loss", row["currency"], row["claim_count"], row["reported_estimated_loss"]])
     for row in data["latest_preliminary_estimates_by_currency"]:
-        writer.writerow(["Latest preliminary estimates", "Latest estimate per claim", row["currency"], row["claim_count"], row["latest_preliminary_estimate_total"]])
-    writer.writerow(["Scope", data["scope"], "", "", ""])
+        write_row(["Latest preliminary estimates", "Latest estimate per claim", row["currency"], row["claim_count"], row["latest_preliminary_estimate_total"]])
+    write_row(["Scope", data["scope"], "", "", ""])
     return Response(
         content=output.getvalue(), media_type="text/csv",
         headers={"Content-Disposition": 'attachment; filename="solv-in-claims-analytics.csv"'}
