@@ -649,7 +649,10 @@ def change_tax_rule_status(
             raise HTTPException(status_code=422, detail="An official authority and reference are required before activation.")
         if not existing.get("source_url") and len(existing.get("authority_reference", "")) < 3:
             raise HTTPException(status_code=422, detail="A source reference is required before activation.")
-        changes.update({"verified_by": user["email"], "verified_at": now, "activated_at": now})
+        changes.update({
+            "verified_by": user["email"], "verified_at": now, "activated_at": now,
+            "verification_note": payload.verification_note.strip()
+        })
     updated = collection.find_one_and_update(
         {"_id": object_id, "status": existing.get("status")},
         {"$set": changes}, return_document=ReturnDocument.AFTER, projection={"_id": 0}
