@@ -49,8 +49,8 @@ def _save_email(provider: str, provider_message_id: str, sender_email: str,
             body_text=body_text or "(No readable message body)",
             received_at=received_at,
         )
-    except ValidationError as exc:
-        raise HTTPException(status_code=422, detail="Email sender address is missing or invalid.") from exc
+    except ValidationError:
+        return {"ignored": True, "reason": "sender_address_missing_or_invalid"}
     parsed = extract_email_intake(payload.subject, payload.body_text)
     received = (payload.received_at or datetime.now(timezone.utc)).isoformat()
     record = {
@@ -129,7 +129,7 @@ def gmail_pubsub(payload: dict, authorization: str | None = Header(default=None)
         cursor, page_token, ids = str(state["last_history_id"]), None, set()
         latest_history_id = cursor
         while True:
-            params = {"startHistoryId": cursor, "historyTypes": "messageAdded", "labelId": "INBOX"}
+            params = {"startHistoryId": cursor, "historyTypes": "messageAdded"}
             if page_token:
                 params["pageToken"] = page_token
             page = gmail_api("GET", "history", token, params=params)
