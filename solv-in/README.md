@@ -199,7 +199,8 @@ Automatic tax application is limited to tax components and taxable bases represe
 - Reported estimated-loss exposure grouped by ISO currency; no cross-currency addition or implied FX conversion.
 - Latest saved preliminary financial estimate per claim, grouped by currency, with pending-review and approved-estimate counts. This is not paid-loss or settlement reporting.
 - Filters for incident date range, country, currency and portfolio (All / Property / Commercial Casualty).
-- Authenticated CSV export using the same report filters.
+- Authenticated CSV export using the same report filters, with spreadsheet-formula injection protection.
+- Reports explicitly reject result sets above 50,000 matching claims rather than silently returning partial totals; users must narrow filters.
 - Dashboard summary and claim list use the same Property + Commercial Casualty scope.
 - APIs: `GET /api/reports/claims-analytics` and `GET /api/reports/claims-analytics.csv`.
 
