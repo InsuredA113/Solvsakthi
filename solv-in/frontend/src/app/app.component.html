@@ -73,7 +73,22 @@
       <ng-container *ngIf="activePage === 'Email FNOL'">
         <section class="panel claims-panel">
           <div class="panel-heading"><div><h2>Incoming claim emails</h2><p class="muted">Email messages are stored as intake drafts. Verify classification and details before creating a claim.</p></div><button class="secondary-action" (click)="loadEmailIntake()">Refresh</button></div>
-          <div class="damage-disclaimer">Integration-ready intake API: a configured mail connector must securely forward messages to Solv-In. Gmail or Microsoft mailbox OAuth/webhook credentials are not configured in this development build.</div>
+          <div class="panel-heading"><div><h3>Mailbox connections</h3><p class="muted">Connect Google Workspace and Microsoft 365. Credentials stay in the backend environment, never in the browser.</p></div><button class="secondary-action" (click)="loadEmailConnectorStatus()">Refresh status</button></div>
+          <div class="bottom-grid" *ngIf="emailConnectorStatus">
+            <article class="panel activity-panel">
+              <h3>Gmail / Google Workspace</h3>
+              <p class="status">{{ emailConnectorStatus.gmail.configured ? 'Credentials configured' : 'Credentials missing' }}</p>
+              <p class="muted">{{ emailConnectorStatus.gmail.watch_active ? 'Watch active until ' + (emailConnectorStatus.gmail.watch_expiration | date:'medium') : 'Gmail watch not started' }}</p>
+              <button class="primary-action" *ngIf="canManageEmailConnectors()" [disabled]="emailConnectorBusy || !emailConnectorStatus.gmail.configured" (click)="startGmailConnector()">Start / renew Gmail watch</button>
+            </article>
+            <article class="panel activity-panel">
+              <h3>Microsoft 365 / Outlook</h3>
+              <p class="status">{{ emailConnectorStatus.microsoft365.configured ? 'Credentials configured' : 'Credentials missing' }}</p>
+              <p class="muted">{{ emailConnectorStatus.microsoft365.subscription_active ? 'Subscription expires ' + (emailConnectorStatus.microsoft365.subscription_expiration | date:'medium') : 'Graph subscription not created' }}</p>
+              <button class="primary-action" *ngIf="canManageEmailConnectors()" [disabled]="emailConnectorBusy || !emailConnectorStatus.microsoft365.configured" (click)="startMicrosoftConnector()">Create / renew Microsoft subscription</button>
+            </article>
+          </div>
+          <div class="damage-disclaimer">Setup required: add provider credentials and webhook settings to solv-in/backend/.env, deploy the API at a public HTTPS address, then start each connector. See the Phase 11 setup guide in README.</div>
           <p class="muted" *ngIf="emailIntakeBusy">Loading email intake…</p>
           <div class="table-scroll" *ngIf="!emailIntakeBusy">
             <table><thead><tr><th>Received</th><th>Sender / subject</th><th>Suggested classification</th><th>Status</th><th>Missing details</th><th>Actions</th></tr></thead>
