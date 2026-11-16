@@ -180,9 +180,16 @@ export class AppComponent implements OnInit {
     this.http.patch<any>(`${environment.apiBaseUrl}/tax-rules/${encodeURIComponent(rule.rule_id)}/status`, { status, verification_note: note }, { headers: this.authHeaders() }).subscribe({ next: () => { this.successMessage = `Tax rule ${status.toLowerCase()}.`; this.loadTaxRules(); }, error: error => this.handleApiError(error) });
   }
 
+  resetTaxRuleConfirmation(): void {
+    this.estimateDraft.confirm_automatic_tax_application = false;
+    this.applicableTaxRules = null;
+  }
+
   lookupApplicableTaxRules(): void {
     const id = this.estimateClaimId.trim();
     if (!id || !this.estimateDraft.tax_point_date) { this.errorMessage = 'Enter a Claim ID and tax point date.'; return; }
+    this.estimateDraft.confirm_automatic_tax_application = false;
+    this.applicableTaxRules = null;
     const params = new HttpParams().set('tax_point_date', this.estimateDraft.tax_point_date);
     this.http.get<any>(`${environment.apiBaseUrl}/claims/${encodeURIComponent(id)}/applicable-tax-rules`, { params, headers: this.authHeaders() }).subscribe({ next: result => this.applicableTaxRules = result, error: error => this.handleApiError(error) });
   }
@@ -310,6 +317,10 @@ export class AppComponent implements OnInit {
       this.errorMessage = 'Enter a Claim ID, repair details, ISO country and currency codes, loss/tax dates, jurisdiction and verified pricing source.';
       return;
     }
+    if (d.tax_mode === 'automatic' && this.applicableTaxRules?.count > 0 && !d.confirm_automatic_tax_application) {
+      this.errorMessage = 'Review the matched tax rules and confirm their application before calculating.';
+      return;
+    }
     if (d.tax_mode === 'manual' && d.taxes.some((tax: any) => Number(tax.rate_percent) > 0 &&
       (!tax.name.trim() || !tax.jurisdiction.trim() || !tax.authority_reference.trim()))) {
       this.errorMessage = 'Each tax component needs a name, jurisdiction and legal/rate authority reference.';
@@ -325,6 +336,7 @@ export class AppComponent implements OnInit {
       postal_code: claim?.postal_code || d.postal_code, loss_date: claim?.incident_date || d.loss_date, tax_point_date: d.tax_point_date,
       line_items: [{ description: d.description, quantity: Number(d.quantity), unit: d.unit, unit_rate: Number(d.unit_rate), taxable: !!d.taxable, depreciation_rate: Number(d.depreciation_rate) }],
       tax_mode: d.tax_mode,
+      confirm_automatic_tax_application: !!d.confirm_automatic_tax_application,
       taxes: d.tax_mode === 'manual' ? d.taxes.filter((tax: any) => Number(tax.rate_percent) > 0).map((tax: any) => ({
         ...tax, rate_percent: Number(tax.rate_percent), effective_from: tax.effective_from || null,
         effective_to: tax.effective_to || null
