@@ -18,7 +18,7 @@ interface DamageAssessment {
   limitations: string[]; repair_cost_estimate: number | null; status: string; created_at: string;
   review_history?: { status: string; notes: string; reviewed_at: string; reviewed_by: string; reviewer_role: string }[];
 }
-interface FinancialEstimate { estimate_id: string; claim_id: string; currency: string; gross_repair_cost: string; depreciation: string; net_repair_cost: string; total_fees_and_charges: string; total_tax: string; interest: { amount: string }; deductible: string; total_before_deductible: string; preliminary_net_estimate: string; status: string; created_at: string; pricing_source: string; state_or_jurisdiction: string; taxes: any[]; line_items: any[]; tax_mode?: string; tax_profile_status?: string; tax_rule_warning?: string | null; tax_rule_ids?: string[]; }
+interface FinancialEstimate { estimate_id: string; claim_id: string; currency: string; gross_repair_cost: string; depreciation: string; net_repair_cost: string; total_fees_and_charges: string; total_tax: string; interest: { amount: string }; deductible: string; total_before_deductible: string; preliminary_net_estimate: string; status: string; created_at: string; pricing_source: string; state_or_jurisdiction: string; taxes: any[]; line_items: any[]; tax_mode?: string; tax_profile_status?: string; tax_rule_warning?: string | null; tax_rule_ids?: string[]; review_status?: string; review_history?: any[]; }
 interface ClaimDraft {
   customer_name: string; email: string; phone: string; policy_number: string;
   claim_type: 'Property' | 'Casualty'; incident_date: string; incident_description: string;
@@ -63,6 +63,8 @@ export class AppComponent implements OnInit {
   estimateBusy = false;
   financialEstimate: FinancialEstimate | null = null;
   financialEstimates: FinancialEstimate[] = [];
+  financialReviewNotes = '';
+  financialReviewBusyId = '';
   taxRules: any[] = [];
   taxRuleDraft: any = this.emptyTaxRuleDraft();
   taxRulesBusy = false;
@@ -352,6 +354,31 @@ export class AppComponent implements OnInit {
       next: result => this.financialEstimates = result.items,
       error: error => { this.financialEstimates = []; this.handleApiError(error); }
     });
+  }
+
+  canReviewFinancialEstimate(): boolean {
+    return ['Super Administrator', 'Insurance Company Administrator', 'Claims Manager', 'Property Adjuster', 'Casualty Adjuster', 'Surveyor', 'Actuarial Analyst', 'Approver'].includes(this.currentUser?.role || '');
+  }
+
+  canApproveFinancialEstimate(): boolean {
+    return ['Super Administrator', 'Insurance Company Administrator', 'Claims Manager', 'Approver'].includes(this.currentUser?.role || '');
+  }
+
+  reviewFinancialEstimate(estimate: FinancialEstimate, status: string): void {
+    if (['More Evidence Required', 'Rejected'].includes(status) && !this.financialReviewNotes.trim()) {
+      this.errorMessage = 'Add reviewer notes before requesting evidence or rejecting this estimate.';
+      return;
+    }
+    if (['Approved', 'Rejected'].includes(status) && !this.canApproveFinancialEstimate()) {
+      this.errorMessage = 'Your role cannot approve or reject financial estimates.';
+      return;
+    }
+    this.financialReviewBusyId = estimate.estimate_id;
+    this.http.patch<FinancialEstimate>(`${environment.apiBaseUrl}/claims/${encodeURIComponent(this.estimateClaimId.trim())}/financial-estimates/${encodeURIComponent(estimate.estimate_id)}/review`,
+      { status, notes: this.financialReviewNotes.trim() }, { headers: this.authHeaders() }).subscribe({
+        next: () => { this.financialReviewBusyId = ''; this.financialReviewNotes = ''; this.successMessage = `Financial estimate review updated: ${status}.`; this.loadFinancialEstimates(); },
+        error: error => { this.financialReviewBusyId = ''; this.handleApiError(error); }
+      });
   }
 
   onDamageImageSelected(event: Event): void {
