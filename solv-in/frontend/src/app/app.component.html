@@ -148,6 +148,65 @@
         </section>
       </ng-container>
 
+      <ng-container *ngIf="activePage === 'Financial Estimate'">
+        <section class="panel form-panel">
+          <div class="panel-heading"><div><h2>Claims financial calculation</h2><p class="muted">Deterministic Python Decimal calculations. Enter verified repair rates and applicable policy/jurisdiction rules.</p></div></div>
+          <div class="damage-disclaimer">This is a preliminary estimate, not a coverage decision or settlement offer. Solv-In does not automatically assume a tax rate, fee or interest charge. Verify each rule against the applicable tax authority, policy wording and claim facts.</div>
+          <div class="form-grid">
+            <label class="full">Claim ID *
+              <div class="damage-claim-lookup"><input name="estimate_claim_id" [(ngModel)]="estimateClaimId" placeholder="Example: CLM-2026-000001"><button type="button" class="secondary-action" (click)="loadFinancialEstimates()">Load saved estimates</button></div>
+            </label>
+            <label>State / jurisdiction *<input name="estimate_jurisdiction" [(ngModel)]="estimateDraft.state_or_jurisdiction" placeholder="e.g. Tamil Nadu, India"></label>
+            <label>Currency<select name="estimate_currency" [(ngModel)]="estimateDraft.currency"><option value="INR">INR</option><option value="USD">USD</option><option value="EUR">EUR</option><option value="GBP">GBP</option></select><small class="muted">Claim currency is used automatically when the Claim ID is found.</small></label>
+            <label class="full">Repair item description *<input name="estimate_description" [(ngModel)]="estimateDraft.description" placeholder="e.g. Replace damaged roof tiles"></label>
+            <label>Quantity *<input type="number" min="0.0001" step="0.0001" name="estimate_quantity" [(ngModel)]="estimateDraft.quantity"></label>
+            <label>Unit<input name="estimate_unit" [(ngModel)]="estimateDraft.unit" placeholder="item, sq ft, hour"></label>
+            <label>Verified unit rate *<input type="number" min="0" step="0.01" name="estimate_rate" [(ngModel)]="estimateDraft.unit_rate"></label>
+            <label>Depreciation (%)<input type="number" min="0" max="100" step="0.01" name="estimate_depreciation" [(ngModel)]="estimateDraft.depreciation_rate"></label>
+            <label class="full"><span><input type="checkbox" name="estimate_taxable" [(ngModel)]="estimateDraft.taxable"> Repair item is taxable under the applicable rule</span></label>
+            <div class="full"><h3>State / local tax (optional)</h3><p class="muted">Only enter a rate after verifying the current rule for the loss location and taxable item.</p></div>
+            <label>Tax name<input name="tax_name" [(ngModel)]="estimateDraft.tax_name" placeholder="State tax / GST component"></label>
+            <label>Tax rate (%)<input type="number" min="0" max="100" step="0.0001" name="tax_rate" [(ngModel)]="estimateDraft.tax_rate"></label>
+            <label>Tax jurisdiction<input name="tax_jurisdiction" [(ngModel)]="estimateDraft.tax_jurisdiction" placeholder="State / local authority"></label>
+            <label>Tax authority / rate reference<input name="tax_authority" [(ngModel)]="estimateDraft.tax_authority" placeholder="Rule, notification or approved rate schedule"></label>
+            <div class="full"><h3>Other claim charges (optional)</h3></div>
+            <label>Charge name<input name="fee_name" [(ngModel)]="estimateDraft.fee_name" placeholder="Inspection / mitigation / approved fee"></label>
+            <label>Charge amount<input type="number" min="0" step="0.01" name="fee_amount" [(ngModel)]="estimateDraft.fee_amount"></label>
+            <label>Policy deductible<input type="number" min="0" step="0.01" name="deductible" [(ngModel)]="estimateDraft.deductible"></label>
+            <div class="full"><h3>Interest (only if applicable)</h3><label><input type="checkbox" name="interest_applicable" [(ngModel)]="estimateDraft.interest_applicable"> Apply contractually / legally supported simple interest</label></div>
+            <ng-container *ngIf="estimateDraft.interest_applicable">
+              <label>Annual interest rate (%)<input type="number" min="0" max="100" step="0.0001" name="interest_rate" [(ngModel)]="estimateDraft.interest_rate"></label>
+              <label>Principal amount<input type="number" min="0" step="0.01" name="interest_principal" [(ngModel)]="estimateDraft.interest_principal"></label>
+              <label>Number of days<input type="number" min="0" step="1" name="interest_days" [(ngModel)]="estimateDraft.interest_days"></label>
+              <label>Policy / legal authority reference<input name="interest_authority" [(ngModel)]="estimateDraft.interest_authority" placeholder="Clause / statute / approved rule"></label>
+            </ng-container>
+            <div class="full"><h3>Pricing evidence *</h3></div>
+            <label>Pricing source *<input name="pricing_source" [(ngModel)]="estimateDraft.pricing_source" placeholder="Approved vendor quote / insurer rate schedule"></label>
+            <label>Pricing effective date *<input type="date" name="pricing_date" [(ngModel)]="estimateDraft.pricing_effective_date"></label>
+            <label class="full">Calculation notes<textarea rows="2" name="estimate_notes" [(ngModel)]="estimateDraft.notes" placeholder="Explain assumptions, exclusions and evidence references"></textarea></label>
+          </div>
+          <div class="form-actions"><span class="muted">No rates are pre-filled as legal or market facts.</span><button class="primary-action" type="button" (click)="calculateFinancialEstimate()" [disabled]="estimateBusy">{{ estimateBusy ? 'Calculating…' : 'Calculate and save estimate' }}</button></div>
+        </section>
+        <section class="panel damage-results" *ngIf="financialEstimate">
+          <div class="panel-heading"><div><h2>Calculation breakdown</h2><p class="muted">{{ financialEstimate.claim_id }} · {{ financialEstimate.state_or_jurisdiction }}</p></div><span class="status">{{ financialEstimate.status }}</span></div>
+          <div class="damage-summary"><div><small>Gross repairs</small><b>{{ formatAmount(+financialEstimate.gross_repair_cost, financialEstimate.currency) }}</b></div><div><small>Depreciation</small><b>{{ formatAmount(+financialEstimate.depreciation, financialEstimate.currency) }}</b></div><div><small>Net repair cost</small><b>{{ formatAmount(+financialEstimate.net_repair_cost, financialEstimate.currency) }}</b></div></div>
+          <div class="table-scroll"><table><tbody>
+            <tr><td>Fees and other charges</td><td>{{ formatAmount(+financialEstimate.total_fees_and_charges, financialEstimate.currency) }}</td></tr>
+            <tr><td>Applicable taxes</td><td>{{ formatAmount(+financialEstimate.total_tax, financialEstimate.currency) }}</td></tr>
+            <tr><td>Interest</td><td>{{ formatAmount(+financialEstimate.interest.amount, financialEstimate.currency) }}</td></tr>
+            <tr><td>Less deductible</td><td>{{ formatAmount(+financialEstimate.deductible, financialEstimate.currency) }}</td></tr>
+            <tr><th>Preliminary net estimate</th><th>{{ formatAmount(+financialEstimate.preliminary_net_estimate, financialEstimate.currency) }}</th></tr>
+          </tbody></table></div>
+          <p class="muted">Pricing: {{ financialEstimate.pricing_source }}. This estimate is pending authorised review and is not a settlement decision.</p>
+        </section>
+        <section class="panel damage-results" *ngIf="financialEstimates.length">
+          <div class="panel-heading"><h2>Saved financial estimates</h2><span class="subtle">{{ financialEstimates.length }} records</span></div>
+          <article class="assessment-history-card" *ngFor="let estimate of financialEstimates">
+            <div class="panel-heading"><div><b>{{ formatAmount(+estimate.preliminary_net_estimate, estimate.currency) }}</b><p class="muted">{{ estimate.created_at | date:'medium' }} · {{ estimate.pricing_source }}</p></div><span class="status">{{ estimate.status }}</span></div>
+          </article>
+        </section>
+      </ng-container>
+
       <ng-container *ngIf="activePage === 'Reports'">
         <section class="panel placeholder"><div class="placeholder-icon">▥</div><h2>Reports module</h2><p>Reporting and preliminary assessment reports are planned for a later phase. No report is generated from unverified claim information.</p></section>
       </ng-container>
