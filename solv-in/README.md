@@ -123,5 +123,16 @@ Never commit the API key or upload real policyholder evidence to an unapproved e
 - API: `POST /api/claims/{claim_id}/financial-estimates` and `GET /api/claims/{claim_id}/financial-estimates`.
 - Run calculation tests from `solv-in/backend` with `pytest`.
 
-For India, GST/CGST/SGST/IGST or any other tax treatment must be configured only after confirming the applicable supply, place-of-supply, taxable component, registration and current legal schedule. State of loss alone does not establish the correct tax treatment. For other countries, configure the relevant state/province/local tax components similarly. This tool is a calculation framework, not a tax-law engine.
+### Worldwide jurisdiction and currency support
+
+- Claim intake captures the loss country using ISO 3166-1 alpha-2 and the claim currency using ISO 4217; neither is silently defaulted to India.
+- Financial estimates capture country, state/province/territory, region, locality, postal code, loss date and a separate tax-point date.
+- ISO country and currency codes are validated against maintained reference datasets.
+- Currency rounding precision is obtained from Babel/CLDR currency metadata (for example, zero decimal places for JPY and three for KWD), rather than assuming two decimals for every currency.
+- Add up to 20 independent tax components for national, state/provincial, regional, municipal or other applicable jurisdictions. Each component has a tax type, jurisdiction, rate, taxable base, optional compounding on prior taxes, effective dates and authority reference.
+- Interest supports selectable simple-interest day-count conventions (Actual/365, Actual/360, Actual/366 and 30/360), but remains disabled unless the applicable policy or law supports it.
+- The system does not perform foreign-exchange conversion. All line items, fees, taxes, interest and deductible in one estimate must be expressed in the claim currency.
+- Global tax rates and legal rules are not preloaded or guessed. They must be supplied from verified, current sources for the correct jurisdiction and tax point. Complex rules such as exemptions, thresholds, tax-inclusive pricing, reverse charge, special insurance premium taxes, multiple tax registrations and country-specific rounding may require additional jurisdiction-specific rule modules before production.
+
+This is a globally extensible calculation framework, not a substitute for local tax/legal advice or a live worldwide tax-compliance database.
 
