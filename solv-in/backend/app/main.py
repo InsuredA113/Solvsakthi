@@ -18,6 +18,7 @@ from .database import get_database, database_is_available
 from .models import ClaimCreate, ClaimStatusUpdate
 from .claims_analytics import build_claims_analytics, is_in_scope_claim, safe_csv_cell
 from .user_models import LoginRequest, UserCreate
+from .email_intake import EmailIntakeCreate, EmailIntakeReview, extract_email_intake
 
 app = FastAPI(
     title="Solv-In API",
@@ -970,3 +971,182 @@ def applicable_tax_rules(
         "profile_status": "Ambiguous" if ambiguous else ("Configured" if selected else "No verified matching tax profile"),
         "message": "Only active, verified, effective-dated rules are returned. This lookup is advisory; confirm the applicable tax treatment with the authorised tax/legal source."
     }
+
+
+# Phase 11: Email FNOL intake. Incoming messages remain drafts until reviewed.
+EMAIL_INTAKE_REVIEW_ROLES = (
+    "Super Administrator", "Insurance Company Administrator", "Claims Manager", "Approver"
+)
+
+@app.post("/api/email-intake", status_code=201)
+def receive_email_intake(
+    payload: EmailIntakeCreate,
+    user: dict = Depends(require_roles(*CREATE_CLAIM_ROLES))
+):
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable. The email was not queued.")
+    collection = get_database()["email_intake"]
+    try:
+        collection.create_index([("provider", 1), ("provider_message_id", 1)], unique=True)
+        existing = collection.find_one({
+            "provider": payload.provider,
+            "provider_message_id": payload.provider_message_id
+        }, {"_id": 0, "body_text": 0})
+        if existing:
+            return {"duplicate": True, "item": existing}
+        parsed = extract_email_intake(payload.subject, payload.body_text)
+        received_at = (payload.received_at or datetime.now(timezone.utc)).isoformat()
+        record = {
+            "intake_id": str(ObjectId()),
+            "provider": payload.provider,
+            "provider_message_id": payload.provider_message_id,
+            "sender_email": str(payload.sender_email),
+            "subject": payload.subject,
+            "body_text": payload.body_text,
+            "received_at": received_at,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_by": user["email"],
+            "review_status": parsed["intake_status"],
+            "review_history": [],
+            **parsed,
+        }
+        collection.insert_one(record)
+        record.pop("_id", None)
+        record.pop("body_text", None)
+        return {"duplicate": False, "item": record}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        from pymongo.errors import DuplicateKeyError
+        if isinstance(exc, DuplicateKeyError):
+            existing = collection.find_one({
+                "provider": payload.provider,
+                "provider_message_id": payload.provider_message_id
+            }, {"_id": 0, "body_text": 0})
+            return {"duplicate": True, "item": existing}
+        if isinstance(exc, PyMongoError):
+            raise HTTPException(status_code=503, detail="Unable to store the incoming email.") from exc
+        raise
+
+
+@app.get("/api/email-intake")
+def list_email_intake(
+    status: str | None = Query(default=None, max_length=40),
+    limit: int = Query(default=100, ge=1, le=250),
+    user: dict = Depends(require_roles(*READ_ROLES))
+):
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    query = {"review_status": status} if status else {}
+    try:
+        rows = list(get_database()["email_intake"].find(
+            query, {"_id": 0, "body_text": 0}
+        ).sort("received_at", DESCENDING).limit(limit))
+        return {"items": rows, "count": len(rows)}
+    except PyMongoError as exc:
+        raise HTTPException(status_code=503, detail="Unable to retrieve email intake records.") from exc
+
+
+@app.get("/api/email-intake/{intake_id}")
+def get_email_intake(
+    intake_id: str,
+    user: dict = Depends(require_roles(*READ_ROLES))
+):
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    record = get_database()["email_intake"].find_one({"intake_id": intake_id}, {"_id": 0})
+    if not record:
+        raise HTTPException(status_code=404, detail="Email intake record not found.")
+    return record
+
+
+@app.patch("/api/email-intake/{intake_id}/review")
+def review_email_intake(
+    intake_id: str,
+    payload: EmailIntakeReview,
+    user: dict = Depends(require_roles(*EMAIL_INTAKE_REVIEW_ROLES))
+):
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    if payload.status == "Rejected" and not payload.notes.strip():
+        raise HTTPException(status_code=422, detail="A reason is required when rejecting an email intake.")
+    collection = get_database()["email_intake"]
+    record = collection.find_one({"intake_id": intake_id})
+    if not record:
+        raise HTTPException(status_code=404, detail="Email intake record not found.")
+    if record.get("review_status") == "Out of Scope":
+        raise HTTPException(status_code=409, detail="Out-of-scope messages cannot be marked as reviewed.")
+    if record.get("claim_id") or record.get("review_status") in ("Rejected", "Converted"):
+        raise HTTPException(status_code=409, detail="This email intake record is locked.")
+    if payload.status == "Reviewed" and record.get("suggested_claim_type") not in ("Property", "Commercial Casualty"):
+        raise HTTPException(status_code=422, detail="Confirm a supported Property or Commercial Casualty classification before review.")
+    history = record.get("review_history", [])
+    history.append({
+        "status": payload.status, "notes": payload.notes.strip(),
+        "reviewed_at": datetime.now(timezone.utc).isoformat(),
+        "reviewed_by": user["email"], "reviewer_role": user["role"]
+    })
+    updated = collection.find_one_and_update(
+        {"intake_id": intake_id, "claim_id": {"$exists": False}},
+        {"$set": {"review_status": payload.status, "review_history": history,
+                  "reviewed_at": datetime.now(timezone.utc).isoformat(),
+                  "reviewed_by": user["email"]}},
+        return_document=ReturnDocument.AFTER,
+        projection={"_id": 0, "body_text": 0}
+    )
+    if not updated:
+        raise HTTPException(status_code=409, detail="The email intake record changed; refresh and try again.")
+    return updated
+
+
+@app.post("/api/email-intake/{intake_id}/create-claim", status_code=201)
+def create_claim_from_email_intake(
+    intake_id: str,
+    payload: ClaimCreate,
+    user: dict = Depends(require_roles(*CREATE_CLAIM_ROLES))
+):
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    collection = get_database()["email_intake"]
+    record = collection.find_one_and_update(
+        {"intake_id": intake_id, "review_status": "Reviewed",
+         "claim_id": {"$exists": False}, "conversion_state": {"$ne": "Processing"}},
+        {"$set": {"conversion_state": "Processing"}},
+        return_document=ReturnDocument.AFTER
+    )
+    if not record:
+        raise HTTPException(status_code=409, detail="The email must be reviewed first and must not already be converted.")
+    if ((record.get("suggested_claim_type") == "Property" and payload.claim_type != "Property") or
+        (record.get("suggested_claim_type") == "Commercial Casualty" and
+         (payload.claim_type != "Casualty" or payload.casualty_segment != "Commercial"))):
+        collection.update_one({"intake_id": intake_id}, {"$set": {"conversion_state": "Failed"}})
+        raise HTTPException(status_code=422, detail="The claim type must match the reviewed email classification.")
+    db = get_database()
+    try:
+        year = datetime.now(timezone.utc).year
+        sequence = db["counters"].find_one_and_update(
+            {"_id": f"claim_id_{year}"}, {"$inc": {"sequence": 1}},
+            upsert=True, return_document=ReturnDocument.AFTER
+        )
+        claim_id = f"CLM-{year}-{sequence['sequence']:06d}"
+        now = datetime.now(timezone.utc).isoformat()
+        claim_record = payload.model_dump(mode="json")
+        claim_record.update({
+            "claim_id": claim_id, "status": "FNOL Received",
+            "created_at": now, "updated_at": now,
+            "created_by": user["email"],
+            "source": "Email FNOL",
+            "source_intake_id": intake_id
+        })
+        db["claims"].insert_one(claim_record)
+        collection.update_one(
+            {"intake_id": intake_id, "conversion_state": "Processing"},
+            {"$set": {"review_status": "Converted", "conversion_state": "Completed",
+                      "claim_id": claim_id, "converted_at": now,
+                      "converted_by": user["email"]}}
+        )
+        return claim_record
+    except PyMongoError as exc:
+        collection.update_one({"intake_id": intake_id, "conversion_state": "Processing"},
+                              {"$set": {"conversion_state": "Failed"}})
+        raise HTTPException(status_code=503, detail="Unable to create the claim from this email.") from exc
