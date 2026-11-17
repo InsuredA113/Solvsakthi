@@ -138,6 +138,7 @@ def _create_provisional_claim(db, intake_id: str, sender_email: str, parsed: dic
     claim = {
         "claim_id": claim_id,
         "customer_name": clean("customer_name"),
+        "loss_cause": clean("loss_cause"),
         "email": clean("email") or sender_email,
         "phone": clean("phone"),
         "policy_number": clean("policy_number"),
@@ -157,7 +158,8 @@ def _create_provisional_claim(db, intake_id: str, sender_email: str, parsed: dic
         "status": "Under Review",
         "created_at": now, "updated_at": now,
         "created_by": "system:gmail-auto-intake" if parsed else "system:email-auto-intake",
-        "created_by_type": "system", "source": "Email FNOL",
+        "created_by_name": "Email automation", "created_by_email": sender_email,
+        "created_by_type": "system", "source": "Email FNOL", "source_mode": "email",
         "source_intake_id": intake_id,
         "auto_intake_status": "Provisional" if missing else "Created",
         "missing_fields": sorted(set(missing)),
