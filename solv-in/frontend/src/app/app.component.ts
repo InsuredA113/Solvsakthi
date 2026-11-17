@@ -55,6 +55,7 @@ export class AppComponent implements OnInit {
   successMessage = '';
   searchTerm = '';
   lossCauseFilter = '';
+  lossCauseOptions: string[] = [];
   statusFilter = '';
   claims: Claim[] = [];
   selectedClaim: Claim | null = null;
@@ -518,6 +519,20 @@ export class AppComponent implements OnInit {
     });
   }
 
+  loadLossCauseOptions(): void {
+    this.http.get<{items: string[]; count: number}>(`${environment.apiBaseUrl}/claims/loss-causes`, {
+      headers: this.authHeaders()
+    }).subscribe({
+      next: result => {
+        this.lossCauseOptions = result.items || [];
+        if (this.lossCauseFilter && !this.lossCauseOptions.includes(this.lossCauseFilter)) {
+          this.lossCauseFilter = '';
+        }
+      },
+      error: error => this.handleApiError(error)
+    });
+  }
+
   loadClaims(): void {
     this.loadingClaims = true;
     let params = new HttpParams();
@@ -525,7 +540,7 @@ export class AppComponent implements OnInit {
     if (this.lossCauseFilter) params = params.set('loss_cause', this.lossCauseFilter);
     if (this.statusFilter) params = params.set('status', this.statusFilter);
     this.http.get<{items: Claim[]; count: number}>(`${environment.apiBaseUrl}/claims`, { params, headers: this.authHeaders() }).subscribe({
-      next: result => { this.claims = result.items; this.loadingClaims = false; },
+      next: result => { this.claims = result.items; this.loadingClaims = false; this.loadLossCauseOptions(); },
       error: error => { this.loadingClaims = false; this.handleApiError(error); this.claims = []; }
     });
   }
