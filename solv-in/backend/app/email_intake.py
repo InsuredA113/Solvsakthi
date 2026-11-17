@@ -76,7 +76,7 @@ def extract_email_intake(subject: str, body_text: str) -> dict:
         "thiruvananthapuram", "madurai", "tiruchirappalli", "salem",
         "erode", "tiruppur", "vellore", "mysuru", "mysore",
     )
-    if any(re.search(rf"\\b{re.escape(term)}\\b", location) for term in indian_location_terms):
+    if any(re.search(rf"\b{re.escape(term)}\b", location) for term in indian_location_terms):
         fields["country_code"] = (fields.get("country_code") or "IN").upper()
         fields["currency"] = (fields.get("currency") or "INR").upper()
     commercial_casualty_signals = (
