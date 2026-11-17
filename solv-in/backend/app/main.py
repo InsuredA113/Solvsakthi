@@ -307,6 +307,7 @@ def list_claims(
     search: str | None = Query(default=None, max_length=120),
     claim_type: str | None = Query(default=None, pattern="^(Property|Casualty|Unclassified)$"),
     status: str | None = Query(default=None, max_length=40),
+    loss_cause: str | None = Query(default=None, max_length=120),
     limit: int = Query(default=100, ge=1, le=250),
     user: dict = Depends(require_roles(*READ_ROLES))
 ):
@@ -321,10 +322,13 @@ def list_claims(
         query["$and"].append({"claim_type": claim_type})
     if status:
         query["$and"].append({"status": status})
+    if loss_cause:
+        query["$and"].append({"loss_cause": {"$regex": loss_cause, "$options": "i"}})
     if search:
         query["$and"].append({"$or": [
             {"claim_id": {"$regex": search, "$options": "i"}},
             {"customer_name": {"$regex": search, "$options": "i"}},
+            {"loss_cause": {"$regex": search, "$options": "i"}},
             {"policy_number": {"$regex": search, "$options": "i"}}
         ]})
     try:
@@ -370,7 +374,11 @@ def create_claim(payload: ClaimCreate, user: dict = Depends(require_roles(*CREAT
             "status": "FNOL Received",
             "created_at": now,
             "updated_at": now,
-            "created_by": user["email"]
+            "created_by": user["email"],
+            "created_by_name": user.get("full_name") or user["email"],
+            "created_by_email": user["email"],
+            "source": "Manual FNOL",
+            "source_mode": "upload"
         })
         db["claims"].insert_one(record)
         return record
@@ -1507,7 +1515,10 @@ def create_claim_from_email_intake(
             "claim_id": claim_id, "status": "FNOL Received",
             "created_at": now, "updated_at": now,
             "created_by": user["email"],
+            "created_by_name": user.get("full_name") or user["email"],
+            "created_by_email": user["email"],
             "source": "Email FNOL",
+            "source_mode": "email",
             "source_intake_id": intake_id
         })
         db["claims"].insert_one(claim_record)
