@@ -63,10 +63,45 @@
           <p class="muted" *ngIf="loadingClaims">Loading claims…</p>
           <div class="table-scroll" *ngIf="!loadingClaims"><table><thead><tr><th>Claim ID</th><th>Customer</th><th>Policy</th><th>Type</th><th>Incident date</th><th>Estimated loss</th><th>Status</th></tr></thead>
             <tbody><tr *ngFor="let claim of claims">
-              <td><b>{{ claim.claim_id }}</b></td><td>{{ claim.customer_name }}</td><td>{{ claim.policy_number }}</td><td>{{ claim.claim_type }}</td><td>{{ claim.incident_date }}</td><td>{{ formatAmount(claim.estimated_loss, claim.currency) }}</td>
+              <td><button class="text-button" type="button" (click)="openClaimDetails(claim)" [attr.aria-label]="'Open claim ' + claim.claim_id">{{ claim.claim_id }}</button></td><td>{{ claim.customer_name }}</td><td>{{ claim.policy_number }}</td><td>{{ claim.claim_type }}</td><td>{{ claim.incident_date }}</td><td>{{ formatAmount(claim.estimated_loss, claim.currency) }}</td>
               <td><select class="status-select" [ngModel]="claim.status" (ngModelChange)="changeStatus(claim, $event)" [attr.aria-label]="'Update status for ' + claim.claim_id"><option *ngFor="let status of statuses" [value]="status">{{ status }}</option></select></td>
             </tr><tr *ngIf="claims.length === 0"><td colspan="7" class="empty">No claims match your search. Create a new FNOL to get started.</td></tr></tbody>
           </table></div>
+        </section>
+      </ng-container>
+
+      <ng-container *ngIf="activePage === 'Claim Details'">
+        <section class="panel claims-panel">
+          <div class="panel-heading">
+            <div><h2>Claim details</h2><p class="muted" *ngIf="selectedClaim">{{ selectedClaim.claim_id }} · {{ selectedClaim.claim_type === 'Casualty' ? 'Commercial Casualty' : 'Property' }}</p></div>
+            <button class="secondary-action" type="button" (click)="backToClaims()">← Back to claims</button>
+          </div>
+          <p class="muted" *ngIf="loadingClaimDetails">Loading claim details…</p>
+          <div *ngIf="selectedClaim" class="form-grid">
+            <div><small class="muted">Claim ID</small><p><b>{{ selectedClaim.claim_id }}</b></p></div>
+            <div><small class="muted">Status</small><p><span class="status">{{ selectedClaim.status }}</span></p></div>
+            <div><small class="muted">Customer name</small><p>{{ selectedClaim.customer_name }}</p></div>
+            <div><small class="muted">Policy number</small><p>{{ selectedClaim.policy_number }}</p></div>
+            <div><small class="muted">Email</small><p>{{ selectedClaim.email || 'Not provided' }}</p></div>
+            <div><small class="muted">Phone</small><p>{{ selectedClaim.phone || 'Not provided' }}</p></div>
+            <div><small class="muted">Incident date</small><p>{{ selectedClaim.incident_date | date:'mediumDate' }}</p></div>
+            <div><small class="muted">Estimated loss</small><p>{{ formatAmount(selectedClaim.estimated_loss, selectedClaim.currency) }}</p></div>
+            <div><small class="muted">Loss location</small><p>{{ selectedClaim.loss_location }}</p></div>
+            <div><small class="muted">Country / region</small><p>{{ selectedClaim.country_code }} · {{ selectedClaim.region || 'Not provided' }}</p></div>
+            <div *ngIf="selectedClaim.claim_type === 'Property'"><small class="muted">Property occupancy</small><p>{{ selectedClaim.property_occupancy || 'Not specified' }}</p></div>
+            <ng-container *ngIf="selectedClaim.claim_type === 'Casualty'">
+              <div><small class="muted">Business / insured entity</small><p>{{ selectedClaim.business_name }}</p></div>
+              <div><small class="muted">Industry</small><p>{{ selectedClaim.industry }}</p></div>
+              <div><small class="muted">Commercial liability type</small><p>{{ selectedClaim.commercial_liability_type }}</p></div>
+            </ng-container>
+            <div class="full"><small class="muted">Incident description</small><p>{{ selectedClaim.incident_description }}</p></div>
+            <div><small class="muted">Created</small><p>{{ selectedClaim.created_at | date:'medium' }}</p></div>
+            <div><small class="muted">Last updated</small><p>{{ selectedClaim.updated_at | date:'medium' }}</p></div>
+          </div>
+          <div class="form-actions" *ngIf="selectedClaim">
+            <button class="secondary-action" type="button" (click)="damageClaimId = selectedClaim!.claim_id; selectPage('AI Damage Analysis')">AI damage analysis</button>
+            <button class="secondary-action" type="button" (click)="estimateClaimId = selectedClaim!.claim_id; selectPage('Financial Estimate')">Financial estimate</button>
+          </div>
         </section>
       </ng-container>
 
