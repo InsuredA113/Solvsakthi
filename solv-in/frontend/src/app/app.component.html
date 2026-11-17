@@ -531,9 +531,9 @@
       </ng-container>
 
 
-      <ng-container *ngIf="activePage === 'Tax Rules' && canManageTaxRules()">
+      <ng-container *ngIf="activePage === 'Financial Estimate' && canManageTaxRules()">
         <section class="panel form-panel">
-          <div class="panel-heading"><div><h2>Global tax rule registry</h2><p class="muted">Create jurisdiction profiles using verified official sources. New rules are saved as Draft and must be activated by an authorised administrator.</p></div></div>
+          <div class="panel-heading"><div><h2>Tax jurisdiction rules</h2><p class="muted">Configure verified tax rules alongside this financial estimate. New rules are saved as Draft and must be verified and activated by an authorised administrator.</p></div></div>
           <div class="damage-disclaimer">Solv-In does not preload or guess worldwide tax rates. Verify each rate, jurisdiction, taxable base and effective date against the relevant official authority before activation. Active rules are immutable; create a new version for changes.</div>
           <div class="form-grid">
             <label>Country code (ISO alpha-2) *<input name="rule_country" maxlength="2" [(ngModel)]="taxRuleDraft.country_code" placeholder="US, GB, IN, AU"></label>
