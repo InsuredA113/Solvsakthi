@@ -87,7 +87,7 @@
               <div class="claim-field-heading"><small>Claim ID</small><span class="protected-label">Protected</span></div>
               <strong>{{ selectedClaim.claim_id }}</strong>
             </article>
-            <article class="claim-field-card" *ngFor="let field of claimDetailFields()">
+            <article class="claim-field-card" *ngFor="let field of claimDetailFields(); trackBy: trackByClaimField">
               <div class="claim-field-heading"><small>{{ field.label }}</small><span class="required-label" *ngIf="field.required">Required</span></div>
               <ng-container *ngIf="editingClaimField !== field.key">
                 <p class="claim-field-value" [class.long-value]="field.type === 'textarea'">{{ field.key === 'estimated_loss' ? (field.value ? formatAmount(+field.value, selectedClaim.currency) : 'Not Found') : (field.value || 'Not Found') }}</p>
