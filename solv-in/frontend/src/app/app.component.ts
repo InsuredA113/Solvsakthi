@@ -6,12 +6,13 @@ import { environment } from '../environments/environment';
 
 interface User { full_name: string; email: string; role: string; is_active?: boolean; }
 interface Claim {
-  claim_id: string; customer_name?: string | null; email?: string | null; phone?: string | null;
+  claim_id: string; customer_name?: string | null; loss_cause?: string | null; email?: string | null; phone?: string | null;
   policy_number?: string | null; claim_type: 'Property' | 'Casualty' | 'Unclassified'; property_occupancy?: string | null;
   casualty_segment?: 'Commercial' | null; business_name?: string | null; industry?: string | null;
   commercial_liability_type?: string | null; incident_date?: string | null;
   incident_description?: string | null; loss_location?: string | null; country_code?: string | null; region?: string | null; locality?: string | null; postal_code?: string | null; estimated_loss?: number | null;
   currency?: string | null; status: string; created_at?: string; updated_at?: string;
+  created_by?: string; created_by_name?: string; created_by_email?: string; source?: string; source_mode?: string;
   auto_intake_status?: string; missing_fields?: string[]; suggested_information?: Record<string, string>;
 }
 interface ClaimDocument { file_id: string; claim_id: string; filename: string; content_type: string; size: number; uploaded_at?: string; uploaded_by?: string; }
@@ -26,7 +27,7 @@ interface FinancialEstimate { estimate_id: string; claim_id: string; repair_rate
 interface EmailConnectorStatus { gmail: { configured: boolean; watch_active: boolean; watch_expiration?: string | null }; microsoft365: { configured: boolean; subscription_active: boolean; subscription_expiration?: string | null }; note: string; }
 interface EmailIntakeItem { intake_id: string; sender_email: string; subject: string; received_at: string; suggested_claim_type: string; confirmed_claim_type?: string; classification_reason: string; missing_fields: string[]; review_status: string; extracted_fields: Record<string, string | null>; claim_id?: string; }
 interface ClaimDraft {
-  customer_name: string; email: string; phone: string; policy_number: string;
+  customer_name: string; loss_cause: string; email: string; phone: string; policy_number: string;
   claim_type: 'Property' | 'Casualty'; property_occupancy: string | null;
   casualty_segment: 'Commercial' | null; business_name: string; industry: string;
   commercial_liability_type: string | null; incident_date: string; incident_description: string;
@@ -53,7 +54,7 @@ export class AppComponent implements OnInit {
   errorMessage = '';
   successMessage = '';
   searchTerm = '';
-  typeFilter = '';
+  lossCauseFilter = '';
   statusFilter = '';
   claims: Claim[] = [];
   selectedClaim: Claim | null = null;
@@ -124,7 +125,7 @@ export class AppComponent implements OnInit {
   analyticsCountry = '';
   analyticsCurrency = '';
   analyticsPortfolio = 'All';
-  readonly navigation = ['Dashboard', 'Claims', 'Email FNOL', 'New FNOL', 'AI Damage Analysis', 'Policy Coverage', 'Financial Estimate', 'Tax Rules', 'Repair Rates', 'Reports', 'Users', 'Settings'];
+  readonly navigation = ['Dashboard', 'Claims', 'New FNOL', 'AI Damage Analysis', 'Policy Coverage', 'Financial Estimate', 'Tax Rules', 'Repair Rates', 'Reports', 'Users', 'Settings'];
   readonly statuses = ['FNOL Received', 'Under Review', 'Investigation', 'Assessment', 'Pending Approval', 'Approved', 'Closed'];
   draft: ClaimDraft = this.emptyDraft();
 
@@ -429,7 +430,7 @@ export class AppComponent implements OnInit {
 
   emptyDraft(): ClaimDraft {
     return {
-      customer_name: '', email: '', phone: '', policy_number: '',
+      customer_name: '', loss_cause: '', email: '', phone: '', policy_number: '',
       claim_type: 'Property', property_occupancy: 'Residential', casualty_segment: null,
       business_name: '', industry: '', commercial_liability_type: null,
       incident_date: '', incident_description: '',
@@ -459,7 +460,6 @@ export class AppComponent implements OnInit {
     this.errorMessage = '';
     this.successMessage = '';
     if (page === 'Claims') this.loadClaims();
-    if (page === 'Email FNOL') { this.loadEmailIntake(); this.loadEmailConnectorStatus(); }
     if (page === 'AI Damage Analysis' && this.damageClaimId.trim()) this.loadDamageAssessments();
     if (page === 'Users') this.loadUsers();
     if (page === 'Tax Rules' && this.canManageTaxRules()) this.loadTaxRules();
@@ -522,12 +522,18 @@ export class AppComponent implements OnInit {
     this.loadingClaims = true;
     let params = new HttpParams();
     if (this.searchTerm.trim()) params = params.set('search', this.searchTerm.trim());
-    if (this.typeFilter) params = params.set('claim_type', this.typeFilter);
+    if (this.lossCauseFilter) params = params.set('loss_cause', this.lossCauseFilter);
     if (this.statusFilter) params = params.set('status', this.statusFilter);
     this.http.get<{items: Claim[]; count: number}>(`${environment.apiBaseUrl}/claims`, { params, headers: this.authHeaders() }).subscribe({
       next: result => { this.claims = result.items; this.loadingClaims = false; },
       error: error => { this.loadingClaims = false; this.handleApiError(error); this.claims = []; }
     });
+  }
+
+  createdByTooltip(claim: Claim): string {
+    const name = claim.created_by_name || (claim.source_mode === 'email' ? 'Email automation' : claim.created_by) || 'Not recorded';
+    const email = claim.created_by_email || (claim.source_mode === 'email' ? claim.email : claim.created_by) || 'Not available';
+    return `Created / received by: ${name}\nEmail ID: ${email}`;
   }
 
   openClaimDetails(claim: Claim): void {
