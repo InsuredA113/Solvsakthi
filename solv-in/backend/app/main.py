@@ -334,6 +334,7 @@ def create_claim(payload: ClaimCreate, user: dict = Depends(require_roles(*CREAT
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable. No claim was saved.")
     try:
+        db = get_database()
         year = datetime.now(timezone.utc).year
         sequence = db["counters"].find_one_and_update(
             {"_id": f"claim_id_{year}"},
