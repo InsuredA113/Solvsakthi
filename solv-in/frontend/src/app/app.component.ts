@@ -57,7 +57,10 @@ export class AppComponent implements OnInit {
   claims: Claim[] = [];
   selectedClaim: Claim | null = null;
   loadingClaimDetails = false;
-  claimDocuments: ClaimDocument[] = [];\n  selectedClaimDocument: File | null = null;\n  documentUploadBusy = false;\n  documentsLoading = false;
+  claimDocuments: ClaimDocument[] = [];
+  selectedClaimDocument: File | null = null;
+  documentUploadBusy = false;
+  documentsLoading = false;
   users: User[] = [];
   roles: string[] = [];
   userBusy = false;
