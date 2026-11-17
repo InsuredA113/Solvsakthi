@@ -11,3 +11,5 @@
 .shell.claim-detail-mode .sidebar{display:none}.shell.claim-detail-mode .main{width:100%;min-width:0}.shell.claim-detail-mode .content{max-width:none;padding:30px 38px}.source-mode{display:inline-grid;place-items:center;width:30px;height:30px;border-radius:8px;background:#edf4fc;color:#286bb2;font-size:17px;cursor:help}.claim-detail-mode .topbar{padding-left:38px;padding-right:38px}
 
 .claim-detail-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.claim-edit-panel{margin-top:14px}.claim-edit-panel .form-grid{margin-top:8px}.claim-edit-panel textarea{width:100%;font:12px Inter;color:#253b59}.claim-edit-panel .form-actions{flex-wrap:wrap}.claim-edit-panel .form-actions>div{margin-left:auto}@media(max-width:700px){.claim-detail-actions{width:100%}.claim-detail-actions button{flex:1}.claim-edit-panel .form-actions>div{margin-left:0;width:100%}}
+
+.claim-row-actions{display:flex;align-items:center;gap:10px}.claim-row-actions .text-button{padding:3px 0}.danger-text{color:#b23a3a}.danger-text:hover{color:#8f2020}
