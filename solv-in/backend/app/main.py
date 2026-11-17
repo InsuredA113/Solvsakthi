@@ -724,7 +724,55 @@ def create_financial_estimate(
         raise HTTPException(status_code=422, detail="Estimate currency must match the claim currency.")
     if (claim.get("country_code") and claim["country_code"].upper() != payload.country_code):
         raise HTTPException(status_code=422, detail="Estimate country must match the claim's recorded loss country.")
-    calculation_payload = payload
+    # Resolve every selected catalogue item server-side. Never trust a browser-supplied rate.
+    from decimal import Decimal
+    verified_line_items = []
+    repair_rate_snapshots = []
+    pricing_date = date.fromisoformat(payload.loss_date)
+    for item in payload.line_items:
+        if not item.repair_rate_id:
+            verified_line_items.append(item)
+            continue
+        if claim.get("claim_type") != "Property":
+            raise HTTPException(status_code=422, detail="Repair catalogue pricing is currently limited to Property claims.")
+        try:
+            rate_object_id = ObjectId(item.repair_rate_id)
+        except InvalidId as exc:
+            raise HTTPException(status_code=422, detail="Invalid repair catalogue rate ID.") from exc
+        rate = db["repair_rates"].find_one({"_id": rate_object_id, "status": "Active"})
+        if not rate:
+            raise HTTPException(status_code=409, detail="The selected repair rate is no longer active. Refresh the catalogue.")
+        def location_key(value):
+            return " ".join(str(value or "").strip().casefold().split())
+        if (rate.get("country_code", "").upper() != payload.country_code
+            or rate.get("currency", "").upper() != payload.currency
+            or location_key(rate.get("state")) != location_key(claim.get("region"))
+            or location_key(rate.get("city")) != location_key(claim.get("locality"))):
+            raise HTTPException(status_code=409, detail="The selected repair rate does not match this claim's country, currency, state and city.")
+        try:
+            effective_from = date.fromisoformat(str(rate["effective_from"])[:10])
+            effective_to = date.fromisoformat(str(rate["effective_to"])[:10]) if rate.get("effective_to") else None
+        except (KeyError, ValueError) as exc:
+            raise HTTPException(status_code=409, detail="The selected repair rate has invalid effective dates.") from exc
+        if effective_from > pricing_date or (effective_to and effective_to < pricing_date):
+            raise HTTPException(status_code=409, detail="The selected repair rate was not effective on the claim loss date.")
+        verified_rate = Decimal(str(rate["unit_rate"]))
+        verified_line_items.append(item.model_copy(update={
+            "description": rate["item_name"], "unit": rate["unit"], "unit_rate": verified_rate
+        }))
+        repair_rate_snapshots.append({
+            "rate_id": str(rate["_id"]), "version": rate.get("version", 1),
+            "country_code": rate["country_code"], "currency": rate["currency"],
+            "state": rate["state"], "city": rate["city"], "category": rate["category"],
+            "item_code": rate["item_code"], "item_name": rate["item_name"],
+            "unit": rate["unit"], "unit_rate": str(verified_rate),
+            "effective_from": str(rate["effective_from"])[:10],
+            "effective_to": str(rate["effective_to"])[:10] if rate.get("effective_to") else None,
+            "source_name": rate.get("source_name"), "source_reference": rate.get("source_reference"),
+            "source_url": rate.get("source_url"), "verified_by": rate.get("verified_by"),
+            "verified_at": rate.get("verified_at")
+        })
+    calculation_payload = payload.model_copy(update={"line_items": verified_line_items})
     tax_rule_snapshots = []
     if payload.tax_mode == "automatic":
         try:
@@ -792,6 +840,8 @@ def create_financial_estimate(
     )
     result["tax_rule_snapshots"] = tax_rule_snapshots
     result["tax_rule_ids"] = [rule["rule_id"] for rule in tax_rule_snapshots]
+    result["repair_rate_snapshots"] = repair_rate_snapshots
+    result["repair_rate_ids"] = [rate["rate_id"] for rate in repair_rate_snapshots]
     result["tax_rule_warning"] = (
         None if tax_rule_snapshots or payload.tax_mode == "manual"
         else "No active verified tax rule matched this claim jurisdiction and tax point date. No tax has been assumed; confirm whether tax applies before approval."
