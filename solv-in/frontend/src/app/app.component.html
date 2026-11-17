@@ -38,7 +38,7 @@
         <section class="bottom-grid">
           <article class="panel claims-panel">
             <div class="panel-heading"><h2>Recent claims</h2><button class="text-button" (click)="selectPage('Claims')">View all →</button></div>
-            <div class="table-scroll"><table><thead><tr><th>Claim ID</th><th>Insured</th><th>Type</th><th>Status</th></tr></thead>
+            <div class="table-scroll"><table><thead><tr><th>Claim ID</th><th>Insured Name</th><th>Type</th><th>Status</th></tr></thead>
               <tbody><tr *ngFor="let claim of claims.slice(0,5)"><td>{{ claim.claim_id }}</td><td>{{ claim.customer_name || "Not Found" }}</td><td>{{ claim.claim_type === "Casualty" ? "Commercial Casualty" : claim.claim_type }}</td><td><span class="status">{{ claim.status }}</span></td></tr>
                 <tr *ngIf="claims.length === 0"><td colspan="4" class="empty">No saved claims yet. Create your first FNOL.</td></tr></tbody>
             </table></div>
