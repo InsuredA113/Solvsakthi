@@ -3,8 +3,8 @@
   <aside class="sidebar">
     <div class="brand"><div class="brand-mark">S</div><div><strong>Solv-In</strong><small>Smarter Claims. Faster Decisions.</small></div></div>
     <nav aria-label="Main navigation">
-      <ng-container *ngFor="let item of navigation"><button *ngIf="(item !== 'Users' || isAdmin()) && (item !== 'AI Damage Analysis' || canAnalyseDamage()) && (item !== 'Tax Rules' || canManageTaxRules()) && (item !== 'Policy Coverage' || canViewPolicyCoverage())" (click)="selectPage(item)" [class.active]="activePage === item">
-        <span class="nav-icon">{{ item === 'Dashboard' ? '⌂' : item === 'Claims' ? '▤' : item === 'New FNOL' ? '+' : item === 'Email FNOL' ? '✉' : item === 'AI Damage Analysis' ? '◈' : item === 'Tax Rules' ? '⌁' : item === 'Policy Coverage' ? '▣' : item === 'Reports' ? '▥' : item === 'Users' ? '♙' : '⚙' }}</span>{{ item }}
+      <ng-container *ngFor="let item of navigation"><button *ngIf="(item !== 'Users' || isAdmin()) && (item !== 'AI Damage Analysis' || canAnalyseDamage()) && (item !== 'Tax Rules' || canManageTaxRules()) && (item !== 'Repair Rates' || canManageTaxRules()) && (item !== 'Policy Coverage' || canViewPolicyCoverage())" (click)="selectPage(item)" [class.active]="activePage === item">
+        <span class="nav-icon">{{ item === 'Dashboard' ? '⌂' : item === 'Claims' ? '▤' : item === 'New FNOL' ? '+' : item === 'Email FNOL' ? '✉' : item === 'AI Damage Analysis' ? '◈' : item === 'Tax Rules' ? '⌁' : item === 'Repair Rates' ? '⌖' : item === 'Policy Coverage' ? '▣' : item === 'Reports' ? '▥' : item === 'Users' ? '♙' : '⚙' }}</span>{{ item }}
       </button></ng-container>
     </nav>
     <div class="sidebar-foot">P&C Claims Intelligence<br><span>Development preview</span></div>
@@ -495,6 +495,54 @@
           <div class="table-scroll"><table><thead><tr><th>Country / jurisdiction</th><th>Tax</th><th>Rate</th><th>Effective</th><th>Authority</th><th>Status</th><th>Action</th></tr></thead><tbody>
             <tr *ngFor="let rule of taxRules"><td>{{ rule.country_code }} · {{ rule.admin_area }}<small>{{ rule.region }} {{ rule.locality }}</small></td><td>{{ rule.tax_name }}</td><td>{{ rule.rate_percent }}%</td><td>{{ rule.effective_from }} – {{ rule.effective_to || 'Open-ended' }}</td><td>{{ rule.authority_name }}<small>{{ rule.authority_reference }}</small></td><td><span class="status">{{ rule.status }}</span></td><td><button *ngIf="rule.status === 'Draft' || rule.status === 'Inactive'" class="secondary-action" type="button" (click)="setTaxRuleStatus(rule, 'Active')">Verify &amp; activate</button><button *ngIf="rule.status === 'Active'" class="danger-action" type="button" (click)="setTaxRuleStatus(rule, 'Inactive')">Deactivate</button></td></tr>
             <tr *ngIf="taxRules.length === 0"><td colspan="7" class="empty">No tax rules found. Add a verified jurisdiction rule above.</td></tr>
+          </tbody></table></div>
+        </section>
+      </ng-container>
+
+      <ng-container *ngIf="activePage === 'Repair Rates' && canManageTaxRules()">
+        <section class="panel form-panel">
+          <div class="panel-heading"><div><h2>Property repair-rate catalogue</h2><p class="muted">Maintain verified repair pricing by country, state and city. New rates are Draft and are not used in estimates until an authorised administrator activates them.</p></div></div>
+          <div class="damage-disclaimer">Do not enter guessed market prices. Record the source, effective date, currency and unit. Active rates are immutable; add a new record when a rate changes. This catalogue does not yet auto-populate estimate line items.</div>
+          <div class="form-grid">
+            <label>Country code (ISO alpha-2) *<input name="repair_country" maxlength="2" [(ngModel)]="repairRateDraft.country_code" placeholder="IN"></label>
+            <label>Currency (ISO 4217) *<input name="repair_currency" maxlength="3" [(ngModel)]="repairRateDraft.currency" placeholder="INR"></label>
+            <label>State / province *<input name="repair_state" [(ngModel)]="repairRateDraft.state" placeholder="Tamil Nadu"></label>
+            <label>City *<input name="repair_city" [(ngModel)]="repairRateDraft.city" placeholder="Chennai"></label>
+            <label>Repair category *<select name="repair_category" [(ngModel)]="repairRateDraft.category"><option>Structural</option><option>Roofing</option><option>Electrical</option><option>Plumbing</option><option>Painting and Finishing</option><option>Flooring</option><option>Labour</option><option>Equipment</option><option>Other</option></select></label>
+            <label>Item code *<input name="repair_code" [(ngModel)]="repairRateDraft.item_code" placeholder="STR-WALL-001"></label>
+            <label>Repair item name *<input name="repair_item" [(ngModel)]="repairRateDraft.item_name" placeholder="Wall plaster repair"></label>
+            <label>Unit *<input name="repair_unit" [(ngModel)]="repairRateDraft.unit" placeholder="sq.ft, sq.m, hour, item"></label>
+            <label>Unit rate *<input type="number" min="0.0001" step="0.0001" name="repair_rate" [(ngModel)]="repairRateDraft.unit_rate" placeholder="Enter verified rate"></label>
+            <label>Effective from *<input type="date" name="repair_from" [(ngModel)]="repairRateDraft.effective_from"></label>
+            <label>Effective to<input type="date" name="repair_to" [(ngModel)]="repairRateDraft.effective_to"></label>
+            <label class="full">Description<textarea rows="2" name="repair_description" [(ngModel)]="repairRateDraft.description"></textarea></label>
+            <label>Pricing source name *<input name="repair_source" [(ngModel)]="repairRateDraft.source_name" placeholder="Approved contractor quote / schedule"></label>
+            <label>Source reference *<input name="repair_reference" [(ngModel)]="repairRateDraft.source_reference" placeholder="Quote number, schedule or document reference"></label>
+            <label class="full">Source URL<input type="url" name="repair_url" [(ngModel)]="repairRateDraft.source_url" placeholder="https://..."></label>
+            <label class="full">Internal notes<textarea rows="2" name="repair_notes" [(ngModel)]="repairRateDraft.notes"></textarea></label>
+          </div>
+          <div class="form-actions"><span class="muted">Rates are stored as Draft until verified.</span><button class="primary-action" type="button" (click)="saveRepairRate()" [disabled]="repairRateBusy">{{ repairRateBusy ? 'Saving…' : 'Save repair rate draft' }}</button></div>
+        </section>
+        <section class="panel claims-panel">
+          <div class="panel-heading"><h2>Saved repair rates</h2><span class="muted">{{ repairRates.length }} records</span></div>
+          <div class="panel filters">
+            <input maxlength="2" placeholder="Country e.g. IN" [(ngModel)]="repairRateCountryFilter">
+            <input placeholder="State" [(ngModel)]="repairRateStateFilter">
+            <input placeholder="City" [(ngModel)]="repairRateCityFilter">
+            <select [(ngModel)]="repairRateStatusFilter"><option value="">All statuses</option><option>Draft</option><option>Active</option><option>Inactive</option></select>
+            <button class="secondary-action" type="button" (click)="loadRepairRates()">Apply filters</button>
+          </div>
+          <div class="table-scroll"><table><thead><tr><th>Location</th><th>Repair item</th><th>Unit rate</th><th>Effective dates</th><th>Source</th><th>Status</th><th>Action</th></tr></thead><tbody>
+            <tr *ngFor="let rate of repairRates">
+              <td>{{ rate.country_code }} · {{ rate.state }} · {{ rate.city }}<small>{{ rate.currency }}</small></td>
+              <td>{{ rate.item_name }}<small>{{ rate.category }} · {{ rate.item_code }} · {{ rate.unit }}</small></td>
+              <td>{{ rate.unit_rate }} {{ rate.currency }} / {{ rate.unit }}</td>
+              <td>{{ rate.effective_from }} – {{ rate.effective_to || 'Open-ended' }}</td>
+              <td>{{ rate.source_name }}<small>{{ rate.source_reference }}</small></td>
+              <td><span class="status">{{ rate.status }}</span></td>
+              <td><button *ngIf="rate.status === 'Draft' || rate.status === 'Inactive'" class="secondary-action" type="button" (click)="setRepairRateStatus(rate, 'Active')">Verify &amp; activate</button><button *ngIf="rate.status === 'Active'" class="danger-action" type="button" (click)="setRepairRateStatus(rate, 'Inactive')">Deactivate</button></td>
+            </tr>
+            <tr *ngIf="repairRates.length === 0"><td colspan="7" class="empty">No repair rates found. Add a sourced rate above.</td></tr>
           </tbody></table></div>
         </section>
       </ng-container>
