@@ -470,6 +470,102 @@ def edit_claim(
         raise HTTPException(status_code=503, detail="Unable to update claim.") from exc
 
 
+
+
+FIELD_EDITABLE_CLAIM_FIELDS = EDITABLE_CLAIM_FIELDS | {"status"}
+FIELD_REQUIRED_CLAIM_FIELDS = {
+    "customer_name", "policy_number", "claim_type", "incident_date",
+    "incident_description", "loss_location", "country_code", "currency", "status"
+}
+
+@app.patch("/api/claims/{claim_id}/field/{field_name}")
+def update_claim_field(
+    claim_id: str,
+    field_name: str,
+    payload: dict = Body(...),
+    user: dict = Depends(require_roles(*CLAIM_EDIT_ROLES))
+):
+    """Update or clear one claim field without changing any other field."""
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    if field_name not in FIELD_EDITABLE_CLAIM_FIELDS:
+        raise HTTPException(status_code=403, detail="This claim field is protected or cannot be edited.")
+    if "value" not in payload:
+        raise HTTPException(status_code=422, detail="Provide a value for this field.")
+    value = payload["value"]
+    if value is None or (isinstance(value, str) and not value.strip()):
+        if field_name in FIELD_REQUIRED_CLAIM_FIELDS:
+            raise HTTPException(status_code=422, detail="This is a required claim field and cannot be cleared.")
+        value = None
+    collection = get_database()["claims"]
+    existing = collection.find_one({"claim_id": claim_id})
+    if not existing or (not is_in_scope_claim(existing) and existing.get("auto_intake_status") != "Provisional"):
+        raise HTTPException(status_code=404, detail="Claim not found.")
+    if field_name == "status":
+        try:
+            value = ClaimStatusUpdate.model_validate({"status": value}).status
+        except Exception as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+    elif field_name == "estimated_loss":
+        if value is not None:
+            try:
+                value = float(value)
+                if value < 0:
+                    raise ValueError("Estimated loss cannot be negative.")
+            except (TypeError, ValueError) as exc:
+                raise HTTPException(status_code=422, detail="Estimated loss must be a non-negative number.") from exc
+    elif field_name == "incident_date":
+        try:
+            value = date.fromisoformat(str(value)).isoformat()
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="Incident date must be a valid ISO date.") from exc
+    elif field_name == "currency":
+        try:
+            value = ClaimCreate.model_validate({
+                **{key: existing.get(key) for key in EDITABLE_CLAIM_FIELDS},
+                "currency": str(value).upper()
+            }).currency
+        except Exception as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+    elif field_name == "country_code":
+        try:
+            value = ClaimCreate.model_validate({
+                **{key: existing.get(key) for key in EDITABLE_CLAIM_FIELDS},
+                "country_code": str(value).upper()
+            }).country_code
+        except Exception as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+    elif field_name == "claim_type":
+        if value not in {"Property", "Casualty"}:
+            raise HTTPException(status_code=422, detail="Claim type must be Property or Casualty.")
+        if value != existing.get("claim_type"):
+            raise HTTPException(status_code=422, detail="Changing claim type requires updating its related claim fields together. Use the full Edit Claim form.")
+    elif field_name == "commercial_liability_type":
+        allowed = {"Commercial General Liability", "Professional Liability", "Product Liability", "Employers Liability", "Public Liability", "Other Commercial Liability"}
+        if value is not None and value not in allowed:
+            raise HTTPException(status_code=422, detail="Select a valid commercial liability type.")
+    elif field_name == "property_occupancy":
+        allowed = {"Residential", "Commercial", "Industrial", "Mixed Use", "Other"}
+        if value is not None and value not in allowed:
+            raise HTTPException(status_code=422, detail="Select a valid property occupancy.")
+    elif isinstance(value, str):
+        value = value.strip()
+    now = datetime.now(timezone.utc).isoformat()
+    try:
+        updated = collection.find_one_and_update(
+            {"claim_id": claim_id},
+            {"$set": {field_name: value, "updated_at": now, "updated_by": user["email"]}},
+            return_document=ReturnDocument.AFTER,
+            projection={"_id": 0}
+        )
+        if not updated:
+            raise HTTPException(status_code=404, detail="Claim not found.")
+        return updated
+    except HTTPException:
+        raise
+    except PyMongoError as exc:
+        raise HTTPException(status_code=503, detail="Unable to update claim field.") from exc
+
 @app.delete("/api/claims/{claim_id}")
 def delete_claim(
     claim_id: str,
