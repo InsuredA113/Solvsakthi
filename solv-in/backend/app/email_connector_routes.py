@@ -1,5 +1,6 @@
 """HTTP endpoints for Gmail Pub/Sub and Microsoft Graph notifications."""
 import hmac
+import logging
 from datetime import datetime, timezone
 from email.utils import parseaddr, parsedate_to_datetime
 
@@ -20,12 +21,52 @@ from .email_connectors import (
 )
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 READ_ROLES = (
     "Super Administrator", "Insurance Company Administrator", "Claims Manager",
     "Property Adjuster", "Casualty Adjuster", "Surveyor", "Actuarial Analyst",
     "Approver", "Auditor"
 )
 ADMIN_ROLES = ("Super Administrator", "Insurance Company Administrator")
+
+
+def _log_connector_failure(provider: str, stage: str, exc: Exception) -> None:
+    """Log actionable provider errors without logging OAuth credentials or tokens."""
+    if isinstance(exc, httpx.HTTPStatusError):
+        response = exc.response
+        details = {}
+        try:
+            payload = response.json()
+            if isinstance(payload, dict):
+                error = payload.get("error")
+                if isinstance(error, dict):
+                    details = {
+                        key: error.get(key)
+                        for key in ("code", "message", "status", "errors")
+                        if error.get(key) is not None
+                    }
+                else:
+                    details = {
+                        key: payload.get(key)
+                        for key in ("error", "error_description", "message", "status")
+                        if payload.get(key) is not None
+                    }
+        except (ValueError, TypeError):
+            details = {"response": "Provider returned a non-JSON error response."}
+        logger.error(
+            "%s connector failed during %s: HTTP %s; provider_error=%s",
+            provider, stage, response.status_code, details,
+        )
+    elif isinstance(exc, httpx.RequestError):
+        logger.error(
+            "%s connector failed during %s: network error %s: %s",
+            provider, stage, type(exc).__name__, str(exc)[:500],
+        )
+    else:
+        logger.exception(
+            "%s connector failed during %s: %s",
+            provider, stage, type(exc).__name__,
+        )
 
 
 def _save_email(provider: str, provider_message_id: str, sender_email: str,
@@ -92,11 +133,15 @@ def connector_status(user: dict = Depends(require_roles(*READ_ROLES))):
 def start_gmail_watch(user: dict = Depends(require_roles(*ADMIN_ROLES))):
     if not gmail_configured():
         raise HTTPException(status_code=409, detail="Configure all GMAIL environment variables before starting Gmail watch.")
+    stage = "OAuth token refresh"
     try:
-        result = gmail_api("POST", "watch", gmail_access_token(), json_body={
+        token = gmail_access_token()
+        stage = "Gmail users.watch request (check Gmail API access and Pub/Sub topic IAM)"
+        result = gmail_api("POST", "watch", token, json_body={
             "topicName": setting("GMAIL_PUBSUB_TOPIC"),
             "labelIds": ["INBOX"], "labelFilterBehavior": "include",
         })
+        stage = "saving watch state to MongoDB"
         mailbox = setting("GMAIL_MAILBOX").lower()
         get_database()["email_connector_state"].update_one(
             {"_id": "gmail:" + mailbox},
@@ -108,7 +153,11 @@ def start_gmail_watch(user: dict = Depends(require_roles(*ADMIN_ROLES))):
         )
         return {"provider": "gmail", "watch_expiration": result.get("expiration"), "history_cursor_initialized": True}
     except Exception as exc:
-        raise HTTPException(status_code=502, detail="Unable to start Gmail watch. Check OAuth, Gmail API and Pub/Sub topic permissions.") from exc
+        _log_connector_failure("Gmail", stage, exc)
+        raise HTTPException(
+            status_code=502,
+            detail=f"Gmail watch failed during {stage}. Check the backend application logs for the provider error.",
+        ) from exc
 
 
 @router.post("/api/email-connectors/gmail/pubsub")
@@ -165,6 +214,7 @@ def gmail_pubsub(payload: dict, authorization: str | None = Header(default=None)
     except HTTPException:
         raise
     except Exception as exc:
+        _log_connector_failure("Gmail", "Pub/Sub history sync", exc)
         raise HTTPException(status_code=502, detail="Gmail history sync failed; Pub/Sub may retry this notification.") from exc
 
 
@@ -198,6 +248,7 @@ def create_microsoft_subscription(user: dict = Depends(require_roles(*ADMIN_ROLE
         )
         return {"provider": "microsoft365", "subscription_id": result.get("id"), "expiration": result.get("expirationDateTime")}
     except Exception as exc:
+        _log_connector_failure("Microsoft 365", "Graph subscription request", exc)
         raise HTTPException(status_code=502, detail="Unable to create Graph subscription. Check Entra permissions, admin consent and public HTTPS notification URL.") from exc
 
 
@@ -248,4 +299,5 @@ def graph_notifications(payload: dict | None = None, validationToken: str | None
     except HTTPException:
         raise
     except Exception as exc:
-        raise HTTPException(status_code=502, detail="Microsoft Graph message retrieval failed; Graph may retry.") from exc
+        _log_connector_failure("Microsoft 365", "Graph message retrieval", exc)
+        raise HTTPException(status_code=502, detail="Microsoft Graph message retrieval failed; Graph may retry this notification.") from exc
