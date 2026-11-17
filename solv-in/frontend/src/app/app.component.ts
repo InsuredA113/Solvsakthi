@@ -20,7 +20,6 @@ interface DamageAssessment {
   affected_areas: string[]; visible_observations: string[]; severity: string;
   confidence: string; possible_cause: string; recommended_next_steps: string[];
   limitations: string[]; repair_cost_estimate: number | null; status: string; created_at: string;
-  claim_id?: string | null;
   review_history?: { status: string; notes: string; reviewed_at: string; reviewed_by: string; reviewer_role: string }[];
 }
 interface FinancialEstimate { estimate_id: string; claim_id: string; source_damage_assessment?: { assessment_id: string; status: string; damage_category: string; affected_areas: string[]; visible_observations: string[]; confidence?: string } | null; currency: string; gross_repair_cost: string; depreciation: string; net_repair_cost: string; total_fees_and_charges: string; total_tax: string; interest: { amount: string }; deductible: string; total_before_deductible: string; preliminary_net_estimate: string; status: string; created_at: string; pricing_source: string; state_or_jurisdiction: string; taxes: any[]; line_items: any[]; tax_mode?: string; tax_profile_status?: string; tax_rule_warning?: string | null; tax_rule_ids?: string[]; review_status?: string; review_history?: any[]; }
