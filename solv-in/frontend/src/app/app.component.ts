@@ -13,7 +13,7 @@ interface Claim {
   incident_description: string; loss_location: string; country_code: string; region?: string; locality?: string; postal_code?: string; estimated_loss?: number | null;
   currency: string; status: string; created_at?: string; updated_at?: string;
 }
-interface DamageAssessment {
+interface ClaimDocument { file_id: string; claim_id: string; filename: string; content_type: string; size: number; uploaded_at?: string; uploaded_by?: string; }\ninterface DamageAssessment {
   assessment_id: string; claim_id?: string | null; damage_category: string;
   affected_areas: string[]; visible_observations: string[]; severity: string;
   confidence: string; possible_cause: string; recommended_next_steps: string[];
@@ -55,7 +55,7 @@ export class AppComponent implements OnInit {
   statusFilter = '';
   claims: Claim[] = [];
   selectedClaim: Claim | null = null;
-  loadingClaimDetails = false;
+  loadingClaimDetails = false;\n  claimDocuments: ClaimDocument[] = [];\n  selectedClaimDocument: File | null = null;\n  documentUploadBusy = false;\n  documentsLoading = false;
   users: User[] = [];
   roles: string[] = [];
   userBusy = false;
@@ -456,8 +456,76 @@ export class AppComponent implements OnInit {
     this.selectedClaim = null;
     this.activePage = 'Claim Details';
     this.http.get<Claim>(`${environment.apiBaseUrl}/claims/${encodeURIComponent(claim.claim_id)}`, { headers: this.authHeaders() }).subscribe({
-      next: result => { this.selectedClaim = result; this.loadingClaimDetails = false; },
+      next: result => { this.selectedClaim = result; this.loadingClaimDetails = false; this.loadClaimDocuments(); },
       error: error => { this.loadingClaimDetails = false; this.handleApiError(error); }
+    });
+  }
+
+  loadClaimDocuments(): void {
+    const claimId = this.selectedClaim?.claim_id;
+    if (!claimId) return;
+    this.documentsLoading = true;
+    this.http.get<{items: ClaimDocument[]; count: number}>(`${environment.apiBaseUrl}/claims/${encodeURIComponent(claimId)}/documents`, { headers: this.authHeaders() }).subscribe({
+      next: result => { this.claimDocuments = result.items; this.documentsLoading = false; },
+      error: error => { this.documentsLoading = false; this.handleApiError(error); }
+    });
+  }
+
+  onClaimDocumentSelected(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0] || null;
+    this.selectedClaimDocument = null;
+    if (!file) return;
+    const allowed = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
+    if (!allowed.includes(file.type)) {
+      this.errorMessage = 'Choose a PDF, JPG, JPEG, PNG or WEBP file.';
+      input.value = '';
+      return;
+    }
+    if (file.size > 15 * 1024 * 1024) {
+      this.errorMessage = 'Each file must be 15 MB or smaller.';
+      input.value = '';
+      return;
+    }
+    this.errorMessage = '';
+    this.selectedClaimDocument = file;
+  }
+
+  uploadClaimDocument(): void {
+    if (!this.selectedClaim || !this.selectedClaimDocument) {
+      this.errorMessage = 'Choose a document before uploading.';
+      return;
+    }
+    this.documentUploadBusy = true;
+    this.errorMessage = '';
+    const body = new FormData();
+    body.append('file', this.selectedClaimDocument);
+    this.http.post<ClaimDocument>(`${environment.apiBaseUrl}/claims/${encodeURIComponent(this.selectedClaim.claim_id)}/documents`, body, { headers: this.authHeaders() }).subscribe({
+      next: result => {
+        this.documentUploadBusy = false;
+        this.selectedClaimDocument = null;
+        this.successMessage = `${result.filename} uploaded successfully.`;
+        this.loadClaimDocuments();
+      },
+      error: error => { this.documentUploadBusy = false; this.handleApiError(error); }
+    });
+  }
+
+  downloadClaimDocument(document: ClaimDocument): void {
+    const claimId = encodeURIComponent(document.claim_id);
+    const fileId = encodeURIComponent(document.file_id);
+    this.http.get(`${environment.apiBaseUrl}/claims/${claimId}/documents/${fileId}/download`, {
+      headers: this.authHeaders(), responseType: 'blob'
+    }).subscribe({
+      next: blob => {
+        const url = URL.createObjectURL(blob);
+        const link = window.document.createElement('a');
+        link.href = url;
+        link.download = document.filename;
+        link.click();
+        URL.revokeObjectURL(url);
+      },
+      error: error => this.handleApiError(error)
     });
   }
 
