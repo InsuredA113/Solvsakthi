@@ -2,6 +2,8 @@ from datetime import date, datetime, timezone
 import csv
 import io
 from fastapi import Depends, FastAPI, HTTPException, Query, Response
+from fastapi.responses import StreamingResponse
+from gridfs import GridFSBucket
 from pydantic import BaseModel, Field
 from bson import ObjectId
 from bson.errors import InvalidId
@@ -399,6 +401,112 @@ def update_claim_status(
         raise
     except PyMongoError as exc:
         raise HTTPException(status_code=503, detail="Unable to update claim status.") from exc
+
+
+
+# Claim evidence documents: PDFs and image files are stored in MongoDB GridFS.
+from gridfs.errors import NoFile
+
+DOCUMENT_CONTENT_TYPES = {
+    "application/pdf", "image/jpeg", "image/png", "image/webp"
+}
+MAX_CLAIM_DOCUMENT_BYTES = 15 * 1024 * 1024
+
+@app.post("/api/claims/{claim_id}/documents", status_code=201)
+async def upload_claim_document(
+    claim_id: str,
+    file: UploadFile = File(...),
+    user: dict = Depends(require_roles(*CREATE_CLAIM_ROLES))
+):
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    claim = get_database()["claims"].find_one({"claim_id": claim_id}, {"_id": 0, "claim_id": 1})
+    if not claim:
+        raise HTTPException(status_code=404, detail="Claim not found.")
+    content_type = (file.content_type or "").lower()
+    if content_type not in DOCUMENT_CONTENT_TYPES:
+        raise HTTPException(status_code=415, detail="Allowed files: PDF, JPG, JPEG, PNG and WEBP.")
+    filename = (file.filename or "evidence").replace("\\", "/").split("/")[-1]
+    if not filename or len(filename) > 180:
+        raise HTTPException(status_code=400, detail="File name is invalid or too long.")
+    content = await file.read(MAX_CLAIM_DOCUMENT_BYTES + 1)
+    if not content:
+        raise HTTPException(status_code=400, detail="The selected file is empty.")
+    if len(content) > MAX_CLAIM_DOCUMENT_BYTES:
+        raise HTTPException(status_code=413, detail="Each file must be 15 MB or smaller.")
+    if content_type == "application/pdf" and not content.startswith(b"%PDF-"):
+        raise HTTPException(status_code=415, detail="The file content is not a valid PDF.")
+    if content_type == "image/jpeg" and not content.startswith(b"\\xff\\xd8\\xff"):
+        raise HTTPException(status_code=415, detail="The file content is not a valid JPEG image.")
+    if content_type == "image/png" and not content.startswith(b"\\x89PNG\\r\\n\\x1a\\n"):
+        raise HTTPException(status_code=415, detail="The file content is not a valid PNG image.")
+    if content_type == "image/webp" and not (content[:4] == b"RIFF" and content[8:12] == b"WEBP"):
+        raise HTTPException(status_code=415, detail="The file content is not a valid WEBP image.")
+    now = datetime.now(timezone.utc).isoformat()
+    try:
+        bucket = GridFSBucket(get_database(), bucket_name="claim_documents")
+        file_id = bucket.upload_from_stream(
+            filename, io.BytesIO(content),
+            metadata={
+                "claim_id": claim_id, "content_type": content_type,
+                "size": len(content), "uploaded_at": now, "uploaded_by": user["email"]
+            }
+        )
+        return {
+            "file_id": str(file_id), "claim_id": claim_id, "filename": filename,
+            "content_type": content_type, "size": len(content),
+            "uploaded_at": now, "uploaded_by": user["email"]
+        }
+    except PyMongoError as exc:
+        raise HTTPException(status_code=503, detail="Unable to store the claim document.") from exc
+
+
+@app.get("/api/claims/{claim_id}/documents")
+def list_claim_documents(
+    claim_id: str,
+    user: dict = Depends(require_roles(*READ_ROLES))
+):
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    if not get_database()["claims"].find_one({"claim_id": claim_id}, {"_id": 1}):
+        raise HTTPException(status_code=404, detail="Claim not found.")
+    bucket = GridFSBucket(get_database(), bucket_name="claim_documents")
+    rows = list(bucket.find({"metadata.claim_id": claim_id}).sort("uploadDate", DESCENDING).limit(200))
+    return {"items": [{
+        "file_id": str(row._id), "claim_id": claim_id, "filename": row.filename,
+        "content_type": row.metadata.get("content_type", "application/octet-stream"),
+        "size": row.length, "uploaded_at": row.metadata.get("uploaded_at"),
+        "uploaded_by": row.metadata.get("uploaded_by")
+    } for row in rows], "count": len(rows)}
+
+
+@app.get("/api/claims/{claim_id}/documents/{file_id}/download")
+def download_claim_document(
+    claim_id: str,
+    file_id: str,
+    user: dict = Depends(require_roles(*READ_ROLES))
+):
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    try:
+        object_id = ObjectId(file_id)
+    except InvalidId as exc:
+        raise HTTPException(status_code=400, detail="Invalid document ID.") from exc
+    bucket = GridFSBucket(get_database(), bucket_name="claim_documents")
+    try:
+        stored = bucket.open_download_stream(object_id)
+        if stored.metadata.get("claim_id") != claim_id:
+            raise HTTPException(status_code=404, detail="Document not found for this claim.")
+        content = stored.read()
+        return Response(
+            content=content,
+            media_type=stored.metadata.get("content_type", "application/octet-stream"),
+            headers={"Content-Disposition": f'attachment; filename="{stored.filename.replace(chr(34), "")}"'}
+        )
+    except NoFile as exc:
+        raise HTTPException(status_code=404, detail="Document not found.") from exc
+    except PyMongoError as exc:
+        raise HTTPException(status_code=503, detail="Unable to retrieve the claim document.") from exc
 
 
 # Phase 4: AI-assisted visual damage analysis
