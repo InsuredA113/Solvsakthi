@@ -304,7 +304,7 @@ def dashboard_summary(user: dict = Depends(require_roles(*READ_ROLES))):
 @app.get("/api/claims")
 def list_claims(
     search: str | None = Query(default=None, max_length=120),
-    claim_type: str | None = Query(default=None, pattern="^(Property|Casualty)$"),
+    claim_type: str | None = Query(default=None, pattern="^(Property|Casualty|Unclassified)$"),
     status: str | None = Query(default=None, max_length=40),
     limit: int = Query(default=100, ge=1, le=250),
     user: dict = Depends(require_roles(*READ_ROLES))
@@ -313,7 +313,8 @@ def list_claims(
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     query = {"$and": [{"$or": [
         {"claim_type": "Property"},
-        {"claim_type": "Casualty", "casualty_segment": "Commercial"}
+        {"claim_type": "Casualty", "casualty_segment": "Commercial"},
+        {"auto_intake_status": "Provisional"}
     ]}]}
     if claim_type:
         query["$and"].append({"claim_type": claim_type})
@@ -340,7 +341,7 @@ def get_claim_details(
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     try:
         claim = get_database()["claims"].find_one({"claim_id": claim_id}, {"_id": 0})
-        if not claim or not is_in_scope_claim(claim):
+        if not claim or (not is_in_scope_claim(claim) and claim.get("auto_intake_status") != "Provisional"):
             raise HTTPException(status_code=404, detail="Claim not found.")
         return claim
     except PyMongoError as exc:
