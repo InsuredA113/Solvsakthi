@@ -634,3 +634,63 @@ for state in US_STATES:
     research = _PARTIAL_STATE_RESEARCH.get(state["state_code"])
     if research:
         state.update(research)
+
+
+# Second research batch: state-specific water-restoration or contractor guidance.
+# These remain conditional and do not supply a tax rate.
+_SECOND_PARTIAL_STATE_RESEARCH = {
+    "NJ": {
+        "status": "Partially researched — water-restoration advisory located",
+        "source_name": "New Jersey Division of Taxation",
+        "source_url": "https://www.nj.gov/www.nj.gov/treasury/taxation/pdf/pubs/tams/tam2012-3.pdf",
+        "source_reference": "Technical Advisory Memorandum TAM 2012-3, Charges for Water Damage Restorative Services (December 11, 2012); FAQ — Disaster Recovery Efforts",
+        "effective_date": None,
+        "notes": "New Jersey has a directly relevant water-restoration TAM. It states that drying and water extraction on buildings are generally taxable repair services; new construction that qualifies as a capital improvement is treated differently. The TAM warns that later legal or policy changes may affect it, so current-law validation and exact scope are required. No rate is stored.",
+        "verified_categories": [
+            {"activity": "Water extraction and structural drying", "residential": "Generally taxable when restoring a damaged building to working condition; distinguish qualifying new construction/capital improvement.", "commercial": "Same real-property repair versus capital-improvement analysis; confirm exact scope.", "status": "Conditional — repair versus new construction/capital improvement", "source_url": "https://www.nj.gov/www.nj.gov/treasury/taxation/pdf/pubs/tams/tam2012-3.pdf", "source_reference": "New Jersey DOR TAM 2012-3, page 1"},
+            {"activity": "Mold removal, carpet cleaning and contents restoration", "residential": "Mold removal, carpet cleaning and restoration/cleaning of household tangible personal property are identified as taxable services in the TAM; mold detection/inspection is treated differently.", "commercial": "TAM discusses building realty and household contents; commercial contents and exact service mix need separate confirmation.", "status": "Conditional — distinguish detection, remediation, cleaning and personal property", "source_url": "https://www.nj.gov/www.nj.gov/treasury/taxation/pdf/pubs/tams/tam2012-3.pdf", "source_reference": "New Jersey DOR TAM 2012-3, pages 1–2"},
+            {"activity": "Reconstruction and replacement work", "residential": "New construction such as new walls, siding or rebuilding a destroyed garage/deck may qualify as capital improvement; simple repairs remain taxable. Form ST-8 is required to document eligible capital-improvement labor exemption.", "commercial": "Capital-improvement classification and documentation must be assessed from the project facts; do not assume every replacement is exempt.", "status": "Conditional — project result and ST-8 documentation required", "source_url": "https://www.nj.gov/www.nj.gov/treasury/taxation/pdf/pubs/tams/tam2012-3.pdf", "source_reference": "New Jersey DOR TAM 2012-3"}
+        ]
+    },
+    "MA": {
+        "status": "Partially researched — contractor material rules located",
+        "source_name": "Massachusetts Department of Revenue",
+        "source_url": "https://www.mass.gov/guides/sales-and-use-tax",
+        "source_reference": "Massachusetts DOR Sales and Use Tax guide — Contractors and subcontractors",
+        "effective_date": None,
+        "notes": "Official general contractor guidance states that contractors performing construction, reconstruction, alteration, improvement, remodeling or repair of real property generally pay sales/use tax on materials they purchase. A different retail rule applies to installation of a complete standard tangible-personal-property unit. Water extraction, drying, cleaning and separate remediation services need more specific authority. No rate is stored.",
+        "verified_categories": [
+            {"activity": "Real-property reconstruction and repair materials", "residential": "Contractor/subcontractor generally pays sales or use tax when purchasing materials for real-property construction, reconstruction, alteration, improvement, remodeling or repair.", "commercial": "Same general contractor rule; verify any project-specific exemption.", "status": "Conditional — material purchase and exemption facts required", "source_url": "https://www.mass.gov/guides/sales-and-use-tax", "source_reference": "Massachusetts DOR Sales and Use Tax guide"},
+            {"activity": "Complete standard tangible personal property units installed on realty", "residential": "If a complete standard item is installed and only installation/application/connection services are required, contractor may act as retailer and collect sales tax on the item.", "commercial": "Same classification issue; identify item and transaction structure.", "status": "Conditional — item and installation facts required", "source_url": "https://www.mass.gov/guides/sales-and-use-tax", "source_reference": "Massachusetts DOR Sales and Use Tax guide"}
+        ]
+    },
+    "OH": {
+        "status": "Partially researched — real-property contractor rules located",
+        "source_name": "Ohio Department of Taxation",
+        "source_url": "https://tax.ohio.gov/business/sales-and-use-tax/taxability",
+        "source_reference": "Ohio DOR Sales and Use Taxability guidance — construction contractors and repair services",
+        "effective_date": None,
+        "notes": "Ohio guidance distinguishes taxable repair services from real-property construction contracts. Contractors are consumers of materials incorporated into real property and pay sales/use tax on their purchase price; contractors generally do not collect sales tax on their real-property work. Certain flooring and tangible-personal-property transactions have special rules. Water extraction and mitigation classifications require further confirmation. No rate is stored.",
+        "verified_categories": [
+            {"activity": "Real-property reconstruction and incorporated materials", "residential": "Contractor is generally the consumer of materials incorporated into real property and pays tax on purchases; contractor generally does not collect tax on its real-property construction work.", "commercial": "Same general framework; verify exemptions and whether property remains tangible personal property after installation.", "status": "Conditional — realty versus tangible personal property classification required", "source_url": "https://tax.ohio.gov/business/sales-and-use-tax/taxability", "source_reference": "Ohio DOR Taxability — construction contractors"},
+            {"activity": "Separate tangible-personal-property repair or special flooring work", "residential": "Repair services to tangible personal property and specified flooring transactions may be taxable; do not treat as ordinary real-property contractor work.", "commercial": "Same distinction; identify the property repaired or installed.", "status": "Conditional — transaction type and item classification required", "source_url": "https://tax.ohio.gov/business/sales-and-use-tax/taxability", "source_reference": "Ohio DOR Taxability — repair services and flooring"}
+        ]
+    },
+    "WA": {
+        "status": "Partially researched — construction tax matrix located",
+        "source_name": "Washington State Department of Revenue",
+        "source_url": "https://dor.wa.gov/education/industry-guides/construction/construction-tax-matrix",
+        "source_reference": "Washington DOR Construction Tax Matrix — custom construction contractors and subcontractors",
+        "effective_date": None,
+        "notes": "Washington's official matrix distinguishes prime/general contractors from subcontractors. Custom construction may be subject to retailing B&O and retail sales tax on the total contract price; treatment of materials differs for items consumed by the contractor versus materials becoming a permanent part of the building. This is not a complete water-restoration determination; classify contract type, role and material use. No rate is stored.",
+        "verified_categories": [
+            {"activity": "Custom construction / real-property restoration contract", "residential": "General or prime contractor performing custom construction for another is shown as subject to retailing B&O and retail sales tax on total contract price; validate contract and statutory classification.", "commercial": "Same matrix classification for general/prime custom construction; verify any exception and project facts.", "status": "Conditional — custom construction classification and contractor role required", "source_url": "https://dor.wa.gov/education/industry-guides/construction/construction-tax-matrix", "source_reference": "Washington DOR Construction Tax Matrix"},
+            {"activity": "Materials consumed versus incorporated into building", "residential": "Contractor pays sales/use tax on consumed materials; materials that become a permanent part of the building are treated differently under the matrix.", "commercial": "Same general distinction; item-level classification and subcontractor/reseller-permit status required.", "status": "Conditional — material disposition and reseller permit facts required", "source_url": "https://dor.wa.gov/education/industry-guides/construction/construction-tax-matrix", "source_reference": "Washington DOR Construction Tax Matrix"}
+        ]
+    }
+}
+
+for state in US_STATES:
+    research = _SECOND_PARTIAL_STATE_RESEARCH.get(state["state_code"])
+    if research:
+        state.update(research)
