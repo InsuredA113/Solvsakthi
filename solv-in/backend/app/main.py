@@ -1,7 +1,7 @@
 from datetime import date, datetime, timezone
 import csv
 import io
-from fastapi import Depends, FastAPI, HTTPException, Query, Response, File, UploadFile
+from fastapi import Body, Depends, FastAPI, HTTPException, Query, Response, File, UploadFile
 from fastapi.responses import StreamingResponse
 from gridfs import GridFSBucket
 from pydantic import BaseModel, Field
@@ -34,7 +34,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PATCH"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE"],
     allow_headers=["*"],
 )
 
@@ -410,6 +410,89 @@ def create_claim(payload: ClaimCreate, user: dict = Depends(require_roles(*CREAT
         return record
     except PyMongoError as exc:
         raise HTTPException(status_code=503, detail="Unable to save claim to MongoDB.") from exc
+
+
+CLAIM_EDIT_ROLES = CREATE_CLAIM_ROLES
+CLAIM_DELETE_ROLES = ("Super Administrator", "Insurance Company Administrator", "Claims Manager")
+EDITABLE_CLAIM_FIELDS = {
+    "customer_name", "loss_cause", "email", "phone", "policy_number",
+    "claim_type", "property_occupancy", "casualty_segment", "business_name",
+    "industry", "commercial_liability_type", "incident_date",
+    "incident_description", "loss_location", "country_code", "region",
+    "locality", "postal_code", "estimated_loss", "currency"
+}
+
+@app.patch("/api/claims/{claim_id}")
+def edit_claim(
+    claim_id: str,
+    payload: dict = Body(...),
+    user: dict = Depends(require_roles(*CLAIM_EDIT_ROLES))
+):
+    """Edit claim intake/business fields while preserving claim identity and audit metadata."""
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    unknown = set(payload) - EDITABLE_CLAIM_FIELDS - {"status"}
+    if unknown:
+        raise HTTPException(status_code=422, detail=f"Fields cannot be edited: {', '.join(sorted(unknown))}.")
+    if not payload:
+        raise HTTPException(status_code=422, detail="Provide at least one field to update.")
+    collection = get_database()["claims"]
+    existing = collection.find_one({"claim_id": claim_id})
+    if not existing or (not is_in_scope_claim(existing) and existing.get("auto_intake_status") != "Provisional"):
+        raise HTTPException(status_code=404, detail="Claim not found.")
+    merged = {key: existing.get(key) for key in EDITABLE_CLAIM_FIELDS}
+    merged.update({key: value for key, value in payload.items() if key in EDITABLE_CLAIM_FIELDS})
+    try:
+        validated = ClaimCreate.model_validate(merged).model_dump(mode="json")
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    changes = {key: validated.get(key) for key in EDITABLE_CLAIM_FIELDS}
+    if "status" in payload:
+        allowed_statuses = {"FNOL Received", "Under Review", "Investigation", "Assessment", "Pending Approval", "Approved", "Closed"}
+        if payload["status"] not in allowed_statuses:
+            raise HTTPException(status_code=422, detail="Invalid claim status.")
+        changes["status"] = payload["status"]
+    now = datetime.now(timezone.utc).isoformat()
+    changes.update({"updated_at": now, "updated_by": user["email"]})
+    try:
+        updated = collection.find_one_and_update(
+            {"claim_id": claim_id},
+            {"$set": changes},
+            return_document=ReturnDocument.AFTER,
+            projection={"_id": 0}
+        )
+        if not updated:
+            raise HTTPException(status_code=404, detail="Claim not found.")
+        return updated
+    except HTTPException:
+        raise
+    except PyMongoError as exc:
+        raise HTTPException(status_code=503, detail="Unable to update claim.") from exc
+
+
+@app.delete("/api/claims/{claim_id}")
+def delete_claim(
+    claim_id: str,
+    user: dict = Depends(require_roles(*CLAIM_DELETE_ROLES))
+):
+    """Permanently delete a claim and its claim-linked evidence and derived assessments."""
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    db = get_database()
+    existing = db["claims"].find_one({"claim_id": claim_id}, {"_id": 0, "claim_id": 1})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Claim not found.")
+    try:
+        bucket = GridFSBucket(db, bucket_name="claim_documents")
+        for stored_file in bucket.find({"metadata.claim_id": claim_id}):
+            bucket.delete(stored_file._id)
+        for collection_name in ("financial_estimates", "damage_assessments", "coverage_assessments"):
+            db[collection_name].delete_many({"claim_id": claim_id})
+        db["claims"].delete_one({"claim_id": claim_id})
+        return {"deleted": True, "claim_id": claim_id}
+    except PyMongoError as exc:
+        raise HTTPException(status_code=503, detail="Unable to fully delete the claim and linked records.") from exc
+
 
 @app.patch("/api/claims/{claim_id}/status")
 def update_claim_status(
