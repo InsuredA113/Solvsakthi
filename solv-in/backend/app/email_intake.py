@@ -65,6 +65,20 @@ def _label_value(body: str, labels: tuple[str, ...]) -> str | None:
 def extract_email_intake(subject: str, body_text: str) -> dict:
     text = f"{subject}\n{body_text}".lower()
     fields = {key: _label_value(body_text, labels) for key, labels in LABELS.items()}
+
+    # Apply conservative India defaults only when the reported loss location
+    # clearly identifies India. Never infer a country from the sender mailbox.
+    location = (fields.get("loss_location") or "").casefold()
+    indian_location_terms = (
+        "india", "tamil nadu", "coimbatore", "chennai", "bengaluru",
+        "bangalore", "mumbai", "pune", "hyderabad", "delhi",
+        "new delhi", "kolkata", "ahmedabad", "jaipur", "kochi",
+        "thiruvananthapuram", "madurai", "tiruchirappalli", "salem",
+        "erode", "tiruppur", "vellore", "mysuru", "mysore",
+    )
+    if any(re.search(rf"\\b{re.escape(term)}\\b", location) for term in indian_location_terms):
+        fields["country_code"] = (fields.get("country_code") or "IN").upper()
+        fields["currency"] = (fields.get("currency") or "INR").upper()
     commercial_casualty_signals = (
         "commercial general liability", "professional liability", "product liability",
         "employers liability", "public liability", "commercial casualty",
