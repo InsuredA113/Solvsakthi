@@ -732,6 +732,10 @@ export class AppComponent implements OnInit {
     return fields;
   }
 
+  trackByClaimField(_index: number, field: {key: string}): string {
+    return field.key;
+  }
+
   startFieldEdit(field: {key: string; value: string}): void {
     if (!this.canEditClaims()) return;
     this.editingClaimField = field.key;
