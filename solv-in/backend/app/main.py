@@ -1745,3 +1745,25 @@ def create_claim_from_email_intake(
         collection.update_one({"intake_id": intake_id, "conversion_state": "Processing"},
                               {"$set": {"conversion_state": "Failed"}})
         raise HTTPException(status_code=503, detail="Unable to create the claim from this email.") from exc
+
+
+# US state water-damage restoration tax research matrix (read-only tracker).
+from .state_tax_matrix import US_STATES
+
+@app.get("/api/tax-research/us-water-restoration")
+def get_us_water_restoration_tax_matrix(
+    user: dict = Depends(require_roles(*READ_ROLES))
+):
+    """Return 50-state official-source research status; this endpoint never supplies rates."""
+    items = [dict(state) for state in US_STATES]
+    return {
+        "country_code": "US",
+        "category": "Water damage restoration",
+        "state_count": len(items),
+        "verified_state_count": sum(1 for item in items if item["status"].startswith("Verified")),
+        "partially_researched_state_count": sum(1 for item in items if item["status"].startswith("Partially")),
+        "pending_state_count": sum(1 for item in items if item["status"].startswith("Pending")),
+        "automatic_tax_enabled": False,
+        "items": items,
+        "notice": "Research tracker only. Pending or conditional findings do not determine tax due. No tax rate is supplied or applied by this endpoint."
+    }
