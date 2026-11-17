@@ -1,7 +1,7 @@
 <ng-container *ngIf="isAuthenticated; else signInView">
 <div class="shell" [class.claim-detail-mode]="activePage === 'Claim Details'">
   <aside class="sidebar">
-    <div class="brand"><img class="brand-logo" src="https://github.com/InsuredA113/Solvsakthi/blob/main/Solv-in-logo.png.png" alt="Solv-In logo"><div><strong>Solv-In</strong><small>File • Track • Resolve</small></div></div>
+    <div class="brand"><img class="brand-logo" src="<img class="brand-logo" src="https://raw.githubusercontent.com/InsuredA113/Solvsakthi/main/Solv-in-logo.png.png" alt="Solv-In logo">" alt="Solv-In logo"><div><strong>Solv-In</strong><small>File • Track • Resolve</small></div></div>
     <nav aria-label="Main navigation">
       <ng-container *ngFor="let item of navigation"><button *ngIf="(item !== 'Users' || isAdmin()) && (item !== 'AI Damage Analysis' || canAnalyseDamage()) && (item !== 'Tax Rules' || canManageTaxRules()) && (item !== 'Repair Rates' || canManageTaxRules()) && (item !== 'Policy Coverage' || canViewPolicyCoverage())" (click)="selectPage(item)" [class.active]="activePage === item">
         <span class="nav-icon">{{ item === 'Dashboard' ? '⌂' : item === 'Claims' ? '▤' : item === 'New FNOL' ? '+' : item === 'Email FNOL' ? '✉' : item === 'AI Damage Analysis' ? '◈' : item === 'Tax Rules' ? '⌁' : item === 'Repair Rates' ? '⌖' : item === 'Policy Coverage' ? '▣' : item === 'Reports' ? '▥' : item === 'Users' ? '♙' : '⚙' }}</span>{{ item }}
