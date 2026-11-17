@@ -60,6 +60,10 @@ export class AppComponent implements OnInit {
   claims: Claim[] = [];
   selectedClaim: Claim | null = null;
   loadingClaimDetails = false;
+  claimEditMode = false;
+  claimEditBusy = false;
+  claimDeleteBusy = false;
+  claimEditDraft: ClaimDraft = this.emptyDraft();
   claimDocuments: ClaimDocument[] = [];
   selectedClaimDocument: File | null = null;
   selectedFnolDocument: File | null = null;
@@ -561,6 +565,123 @@ export class AppComponent implements OnInit {
     this.http.get<Claim>(`${environment.apiBaseUrl}/claims/${encodeURIComponent(claim.claim_id)}`, { headers: this.authHeaders() }).subscribe({
       next: result => { this.selectedClaim = result; this.loadingClaimDetails = false; this.loadClaimDocuments(); },
       error: error => { this.loadingClaimDetails = false; this.handleApiError(error); }
+    });
+  }
+
+  canEditClaims(): boolean {
+    return ['Super Administrator', 'Insurance Company Administrator', 'Claims Manager', 'Property Adjuster', 'Casualty Adjuster'].includes(this.currentUser?.role || '');
+  }
+
+  canDeleteClaims(): boolean {
+    return ['Super Administrator', 'Insurance Company Administrator', 'Claims Manager'].includes(this.currentUser?.role || '');
+  }
+
+  startClaimEdit(): void {
+    if (!this.selectedClaim || !this.canEditClaims()) return;
+    const claim = this.selectedClaim;
+    this.claimEditDraft = {
+      customer_name: claim.customer_name || '',
+      loss_cause: claim.loss_cause || '',
+      email: claim.email || '',
+      phone: claim.phone || '',
+      policy_number: claim.policy_number || '',
+      claim_type: claim.claim_type === 'Casualty' ? 'Casualty' : 'Property',
+      property_occupancy: claim.property_occupancy || (claim.claim_type === 'Property' ? 'Residential' : null),
+      casualty_segment: claim.claim_type === 'Casualty' ? 'Commercial' : null,
+      business_name: claim.business_name || '',
+      industry: claim.industry || '',
+      commercial_liability_type: claim.commercial_liability_type || (claim.claim_type === 'Casualty' ? 'Commercial General Liability' : null),
+      incident_date: (claim.incident_date || '').slice(0, 10),
+      incident_description: claim.incident_description || '',
+      loss_location: claim.loss_location || '',
+      country_code: (claim.country_code || '').toUpperCase(),
+      region: claim.region || '',
+      locality: claim.locality || '',
+      postal_code: claim.postal_code || '',
+      estimated_loss: claim.estimated_loss ?? null,
+      currency: (claim.currency || '').toUpperCase()
+    };
+    this.claimEditMode = true;
+    this.errorMessage = '';
+    this.successMessage = '';
+  }
+
+  cancelClaimEdit(): void {
+    this.claimEditMode = false;
+    this.claimEditDraft = this.emptyDraft();
+  }
+
+  onClaimEditTypeChange(): void {
+    if (this.claimEditDraft.claim_type === 'Casualty') {
+      this.claimEditDraft.property_occupancy = null;
+      this.claimEditDraft.casualty_segment = 'Commercial';
+      this.claimEditDraft.commercial_liability_type = this.claimEditDraft.commercial_liability_type || 'Commercial General Liability';
+    } else {
+      this.claimEditDraft.property_occupancy = this.claimEditDraft.property_occupancy || 'Residential';
+      this.claimEditDraft.casualty_segment = null;
+      this.claimEditDraft.business_name = '';
+      this.claimEditDraft.industry = '';
+      this.claimEditDraft.commercial_liability_type = null;
+    }
+  }
+
+  saveClaimEdit(): void {
+    if (!this.selectedClaim || !this.canEditClaims()) return;
+    const d = this.claimEditDraft;
+    if (!d.customer_name.trim() || !d.policy_number.trim() || !d.incident_date ||
+        !d.incident_description.trim() || !d.loss_location.trim() ||
+        !/^[A-Z]{2}$/i.test(d.country_code.trim()) || !/^[A-Z]{3}$/i.test(d.currency.trim()) ||
+        (d.claim_type === 'Casualty' && (!d.business_name.trim() || !d.industry.trim() || !d.commercial_liability_type))) {
+      this.errorMessage = 'Complete all required fields. Country must be a 2-letter code and currency a 3-letter ISO code.';
+      return;
+    }
+    this.claimEditBusy = true;
+    this.errorMessage = '';
+    const payload = {
+      ...d,
+      country_code: d.country_code.trim().toUpperCase(),
+      currency: d.currency.trim().toUpperCase(),
+      estimated_loss: d.estimated_loss === null || d.estimated_loss === ('' as any) ? null : Number(d.estimated_loss),
+      casualty_segment: d.claim_type === 'Casualty' ? 'Commercial' : null,
+      property_occupancy: d.claim_type === 'Property' ? d.property_occupancy : null,
+      business_name: d.claim_type === 'Casualty' ? d.business_name : null,
+      industry: d.claim_type === 'Casualty' ? d.industry : null,
+      commercial_liability_type: d.claim_type === 'Casualty' ? d.commercial_liability_type : null,
+      status: this.selectedClaim.status
+    };
+    this.http.patch<Claim>(`${environment.apiBaseUrl}/claims/${encodeURIComponent(this.selectedClaim.claim_id)}`, payload, { headers: this.authHeaders() }).subscribe({
+      next: updated => {
+        this.selectedClaim = updated;
+        this.claims = this.claims.map(item => item.claim_id === updated.claim_id ? updated : item);
+        this.claimEditBusy = false;
+        this.claimEditMode = false;
+        this.successMessage = `Claim ${updated.claim_id} updated successfully.`;
+        this.loadDashboard();
+        this.loadLossCauseOptions();
+      },
+      error: error => { this.claimEditBusy = false; this.handleApiError(error); }
+    });
+  }
+
+  deleteClaim(): void {
+    if (!this.selectedClaim || !this.canDeleteClaims() || this.claimDeleteBusy) return;
+    const claimId = this.selectedClaim.claim_id;
+    const confirmed = window.confirm(`Permanently delete claim ${claimId}, its uploaded evidence, and linked assessments/estimates? This action cannot be undone.`);
+    if (!confirmed) return;
+    this.claimDeleteBusy = true;
+    this.errorMessage = '';
+    this.http.delete<{deleted: boolean; claim_id: string}>(`${environment.apiBaseUrl}/claims/${encodeURIComponent(claimId)}`, { headers: this.authHeaders() }).subscribe({
+      next: () => {
+        this.claimDeleteBusy = false;
+        this.selectedClaim = null;
+        this.claimDocuments = [];
+        this.claimEditMode = false;
+        this.activePage = 'Claims';
+        this.successMessage = `Claim ${claimId} and its linked records were deleted.`;
+        this.loadClaims();
+        this.loadDashboard();
+      },
+      error: error => { this.claimDeleteBusy = false; this.handleApiError(error); }
     });
   }
 
