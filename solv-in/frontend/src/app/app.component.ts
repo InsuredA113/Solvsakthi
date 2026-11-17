@@ -63,6 +63,9 @@ export class AppComponent implements OnInit {
   claimEditMode = false;
   claimEditBusy = false;
   claimDeleteBusy = false;
+  editingClaimField: string | null = null;
+  claimFieldDraft = '';
+  claimFieldBusy = false;
   claimEditDraft: ClaimDraft = this.emptyDraft();
   claimDocuments: ClaimDocument[] = [];
   selectedClaimDocument: File | null = null;
@@ -694,6 +697,94 @@ export class AppComponent implements OnInit {
     if (!this.canDeleteClaims()) return;
     this.selectedClaim = claim;
     this.deleteClaim();
+  }
+
+
+  claimDetailFields(): Array<{key: string; label: string; value: string; type: string; required: boolean; options?: string[]}> {
+    const c = this.selectedClaim;
+    if (!c) return [];
+    const fields: Array<{key: string; label: string; value: string; type: string; required: boolean; options?: string[]}> = [
+      {key:'customer_name',label:'Insured name',value:c.customer_name || '',type:'text',required:true},
+      {key:'loss_cause',label:'Loss cause',value:c.loss_cause || '',type:'text',required:false},
+      {key:'policy_number',label:'Policy number',value:c.policy_number || '',type:'text',required:true},
+      {key:'email',label:'Email',value:c.email || '',type:'email',required:false},
+      {key:'phone',label:'Phone',value:c.phone || '',type:'tel',required:false},
+      {key:'claim_type',label:'Claim type',value:c.claim_type || '',type:'select',required:true,options:['Property','Casualty']},
+      {key:'incident_date',label:'Incident date',value:(c.incident_date || '').slice(0,10),type:'date',required:true},
+      {key:'estimated_loss',label:'Estimated loss',value:c.estimated_loss === null || c.estimated_loss === undefined ? '' : String(c.estimated_loss),type:'number',required:false},
+      {key:'currency',label:'Currency',value:c.currency || '',type:'text',required:true},
+      {key:'loss_location',label:'Loss location',value:c.loss_location || '',type:'text',required:true},
+      {key:'country_code',label:'Country code',value:c.country_code || '',type:'text',required:true},
+      {key:'region',label:'State / region',value:c.region || '',type:'text',required:false},
+      {key:'locality',label:'City / locality',value:c.locality || '',type:'text',required:false},
+      {key:'postal_code',label:'Postal code',value:c.postal_code || '',type:'text',required:false},
+      {key:'incident_description',label:'Incident description',value:c.incident_description || '',type:'textarea',required:true}
+    ];
+    if (c.claim_type === 'Property') {
+      fields.splice(6, 0, {key:'property_occupancy',label:'Property occupancy',value:c.property_occupancy || '',type:'select',required:false,options:['Residential','Commercial','Industrial','Mixed Use','Other']});
+    } else if (c.claim_type === 'Casualty') {
+      fields.splice(6, 0,
+        {key:'business_name',label:'Business / insured entity',value:c.business_name || '',type:'text',required:true},
+        {key:'industry',label:'Industry',value:c.industry || '',type:'text',required:true},
+        {key:'commercial_liability_type',label:'Commercial liability type',value:c.commercial_liability_type || '',type:'select',required:true,options:['Commercial General Liability','Professional Liability','Product Liability','Employers Liability','Public Liability','Other Commercial Liability']}
+      );
+    }
+    fields.splice(1, 0, {key:'status',label:'Claim status',value:c.status || '',type:'select',required:true,options:[...this.statuses]});
+    return fields;
+  }
+
+  startFieldEdit(field: {key: string; value: string}): void {
+    if (!this.canEditClaims()) return;
+    this.editingClaimField = field.key;
+    this.claimFieldDraft = field.value;
+    this.errorMessage = '';
+    this.successMessage = '';
+  }
+
+  cancelFieldEdit(): void {
+    this.editingClaimField = null;
+    this.claimFieldDraft = '';
+    this.claimFieldBusy = false;
+  }
+
+  saveClaimField(field: {key: string; label: string; required: boolean}): void {
+    if (!this.selectedClaim || !this.canEditClaims() || this.claimFieldBusy) return;
+    const raw = this.claimFieldDraft.trim();
+    if (field.required && !raw) {
+      this.errorMessage = `${field.label} is required and cannot be empty.`;
+      return;
+    }
+    if (field.key === 'estimated_loss' && raw && (!Number.isFinite(Number(raw)) || Number(raw) < 0)) {
+      this.errorMessage = 'Estimated loss must be a non-negative number.';
+      return;
+    }
+    const value: any = raw === '' ? null : field.key === 'estimated_loss' ? Number(raw) : raw;
+    this.persistClaimField(field.key, value, `${field.label} updated successfully.`);
+  }
+
+  clearClaimField(field: {key: string; label: string; required: boolean}): void {
+    if (!this.selectedClaim || !this.canEditClaims() || field.required || this.claimFieldBusy) return;
+    if (!window.confirm(`Clear only the "${field.label}" field? The rest of the claim will remain unchanged.`)) return;
+    this.persistClaimField(field.key, null, `${field.label} cleared.`);
+  }
+
+  private persistClaimField(fieldName: string, value: any, message: string): void {
+    if (!this.selectedClaim) return;
+    const claimId = this.selectedClaim.claim_id;
+    this.claimFieldBusy = true;
+    this.errorMessage = '';
+    this.http.patch<Claim>(`${environment.apiBaseUrl}/claims/${encodeURIComponent(claimId)}/field/${encodeURIComponent(fieldName)}`, {value}, {headers:this.authHeaders()}).subscribe({
+      next: updated => {
+        this.selectedClaim = updated;
+        this.claims = this.claims.map(item => item.claim_id === updated.claim_id ? updated : item);
+        this.claimFieldBusy = false;
+        this.cancelFieldEdit();
+        this.successMessage = message;
+        this.loadLossCauseOptions();
+        this.loadDashboard();
+      },
+      error: error => { this.claimFieldBusy = false; this.handleApiError(error); }
+    });
   }
 
   loadClaimDocuments(): void {
