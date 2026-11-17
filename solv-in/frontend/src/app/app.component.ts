@@ -665,7 +665,7 @@ export class AppComponent implements OnInit {
     const type = item.confirmed_claim_type || item.suggested_claim_type;
     const commercial = type === 'Commercial Casualty';
     const lossLocation = (f['loss_location'] || '').toLowerCase();
-    const indianLocation = /\\b(india|tamil nadu|coimbatore|chennai|bengaluru|bangalore|mumbai|pune|hyderabad|delhi|new delhi|kolkata|ahmedabad|jaipur|kochi|thiruvananthapuram|madurai|tiruchirappalli|salem|erode|tiruppur|vellore|mysuru|mysore)\\b/.test(lossLocation);
+    const indianLocation = /\b(india|tamil nadu|coimbatore|chennai|bengaluru|bangalore|mumbai|pune|hyderabad|delhi|new delhi|kolkata|ahmedabad|jaipur|kochi|thiruvananthapuram|madurai|tiruchirappalli|salem|erode|tiruppur|vellore|mysuru|mysore)\b/.test(lossLocation);
     this.draft = {
       customer_name: f['customer_name'] || '',
       email: f['email'] || item.sender_email || '',
