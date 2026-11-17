@@ -213,7 +213,13 @@
               <label>Currency code (ISO 4217) *<input name="currency" [(ngModel)]="draft.currency" maxlength="3" required placeholder="e.g. USD, CAD, EUR, GBP, INR, JPY"></label>
               <label class="full">Incident description *<textarea name="incident_description" [(ngModel)]="draft.incident_description" required minlength="5" maxlength="5000" rows="4" placeholder="Describe what happened using the information reported. Do not assume missing details."></textarea></label>
             </div>
-            <div class="form-actions"><span class="muted">Claim ID will be generated after successful database save.</span><button class="primary-action" type="submit" [disabled]="savingClaim || fnolForm.invalid">{{ savingClaim ? 'Saving…' : 'Create claim' }}</button></div>
+            <div class="panel-heading" style="margin-top:18px"><div><h3>Evidence &amp; Documents (optional)</h3><p class="muted">Attach supporting documents while registering this FNOL.</p></div></div>
+            <label class="full">Upload supporting document
+              <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp" (change)="onFnolDocumentSelected($event)" aria-label="Select an FNOL supporting document">
+              <span class="muted">PDF, JPG, JPEG, PNG or WEBP · Maximum 15 MB · One file per FNOL submission</span>
+            </label>
+            <p class="muted" *ngIf="selectedFnolDocument">Selected: {{ selectedFnolDocument.name }} · {{ selectedFnolDocument.size | number }} bytes</p>
+            <div class="form-actions"><span class="muted">Claim ID will be generated after successful database save. The selected file will then be attached to that Claim ID.</span><button class="primary-action" type="submit" [disabled]="savingClaim || fnolForm.invalid">{{ savingClaim ? 'Saving claim &amp; uploading…' : 'Create claim' }}</button></div>
           </form>
         </section>
       </ng-container>
