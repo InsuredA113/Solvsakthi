@@ -20,9 +20,10 @@ interface DamageAssessment {
   affected_areas: string[]; visible_observations: string[]; severity: string;
   confidence: string; possible_cause: string; recommended_next_steps: string[];
   limitations: string[]; repair_cost_estimate: number | null; status: string; created_at: string;
+  claim_id?: string | null;
   review_history?: { status: string; notes: string; reviewed_at: string; reviewed_by: string; reviewer_role: string }[];
 }
-interface FinancialEstimate { estimate_id: string; claim_id: string; currency: string; gross_repair_cost: string; depreciation: string; net_repair_cost: string; total_fees_and_charges: string; total_tax: string; interest: { amount: string }; deductible: string; total_before_deductible: string; preliminary_net_estimate: string; status: string; created_at: string; pricing_source: string; state_or_jurisdiction: string; taxes: any[]; line_items: any[]; tax_mode?: string; tax_profile_status?: string; tax_rule_warning?: string | null; tax_rule_ids?: string[]; review_status?: string; review_history?: any[]; }
+interface FinancialEstimate { estimate_id: string; claim_id: string; source_damage_assessment?: { assessment_id: string; status: string; damage_category: string; affected_areas: string[]; visible_observations: string[]; confidence?: string } | null; currency: string; gross_repair_cost: string; depreciation: string; net_repair_cost: string; total_fees_and_charges: string; total_tax: string; interest: { amount: string }; deductible: string; total_before_deductible: string; preliminary_net_estimate: string; status: string; created_at: string; pricing_source: string; state_or_jurisdiction: string; taxes: any[]; line_items: any[]; tax_mode?: string; tax_profile_status?: string; tax_rule_warning?: string | null; tax_rule_ids?: string[]; review_status?: string; review_history?: any[]; }
 interface EmailConnectorStatus { gmail: { configured: boolean; watch_active: boolean; watch_expiration?: string | null }; microsoft365: { configured: boolean; subscription_active: boolean; subscription_expiration?: string | null }; note: string; }
 interface EmailIntakeItem { intake_id: string; sender_email: string; subject: string; received_at: string; suggested_claim_type: string; confirmed_claim_type?: string; classification_reason: string; missing_fields: string[]; review_status: string; extracted_fields: Record<string, string | null>; claim_id?: string; }
 interface ClaimDraft {
@@ -324,6 +325,7 @@ export class AppComponent implements OnInit {
   emptyEstimateDraft(): any {
     return {
       description: '', quantity: 1, unit: 'item', unit_rate: 0, depreciation_rate: 0, taxable: true, tax_mode: 'automatic',
+      source_damage_assessment_id: null,
       currency: '', currency_minor_units: 2, country_code: '', state_or_jurisdiction: '', region: '', locality: '', postal_code: '',
       loss_date: new Date().toISOString().slice(0, 10), tax_point_date: new Date().toISOString().slice(0, 10),
       taxes: [], charges: [], deductible: 0, interest_applicable: false,
@@ -735,6 +737,7 @@ export class AppComponent implements OnInit {
       state_or_jurisdiction: d.state_or_jurisdiction, region: claim?.region || d.region, locality: claim?.locality || d.locality,
       postal_code: claim?.postal_code || d.postal_code, loss_date: claim?.incident_date || d.loss_date, tax_point_date: d.tax_point_date,
       line_items: [{ description: d.description, quantity: Number(d.quantity), unit: d.unit, unit_rate: Number(d.unit_rate), taxable: !!d.taxable, depreciation_rate: Number(d.depreciation_rate) }],
+      source_damage_assessment_id: d.source_damage_assessment_id || null,
       tax_mode: d.tax_mode,
       confirm_automatic_tax_application: !!d.confirm_automatic_tax_application,
       taxes: d.tax_mode === 'manual' ? d.taxes.filter((tax: any) => Number(tax.rate_percent) > 0).map((tax: any) => ({
@@ -869,6 +872,34 @@ export class AppComponent implements OnInit {
         this.handleApiError(error);
       }
     });
+  }
+
+  prepareEstimateFromDamage(item: DamageAssessment): void {
+    if (!item.claim_id) {
+      this.errorMessage = 'This assessment is not linked to a claim. Link it to a Property claim before creating an estimate.';
+      return;
+    }
+    if (!['Reviewed', 'Approved'].includes(item.status)) {
+      this.errorMessage = 'An authorised adjuster must review the AI assessment before using it in a financial estimate.';
+      return;
+    }
+    const claim = this.claims.find(row => row.claim_id === item.claim_id);
+    this.estimateClaimId = item.claim_id;
+    this.estimateDraft = {
+      ...this.emptyEstimateDraft(),
+      country_code: claim?.country_code || '',
+      currency: claim?.currency || '',
+      loss_date: claim?.incident_date || new Date().toISOString().slice(0, 10),
+      description: [item.damage_category, ...(item.affected_areas || [])].filter(Boolean).join(' - ').slice(0, 200),
+      source_damage_assessment_id: item.assessment_id,
+      notes: `Prepared from reviewed AI damage assessment ${item.assessment_id}. AI observations are prompts for repair scoping only; verify all quantities, unit rates, depreciation and policy terms independently.`
+    };
+    this.financialEstimate = null;
+    this.financialEstimates = [];
+    this.applicableTaxRules = null;
+    this.activePage = 'Financial Estimate';
+    this.errorMessage = '';
+    this.successMessage = 'AI damage findings linked. Enter verified repair quantities, unit rates and policy calculation inputs before calculating.';
   }
 
   analyseDamage(): void {
