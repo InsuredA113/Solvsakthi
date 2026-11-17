@@ -101,6 +101,9 @@ export class AppComponent implements OnInit {
   repairRateCityFilter = '';
   repairRateStatusFilter = '';
   applicableTaxRules: any = null;
+  applicableRepairRates: any[] = [];
+  selectedRepairRateId = '';
+  repairRatesLookupBusy = false;
   estimateDraft: any = this.emptyEstimateDraft();
   newUser = { full_name: '', email: '', password: '', role: 'Claims Manager' };
   totalClaims = 0;
@@ -392,7 +395,7 @@ export class AppComponent implements OnInit {
 
   emptyEstimateDraft(): any {
     return {
-      description: '', quantity: 1, unit: 'item', unit_rate: 0, depreciation_rate: 0, taxable: true, tax_mode: 'automatic',
+      description: '', quantity: 1, unit: 'item', unit_rate: 0, repair_rate_id: null, depreciation_rate: 0, taxable: true, tax_mode: 'automatic',
       source_damage_assessment_id: null,
       currency: '', currency_minor_units: 2, country_code: '', state_or_jurisdiction: '', region: '', locality: '', postal_code: '',
       loss_date: new Date().toISOString().slice(0, 10), tax_point_date: new Date().toISOString().slice(0, 10),
@@ -775,6 +778,46 @@ export class AppComponent implements OnInit {
     });
   }
 
+  loadApplicableRepairRates(): void {
+    const claimId = this.estimateClaimId.trim();
+    if (!claimId) {
+      this.errorMessage = 'Enter a Property Claim ID before loading repair catalogue rates.';
+      return;
+    }
+    this.repairRatesLookupBusy = true;
+    this.applicableRepairRates = [];
+    this.selectedRepairRateId = '';
+    this.http.get<any>(`${environment.apiBaseUrl}/claims/${encodeURIComponent(claimId)}/applicable-repair-rates`,
+      { headers: this.authHeaders() }).subscribe({
+        next: result => {
+          this.applicableRepairRates = result.items || [];
+          this.repairRatesLookupBusy = false;
+          if (!this.applicableRepairRates.length) {
+            this.successMessage = 'No active repair rates matched this Property claim location and loss date. Check the claim state/city and catalogue records.';
+          } else {
+            this.successMessage = `${this.applicableRepairRates.length} active repair rate(s) matched ${result.city}, ${result.state} for loss date ${result.pricing_date}.`;
+          }
+        },
+        error: error => {
+          this.repairRatesLookupBusy = false;
+          this.handleApiError(error);
+        }
+      });
+  }
+
+  selectRepairRateById(rateId: string): void {
+    const rate = this.applicableRepairRates.find(item => item.rate_id === rateId);
+    if (!rate) return;
+    this.selectedRepairRateId = rate.rate_id;
+    this.estimateDraft.repair_rate_id = rate.rate_id;
+    this.estimateDraft.description = rate.item_name;
+    this.estimateDraft.unit = rate.unit;
+    this.estimateDraft.unit_rate = Number(rate.unit_rate);
+    this.estimateDraft.pricing_source = `${rate.source_name} · ${rate.source_reference}`;
+    this.estimateDraft.pricing_effective_date = rate.effective_from;
+    this.successMessage = `Selected verified catalogue item: ${rate.item_name}. Python will re-check its active status, location and effective date before calculation.`;
+  }
+
   calculateFinancialEstimate(): void {
     const d = this.estimateDraft;
     const claim = this.claims.find(x => x.claim_id === this.estimateClaimId.trim());
@@ -805,7 +848,7 @@ export class AppComponent implements OnInit {
       currency, country_code: countryCode,
       state_or_jurisdiction: d.state_or_jurisdiction, region: claim?.region || d.region, locality: claim?.locality || d.locality,
       postal_code: claim?.postal_code || d.postal_code, loss_date: claim?.incident_date || d.loss_date, tax_point_date: d.tax_point_date,
-      line_items: [{ description: d.description, quantity: Number(d.quantity), unit: d.unit, unit_rate: Number(d.unit_rate), taxable: !!d.taxable, depreciation_rate: Number(d.depreciation_rate) }],
+      line_items: [{ description: d.description, quantity: Number(d.quantity), unit: d.unit, unit_rate: Number(d.unit_rate), repair_rate_id: d.repair_rate_id || null, taxable: !!d.taxable, depreciation_rate: Number(d.depreciation_rate) }],
       source_damage_assessment_id: d.source_damage_assessment_id || null,
       tax_mode: d.tax_mode,
       confirm_automatic_tax_application: !!d.confirm_automatic_tax_application,
@@ -966,6 +1009,8 @@ export class AppComponent implements OnInit {
     this.financialEstimate = null;
     this.financialEstimates = [];
     this.applicableTaxRules = null;
+    this.applicableRepairRates = [];
+    this.selectedRepairRateId = '';
     this.activePage = 'Financial Estimate';
     this.errorMessage = '';
     this.successMessage = 'AI damage findings linked. Enter verified repair quantities, unit rates and policy calculation inputs before calculating.';
