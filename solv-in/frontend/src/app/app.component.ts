@@ -56,7 +56,8 @@ export class AppComponent implements OnInit {
   statusFilter = '';
   claims: Claim[] = [];
   selectedClaim: Claim | null = null;
-  loadingClaimDetails = false;\n  claimDocuments: ClaimDocument[] = [];\n  selectedClaimDocument: File | null = null;\n  documentUploadBusy = false;\n  documentsLoading = false;
+  loadingClaimDetails = false;
+  claimDocuments: ClaimDocument[] = [];\n  selectedClaimDocument: File | null = null;\n  documentUploadBusy = false;\n  documentsLoading = false;
   users: User[] = [];
   roles: string[] = [];
   userBusy = false;
