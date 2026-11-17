@@ -574,3 +574,63 @@ for state in US_STATES:
                 {"activity":"Reconstruction and repair of real property","residential":"Construction/repair labor generally not taxable; contractor material tax treatment depends on lump-sum versus separated contract.","commercial":"Total charge for nonresidential repair/restoration generally taxable, subject to exceptions and separately stated unrelated services.","status":"Conditional — occupancy and contract method required","source_url":"https://comptroller.texas.gov/taxes/publications/94-116.php","source_reference":"Texas Comptroller Publication 94-116; Texas Tax Code §151.0047; 34 TAC §3.357"}
             ]
         })
+
+
+# Additional state research entries. These are intentionally partial: the cited
+# official materials establish selected rules, not a complete tax decision for
+# every water-restoration activity or locality. No state rate is loaded.
+_PARTIAL_STATE_RESEARCH = {
+    "CA": {
+        "status": "Partially researched — contract and item classification required",
+        "source_name": "California Department of Tax and Fee Administration",
+        "source_url": "https://cdtfa.ca.gov/industry/construction-contractors/industry-topics.htm",
+        "source_reference": "Tax Guide for Construction Contractors; Publication 9, Construction and Building Contractors (February 2025); Publication 44, District Taxes",
+        "effective_date": None,
+        "notes": "Official construction-contractor guidance is relevant to reconstruction after water damage but does not determine every mitigation activity. Contractors are generally consumers of materials; fixtures may be retail sales. Contract type and jobsite district-tax rules matter. Water extraction, drying, cleaning and demolition need activity-specific confirmation. No rate is stored.",
+        "verified_categories": [
+            {"activity": "Reconstruction materials and fixtures", "residential": "For real-property construction contracts, contractor is generally consumer of materials and pays sales/use tax on its cost; fixtures furnished and installed may be treated as retail sales depending on contract.", "commercial": "Same general contractor framework; item classification and contract terms determine treatment.", "status": "Conditional — classify material versus fixture and contract type", "source_url": "https://cdtfa.ca.gov/industry/construction-contractors/industry-topics.htm", "source_reference": "CDTFA Tax Guide for Construction Contractors; Publication 9"},
+            {"activity": "Local and district tax sourcing", "residential": "Jobsite is generally relevant as place of use for materials and place of sale for fixtures; purchase date, installation location and fixed-price contract rules may matter.", "commercial": "Same general sourcing framework; verify district tax at the actual jobsite and applicable transaction date.", "status": "Conditional — jobsite and transaction facts required", "source_url": "https://cdtfa.ca.gov/formspubs/pub44/construction-contractors.htm", "source_reference": "CDTFA Publication 44, Construction Contractors"}
+        ]
+    },
+    "FL": {
+        "status": "Partially researched — fact-pattern-specific advisory",
+        "source_name": "Florida Department of Revenue",
+        "source_url": "https://floridarevenue.com/TaxLaw/Documents/TAA%2005A-054.pdf",
+        "source_reference": "Technical Assistance Advisement 05A-054, Sales and Use Tax — Water Restoration Services (January 3, 2006); Rule 12A-1.051, F.A.C.",
+        "effective_date": None,
+        "notes": "The cited TAA concerns a particular provider's nonresidential, for-profit water-restoration contracts and is not a universal statewide ruling for every taxpayer or residential claim. Determine predominant nature and contract allocation case by case. No rate is stored.",
+        "verified_categories": [
+            {"activity": "Water removal, moisture stabilization, drywall and contents restoration", "residential": "Not determined by the cited advisory; obtain residential-specific authority before classification.", "commercial": "For the TAA's nonresidential, for-profit fact pattern, when the predominant nature is improvement to real property and the contract does not allocate elements, contractor pays tax on materials/supplies and does not charge customer tax.", "status": "Conditional — nonresidential TAA fact pattern only; do not generalize to residential claims", "source_url": "https://floridarevenue.com/TaxLaw/Documents/TAA%2005A-054.pdf", "source_reference": "Florida DOR TAA 05A-054, summary and facts"},
+            {"activity": "Mixed real-property and tangible-personal-property restoration", "residential": "Not determined by the cited advisory.", "commercial": "If predominant nature is repair/sale of tangible personal property, tax applies to total contract price; where contract clearly allocates elements, each element is classified separately.", "status": "Conditional — predominant nature and invoice allocation required", "source_url": "https://floridarevenue.com/TaxLaw/Documents/TAA%2005A-054.pdf", "source_reference": "Florida DOR TAA 05A-054"}
+        ]
+    },
+    "IL": {
+        "status": "Partially researched — transferred property analysis required",
+        "source_name": "Illinois Department of Revenue",
+        "source_url": "https://tax.illinois.gov/questionsandanswers/answer.129.html",
+        "source_reference": "IDOR Taxpayer Answer Center: Does Illinois tax sales of service?; PUB-113-SOT, Serviceperson's Overview of Service Occupation Tax",
+        "effective_date": None,
+        "notes": "Illinois states that sales of service are not taxed as such, but service occupation tax applies to tangible personal property transferred incident to a service. The transferred-property rules, serviceperson method and applicable local tax treatment must be researched before estimating any tax. No rate is stored.",
+        "verified_categories": [
+            {"activity": "Water extraction, drying and labor-only restoration services", "residential": "General IDOR rule says Illinois does not tax sales of service; confirm that the invoice is genuinely service-only and no taxable property transfer or separate taxable transaction occurs.", "commercial": "Same general rule; confirm the actual service and transaction structure.", "status": "Conditional — service-only classification must be substantiated", "source_url": "https://tax.illinois.gov/questionsandanswers/answer.129.html", "source_reference": "Illinois DOR Taxpayer Answer Center"},
+            {"activity": "Materials and other tangible personal property transferred incident to restoration", "residential": "Service occupation tax may apply to tangible personal property transferred incident to the service; tax base and method require PUB-113-SOT analysis.", "commercial": "Same general rule; further classification and local tax review required.", "status": "Conditional — transferred property and serviceperson method required", "source_url": "https://tax.illinois.gov/questionsandanswers/answer.129.html", "source_reference": "Illinois DOR Taxpayer Answer Center; PUB-113-SOT"}
+        ]
+    },
+    "NY": {
+        "status": "Partially researched — repair versus capital improvement required",
+        "source_name": "New York State Department of Taxation and Finance",
+        "source_url": "https://www.tax.ny.gov/pdf/advisory_opinions/sales/a04_18s.pdf",
+        "source_reference": "TSB-A-04(18)S, Sales Tax (July 22, 2004); Tax Bulletin ST-129; Publication 862",
+        "effective_date": None,
+        "notes": "A 2004 advisory opinion found water-damage mold mitigation involving removal of damp structures and drying to be taxable real-property repair when performed as part of repair/reconstruction, but services that become part of a qualifying capital improvement may be treated differently. Advisory opinions are fact-specific. Verify current law, certificate requirements and state/local jurisdiction before use. No rate is stored.",
+        "verified_categories": [
+            {"activity": "Water-damage mitigation, tear-out and structural drying", "residential": "The cited opinion treated removal of damp walls, ceilings and flooring and drying underlying structures as taxable repair services in its fire-damage fact pattern; treatment may differ where work is part of a qualifying capital improvement.", "commercial": "The same repair-versus-capital-improvement analysis applies; confirm the project end result and applicable documentation.", "status": "Conditional — advisory opinion is fact-specific; classify project end result", "source_url": "https://www.tax.ny.gov/pdf/advisory_opinions/sales/a04_18s.pdf", "source_reference": "New York DTF TSB-A-04(18)S"},
+            {"activity": "Repair and reconstruction contracts", "residential": "Repair/maintenance to real property is generally taxable; qualifying capital improvement work is not taxable when statutory tests and required certificate/documentation are met.", "commercial": "Same general distinction; project scope and capital-improvement documentation required.", "status": "Conditional — repair versus capital improvement and certificate required", "source_url": "https://www.tax.ny.gov/pubs_and_bulls/tg_bulletins/st/repair_maintenance.htm", "source_reference": "New York DTF Tax Bulletin ST-129; Publication 862"}
+        ]
+    }
+}
+
+for state in US_STATES:
+    research = _PARTIAL_STATE_RESEARCH.get(state["state_code"])
+    if research:
+        state.update(research)
