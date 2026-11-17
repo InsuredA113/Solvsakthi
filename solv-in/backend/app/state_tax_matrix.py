@@ -9,10 +9,10 @@ US_STATES = [
         "state_name": "Alabama",
         "status": "Pending official research",
         "verified_categories": [],
-        "source_name": null,
-        "source_url": null,
-        "source_reference": null,
-        "effective_date": null,
+        "source_name": None,
+        "source_url": None,
+        "source_reference": None,
+        "effective_date": None,
         "notes": "No taxability conclusion or rate loaded. Research official state guidance, activity, property type, contract and local jurisdiction before activation."
     },
     {
@@ -20,10 +20,10 @@ US_STATES = [
         "state_name": "Alaska",
         "status": "Pending official research",
         "verified_categories": [],
-        "source_name": null,
-        "source_url": null,
-        "source_reference": null,
-        "effective_date": null,
+        "source_name": None,
+        "source_url": None,
+        "source_reference": None,
+        "effective_date": None,
         "notes": "No taxability conclusion or rate loaded. Research official state guidance, activity, property type, contract and local jurisdiction before activation."
     },
     {
@@ -31,10 +31,10 @@ US_STATES = [
         "state_name": "Arizona",
         "status": "Pending official research",
         "verified_categories": [],
-        "source_name": null,
-        "source_url": null,
-        "source_reference": null,
-        "effective_date": null,
+        "source_name": None,
+        "source_url": None,
+        "source_reference": None,
+        "effective_date": None,
         "notes": "No taxability conclusion or rate loaded. Research official state guidance, activity, property type, contract and local jurisdiction before activation."
     },
     {
@@ -42,10 +42,10 @@ US_STATES = [
         "state_name": "Arkansas",
         "status": "Pending official research",
         "verified_categories": [],
-        "source_name": null,
-        "source_url": null,
-        "source_reference": null,
-        "effective_date": null,
+        "source_name": None,
+        "source_url": None,
+        "source_reference": None,
+        "effective_date": None,
         "notes": "No taxability conclusion or rate loaded. Research official state guidance, activity, property type, contract and local jurisdiction before activation."
     },
     {
@@ -53,10 +53,10 @@ US_STATES = [
         "state_name": "California",
         "status": "Pending official research",
         "verified_categories": [],
-        "source_name": null,
-        "source_url": null,
-        "source_reference": null,
-        "effective_date": null,
+        "source_name": None,
+        "source_url": None,
+        "source_reference": None,
+        "effective_date": None,
         "notes": "No taxability conclusion or rate loaded. Research official state guidance, activity, property type, contract and local jurisdiction before activation."
     },
     {
@@ -64,10 +64,10 @@ US_STATES = [
         "state_name": "Colorado",
         "status": "Pending official research",
         "verified_categories": [],
-        "source_name": null,
-        "source_url": null,
-        "source_reference": null,
-        "effective_date": null,
+        "source_name": None,
+        "source_url": None,
+        "source_reference": None,
+        "effective_date": None,
         "notes": "No taxability conclusion or rate loaded. Research official state guidance, activity, property type, contract and local jurisdiction before activation."
     },
     {
@@ -75,10 +75,10 @@ US_STATES = [
         "state_name": "Connecticut",
         "status": "Pending official research",
         "verified_categories": [],
-        "source_name": null,
-        "source_url": null,
-        "source_reference": null,
-        "effective_date": null,
+        "source_name": None,
+        "source_url": None,
+        "source_reference": None,
+        "effective_date": None,
         "notes": "No taxability conclusion or rate loaded. Research official state guidance, activity, property type, contract and local jurisdiction before activation."
     },
     {
@@ -86,10 +86,10 @@ US_STATES = [
         "state_name": "Delaware",
         "status": "Pending official research",
         "verified_categories": [],
-        "source_name": null,
-        "source_url": null,
-        "source_reference": null,
-        "effective_date": null,
+        "source_name": None,
+        "source_url": None,
+        "source_reference": None,
+        "effective_date": None,
         "notes": "No taxability conclusion or rate loaded. Research official state guidance, activity, property type, contract and local jurisdiction before activation."
     },
     {
@@ -97,10 +97,10 @@ US_STATES = [
         "state_name": "Florida",
         "status": "Pending official research",
         "verified_categories": [],
-        "source_name": null,
-        "source_url": null,
-        "source_reference": null,
-        "effective_date": null,
+        "source_name": None,
+        "source_url": None,
+        "source_reference": None,
+        "effective_date": None,
         "notes": "No taxability conclusion or rate loaded. Research official state guidance, activity, property type, contract and local jurisdiction before activation."
     },
     {
@@ -108,10 +108,10 @@ US_STATES = [
         "state_name": "Georgia",
         "status": "Pending official research",
         "verified_categories": [],
-        "source_name": null,
-        "source_url": null,
-        "source_reference": null,
-        "effective_date": null,
+        "source_name": None,
+        "source_url": None,
+        "source_reference": None,
+        "effective_date": None,
         "notes": "No taxability conclusion or rate loaded. Research official state guidance, activity, property type, contract and local jurisdiction before activation."
     },
     {
@@ -119,10 +119,10 @@ US_STATES = [
         "state_name": "Hawaii",
         "status": "Pending official research",
         "verified_categories": [],
-        "source_name": null,
-        "source_url": null,
-        "source_reference": null,
-        "effective_date": null,
+        "source_name": None,
+        "source_url": None,
+        "source_reference": None,
+        "effective_date": None,
         "notes": "No taxability conclusion or rate loaded. Research official state guidance, activity, property type, contract and local jurisdiction before activation."
     },
     {
@@ -130,10 +130,10 @@ US_STATES = [
         "state_name": "Idaho",
         "status": "Pending official research",
         "verified_categories": [],
-        "source_name": null,
-        "source_url": null,
-        "source_reference": null,
-        "effective_date": null,
+        "source_name": None,
+        "source_url": None,
+        "source_reference": None,
+        "effective_date": None,
         "notes": "No taxability conclusion or rate loaded. Research official state guidance, activity, property type, contract and local jurisdiction before activation."
     },
     {
@@ -141,10 +141,10 @@ US_STATES = [
         "state_name": "Illinois",
         "status": "Pending official research",
         "verified_categories": [],
-        "source_name": null,
-        "source_url": null,
-        "source_reference": null,
-        "effective_date": null,
+        "source_name": None,
+        "source_url": None,
+        "source_reference": None,
+        "effective_date": None,
         "notes": "No taxability conclusion or rate loaded. Research official state guidance, activity, property type, contract and local jurisdiction before activation."
     },
     {
@@ -152,10 +152,10 @@ US_STATES = [
         "state_name": "Indiana",
         "status": "Pending official research",
         "verified_categories": [],
-        "source_name": null,
-        "source_url": null,
-        "source_reference": null,
-        "effective_date": null,
+        "source_name": None,
+        "source_url": None,
+        "source_reference": None,
+        "effective_date": None,
         "notes": "No taxability conclusion or rate loaded. Research official state guidance, activity, property type, contract and local jurisdiction before activation."
     },
     {
@@ -163,10 +163,10 @@ US_STATES = [
         "state_name": "Iowa",
         "status": "Pending official research",
         "verified_categories": [],
-        "source_name": null,
-        "source_url": null,
-        "source_reference": null,
-        "effective_date": null,
+        "source_name": None,
+        "source_url": None,
+        "source_reference": None,
+        "effective_date": None,
         "notes": "No taxability conclusion or rate loaded. Research official state guidance, activity, property type, contract and local jurisdiction before activation."
     },
     {
@@ -174,10 +174,10 @@ US_STATES = [
         "state_name": "Kansas",
         "status": "Pending official research",
         "verified_categories": [],
-        "source_name": null,
-        "source_url": null,
-        "source_reference": null,
-        "effective_date": null,
+        "source_name": None,
+        "source_url": None,
+        "source_reference": None,
+        "effective_date": None,
         "notes": "No taxability conclusion or rate loaded. Research official state guidance, activity, property type, contract and local jurisdiction before activation."
     },
     {
@@ -185,10 +185,10 @@ US_STATES = [
         "state_name": "Kentucky",
         "status": "Pending official research",
         "verified_categories": [],
-        "source_name": null,
-        "source_url": null,
-        "source_reference": null,
-        "effective_date": null,
+        "source_name": None,
+        "source_url": None,
+        "source_reference": None,
+        "effective_date": None,
         "notes": "No taxability conclusion or rate loaded. Research official state guidance, activity, property type, contract and local jurisdiction before activation."
     },
     {
@@ -196,10 +196,10 @@ US_STATES = [
         "state_name": "Louisiana",
         "status": "Pending official research",
         "verified_categories": [],
-        "source_name": null,
-        "source_url": null,
-        "source_reference": null,
-        "effective_date": null,
+        "source_name": None,
+        "source_url": None,
+        "source_reference": None,
+        "effective_date": None,
         "notes": "No taxability conclusion or rate loaded. Research official state guidance, activity, property type, contract and local jurisdiction before activation."
     },
     {
@@ -207,10 +207,10 @@ US_STATES = [
         "state_name": "Maine",
         "status": "Pending official research",
         "verified_categories": [],
-        "source_name": null,
-        "source_url": null,
-        "source_reference": null,
-        "effective_date": null,
+        "source_name": None,
+        "source_url": None,
+        "source_reference": None,
+        "effective_date": None,
         "notes": "No taxability conclusion or rate loaded. Research official state guidance, activity, property type, contract and local jurisdiction before activation."
     },
     {
@@ -218,10 +218,10 @@ US_STATES = [
         "state_name": "Maryland",
         "status": "Pending official research",
         "verified_categories": [],
-        "source_name": null,
-        "source_url": null,
-        "source_reference": null,
-        "effective_date": null,
+        "source_name": None,
+        "source_url": None,
+        "source_reference": None,
+        "effective_date": None,
         "notes": "No taxability conclusion or rate loaded. Research official state guidance, activity, property type, contract and local jurisdiction before activation."
     },
     {
@@ -229,10 +229,10 @@ US_STATES = [
         "state_name": "Massachusetts",
         "status": "Pending official research",
         "verified_categories": [],
-        "source_name": null,
-        "source_url": null,
-        "source_reference": null,
-        "effective_date": null,
+        "source_name": None,
+        "source_url": None,
+        "source_reference": None,
+        "effective_date": None,
         "notes": "No taxability conclusion or rate loaded. Research official state guidance, activity, property type, contract and local jurisdiction before activation."
     },
     {
@@ -240,10 +240,10 @@ US_STATES = [
         "state_name": "Michigan",
         "status": "Pending official research",
         "verified_categories": [],
-        "source_name": null,
-        "source_url": null,
-        "source_reference": null,
-        "effective_date": null,
+        "source_name": None,
+        "source_url": None,
+        "source_reference": None,
+        "effective_date": None,
         "notes": "No taxability conclusion or rate loaded. Research official state guidance, activity, property type, contract and local jurisdiction before activation."
     },
     {
@@ -251,10 +251,10 @@ US_STATES = [
         "state_name": "Minnesota",
         "status": "Pending official research",
         "verified_categories": [],
-        "source_name": null,
-        "source_url": null,
-        "source_reference": null,
-        "effective_date": null,
+        "source_name": None,
+        "source_url": None,
+        "source_reference": None,
+        "effective_date": None,
         "notes": "No taxability conclusion or rate loaded. Research official state guidance, activity, property type, contract and local jurisdiction before activation."
     },
     {
@@ -262,10 +262,10 @@ US_STATES = [
         "state_name": "Mississippi",
         "status": "Pending official research",
         "verified_categories": [],
-        "source_name": null,
-        "source_url": null,
-        "source_reference": null,
-        "effective_date": null,
+        "source_name": None,
+        "source_url": None,
+        "source_reference": None,
+        "effective_date": None,
         "notes": "No taxability conclusion or rate loaded. Research official state guidance, activity, property type, contract and local jurisdiction before activation."
     },
     {
@@ -273,10 +273,10 @@ US_STATES = [
         "state_name": "Missouri",
         "status": "Pending official research",
         "verified_categories": [],
-        "source_name": null,
-        "source_url": null,
-        "source_reference": null,
-        "effective_date": null,
+        "source_name": None,
+        "source_url": None,
+        "source_reference": None,
+        "effective_date": None,
         "notes": "No taxability conclusion or rate loaded. Research official state guidance, activity, property type, contract and local jurisdiction before activation."
     },
     {
@@ -284,10 +284,10 @@ US_STATES = [
         "state_name": "Montana",
         "status": "Pending official research",
         "verified_categories": [],
-        "source_name": null,
-        "source_url": null,
-        "source_reference": null,
-        "effective_date": null,
+        "source_name": None,
+        "source_url": None,
+        "source_reference": None,
+        "effective_date": None,
         "notes": "No taxability conclusion or rate loaded. Research official state guidance, activity, property type, contract and local jurisdiction before activation."
     },
     {
@@ -295,10 +295,10 @@ US_STATES = [
         "state_name": "Nebraska",
         "status": "Pending official research",
         "verified_categories": [],
-        "source_name": null,
-        "source_url": null,
-        "source_reference": null,
-        "effective_date": null,
+        "source_name": None,
+        "source_url": None,
+        "source_reference": None,
+        "effective_date": None,
         "notes": "No taxability conclusion or rate loaded. Research official state guidance, activity, property type, contract and local jurisdiction before activation."
     },
     {
@@ -306,10 +306,10 @@ US_STATES = [
         "state_name": "Nevada",
         "status": "Pending official research",
         "verified_categories": [],
-        "source_name": null,
-        "source_url": null,
-        "source_reference": null,
-        "effective_date": null,
+        "source_name": None,
+        "source_url": None,
+        "source_reference": None,
+        "effective_date": None,
         "notes": "No taxability conclusion or rate loaded. Research official state guidance, activity, property type, contract and local jurisdiction before activation."
     },
     {
@@ -317,10 +317,10 @@ US_STATES = [
         "state_name": "New Hampshire",
         "status": "Pending official research",
         "verified_categories": [],
-        "source_name": null,
-        "source_url": null,
-        "source_reference": null,
-        "effective_date": null,
+        "source_name": None,
+        "source_url": None,
+        "source_reference": None,
+        "effective_date": None,
         "notes": "No taxability conclusion or rate loaded. Research official state guidance, activity, property type, contract and local jurisdiction before activation."
     },
     {
@@ -328,10 +328,10 @@ US_STATES = [
         "state_name": "New Jersey",
         "status": "Pending official research",
         "verified_categories": [],
-        "source_name": null,
-        "source_url": null,
-        "source_reference": null,
-        "effective_date": null,
+        "source_name": None,
+        "source_url": None,
+        "source_reference": None,
+        "effective_date": None,
         "notes": "No taxability conclusion or rate loaded. Research official state guidance, activity, property type, contract and local jurisdiction before activation."
     },
     {
@@ -339,10 +339,10 @@ US_STATES = [
         "state_name": "New Mexico",
         "status": "Pending official research",
         "verified_categories": [],
-        "source_name": null,
-        "source_url": null,
-        "source_reference": null,
-        "effective_date": null,
+        "source_name": None,
+        "source_url": None,
+        "source_reference": None,
+        "effective_date": None,
         "notes": "No taxability conclusion or rate loaded. Research official state guidance, activity, property type, contract and local jurisdiction before activation."
     },
     {
@@ -350,10 +350,10 @@ US_STATES = [
         "state_name": "New York",
         "status": "Pending official research",
         "verified_categories": [],
-        "source_name": null,
-        "source_url": null,
-        "source_reference": null,
-        "effective_date": null,
+        "source_name": None,
+        "source_url": None,
+        "source_reference": None,
+        "effective_date": None,
         "notes": "No taxability conclusion or rate loaded. Research official state guidance, activity, property type, contract and local jurisdiction before activation."
     },
     {
@@ -361,10 +361,10 @@ US_STATES = [
         "state_name": "North Carolina",
         "status": "Pending official research",
         "verified_categories": [],
-        "source_name": null,
-        "source_url": null,
-        "source_reference": null,
-        "effective_date": null,
+        "source_name": None,
+        "source_url": None,
+        "source_reference": None,
+        "effective_date": None,
         "notes": "No taxability conclusion or rate loaded. Research official state guidance, activity, property type, contract and local jurisdiction before activation."
     },
     {
@@ -372,10 +372,10 @@ US_STATES = [
         "state_name": "North Dakota",
         "status": "Pending official research",
         "verified_categories": [],
-        "source_name": null,
-        "source_url": null,
-        "source_reference": null,
-        "effective_date": null,
+        "source_name": None,
+        "source_url": None,
+        "source_reference": None,
+        "effective_date": None,
         "notes": "No taxability conclusion or rate loaded. Research official state guidance, activity, property type, contract and local jurisdiction before activation."
     },
     {
@@ -383,10 +383,10 @@ US_STATES = [
         "state_name": "Ohio",
         "status": "Pending official research",
         "verified_categories": [],
-        "source_name": null,
-        "source_url": null,
-        "source_reference": null,
-        "effective_date": null,
+        "source_name": None,
+        "source_url": None,
+        "source_reference": None,
+        "effective_date": None,
         "notes": "No taxability conclusion or rate loaded. Research official state guidance, activity, property type, contract and local jurisdiction before activation."
     },
     {
@@ -394,10 +394,10 @@ US_STATES = [
         "state_name": "Oklahoma",
         "status": "Pending official research",
         "verified_categories": [],
-        "source_name": null,
-        "source_url": null,
-        "source_reference": null,
-        "effective_date": null,
+        "source_name": None,
+        "source_url": None,
+        "source_reference": None,
+        "effective_date": None,
         "notes": "No taxability conclusion or rate loaded. Research official state guidance, activity, property type, contract and local jurisdiction before activation."
     },
     {
@@ -405,10 +405,10 @@ US_STATES = [
         "state_name": "Oregon",
         "status": "Pending official research",
         "verified_categories": [],
-        "source_name": null,
-        "source_url": null,
-        "source_reference": null,
-        "effective_date": null,
+        "source_name": None,
+        "source_url": None,
+        "source_reference": None,
+        "effective_date": None,
         "notes": "No taxability conclusion or rate loaded. Research official state guidance, activity, property type, contract and local jurisdiction before activation."
     },
     {
@@ -416,10 +416,10 @@ US_STATES = [
         "state_name": "Pennsylvania",
         "status": "Pending official research",
         "verified_categories": [],
-        "source_name": null,
-        "source_url": null,
-        "source_reference": null,
-        "effective_date": null,
+        "source_name": None,
+        "source_url": None,
+        "source_reference": None,
+        "effective_date": None,
         "notes": "No taxability conclusion or rate loaded. Research official state guidance, activity, property type, contract and local jurisdiction before activation."
     },
     {
@@ -427,10 +427,10 @@ US_STATES = [
         "state_name": "Rhode Island",
         "status": "Pending official research",
         "verified_categories": [],
-        "source_name": null,
-        "source_url": null,
-        "source_reference": null,
-        "effective_date": null,
+        "source_name": None,
+        "source_url": None,
+        "source_reference": None,
+        "effective_date": None,
         "notes": "No taxability conclusion or rate loaded. Research official state guidance, activity, property type, contract and local jurisdiction before activation."
     },
     {
@@ -438,10 +438,10 @@ US_STATES = [
         "state_name": "South Carolina",
         "status": "Pending official research",
         "verified_categories": [],
-        "source_name": null,
-        "source_url": null,
-        "source_reference": null,
-        "effective_date": null,
+        "source_name": None,
+        "source_url": None,
+        "source_reference": None,
+        "effective_date": None,
         "notes": "No taxability conclusion or rate loaded. Research official state guidance, activity, property type, contract and local jurisdiction before activation."
     },
     {
@@ -449,10 +449,10 @@ US_STATES = [
         "state_name": "South Dakota",
         "status": "Pending official research",
         "verified_categories": [],
-        "source_name": null,
-        "source_url": null,
-        "source_reference": null,
-        "effective_date": null,
+        "source_name": None,
+        "source_url": None,
+        "source_reference": None,
+        "effective_date": None,
         "notes": "No taxability conclusion or rate loaded. Research official state guidance, activity, property type, contract and local jurisdiction before activation."
     },
     {
@@ -460,10 +460,10 @@ US_STATES = [
         "state_name": "Tennessee",
         "status": "Pending official research",
         "verified_categories": [],
-        "source_name": null,
-        "source_url": null,
-        "source_reference": null,
-        "effective_date": null,
+        "source_name": None,
+        "source_url": None,
+        "source_reference": None,
+        "effective_date": None,
         "notes": "No taxability conclusion or rate loaded. Research official state guidance, activity, property type, contract and local jurisdiction before activation."
     },
     {
@@ -471,10 +471,10 @@ US_STATES = [
         "state_name": "Texas",
         "status": "Pending official research",
         "verified_categories": [],
-        "source_name": null,
-        "source_url": null,
-        "source_reference": null,
-        "effective_date": null,
+        "source_name": None,
+        "source_url": None,
+        "source_reference": None,
+        "effective_date": None,
         "notes": "No taxability conclusion or rate loaded. Research official state guidance, activity, property type, contract and local jurisdiction before activation."
     },
     {
@@ -482,10 +482,10 @@ US_STATES = [
         "state_name": "Utah",
         "status": "Pending official research",
         "verified_categories": [],
-        "source_name": null,
-        "source_url": null,
-        "source_reference": null,
-        "effective_date": null,
+        "source_name": None,
+        "source_url": None,
+        "source_reference": None,
+        "effective_date": None,
         "notes": "No taxability conclusion or rate loaded. Research official state guidance, activity, property type, contract and local jurisdiction before activation."
     },
     {
@@ -493,10 +493,10 @@ US_STATES = [
         "state_name": "Vermont",
         "status": "Pending official research",
         "verified_categories": [],
-        "source_name": null,
-        "source_url": null,
-        "source_reference": null,
-        "effective_date": null,
+        "source_name": None,
+        "source_url": None,
+        "source_reference": None,
+        "effective_date": None,
         "notes": "No taxability conclusion or rate loaded. Research official state guidance, activity, property type, contract and local jurisdiction before activation."
     },
     {
@@ -504,10 +504,10 @@ US_STATES = [
         "state_name": "Virginia",
         "status": "Pending official research",
         "verified_categories": [],
-        "source_name": null,
-        "source_url": null,
-        "source_reference": null,
-        "effective_date": null,
+        "source_name": None,
+        "source_url": None,
+        "source_reference": None,
+        "effective_date": None,
         "notes": "No taxability conclusion or rate loaded. Research official state guidance, activity, property type, contract and local jurisdiction before activation."
     },
     {
@@ -515,10 +515,10 @@ US_STATES = [
         "state_name": "Washington",
         "status": "Pending official research",
         "verified_categories": [],
-        "source_name": null,
-        "source_url": null,
-        "source_reference": null,
-        "effective_date": null,
+        "source_name": None,
+        "source_url": None,
+        "source_reference": None,
+        "effective_date": None,
         "notes": "No taxability conclusion or rate loaded. Research official state guidance, activity, property type, contract and local jurisdiction before activation."
     },
     {
@@ -526,10 +526,10 @@ US_STATES = [
         "state_name": "West Virginia",
         "status": "Pending official research",
         "verified_categories": [],
-        "source_name": null,
-        "source_url": null,
-        "source_reference": null,
-        "effective_date": null,
+        "source_name": None,
+        "source_url": None,
+        "source_reference": None,
+        "effective_date": None,
         "notes": "No taxability conclusion or rate loaded. Research official state guidance, activity, property type, contract and local jurisdiction before activation."
     },
     {
@@ -537,10 +537,10 @@ US_STATES = [
         "state_name": "Wisconsin",
         "status": "Pending official research",
         "verified_categories": [],
-        "source_name": null,
-        "source_url": null,
-        "source_reference": null,
-        "effective_date": null,
+        "source_name": None,
+        "source_url": None,
+        "source_reference": None,
+        "effective_date": None,
         "notes": "No taxability conclusion or rate loaded. Research official state guidance, activity, property type, contract and local jurisdiction before activation."
     },
     {
@@ -548,10 +548,10 @@ US_STATES = [
         "state_name": "Wyoming",
         "status": "Pending official research",
         "verified_categories": [],
-        "source_name": null,
-        "source_url": null,
-        "source_reference": null,
-        "effective_date": null,
+        "source_name": None,
+        "source_url": None,
+        "source_reference": None,
+        "effective_date": None,
         "notes": "No taxability conclusion or rate loaded. Research official state guidance, activity, property type, contract and local jurisdiction before activation."
     }
 ]
