@@ -38,6 +38,7 @@ LABELS = {
     "customer_name": ("insured name", "customer name", "contact name"),
     "policy_number": ("policy number", "policy no", "policy #"),
     "incident_date": ("incident date", "date of loss", "loss date"),
+    "loss_cause": ("loss cause", "cause of loss", "estimated loss cause"),
     "incident_description": ("incident description", "description of loss", "what happened"),
     "loss_location": ("loss location", "incident location", "property address", "location of loss"),
     "country_code": ("country code",),
