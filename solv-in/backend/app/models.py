@@ -69,3 +69,8 @@ class ClaimCreate(BaseModel):
             raise ValueError("Country must be a two-letter ISO 3166-1 alpha-2 code.")
         return value
 
+
+
+class ClaimStatusUpdate(BaseModel):
+    """Validated status transition payload for an existing claim."""
+    status: ClaimStatus
