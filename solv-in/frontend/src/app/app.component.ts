@@ -13,7 +13,8 @@ interface Claim {
   incident_description: string; loss_location: string; country_code: string; region?: string; locality?: string; postal_code?: string; estimated_loss?: number | null;
   currency: string; status: string; created_at?: string; updated_at?: string;
 }
-interface ClaimDocument { file_id: string; claim_id: string; filename: string; content_type: string; size: number; uploaded_at?: string; uploaded_by?: string; }\ninterface DamageAssessment {
+interface ClaimDocument { file_id: string; claim_id: string; filename: string; content_type: string; size: number; uploaded_at?: string; uploaded_by?: string; }
+interface DamageAssessment {
   assessment_id: string; claim_id?: string | null; damage_category: string;
   affected_areas: string[]; visible_observations: string[]; severity: string;
   confidence: string; possible_cause: string; recommended_next_steps: string[];
