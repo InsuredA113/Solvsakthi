@@ -17,6 +17,7 @@ def money(value: Decimal, currency: str) -> Decimal:
 
 class EstimateLineItem(BaseModel):
     description: str = Field(min_length=2, max_length=200)
+    repair_rate_id: str | None = Field(default=None, min_length=24, max_length=24)
     quantity: Decimal = Field(gt=0, max_digits=14, decimal_places=4)
     unit: str = Field(min_length=1, max_length=30)
     unit_rate: Decimal = Field(ge=0, max_digits=16, decimal_places=6)
