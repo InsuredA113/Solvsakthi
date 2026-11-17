@@ -74,6 +74,7 @@ class FinancialEstimateRequest(BaseModel):
     notes: str = Field(default="", max_length=2000)
     pricing_source: str = Field(min_length=3, max_length=250)
     pricing_effective_date: str = Field(min_length=10, max_length=10)
+    source_damage_assessment_id: str | None = Field(default=None, min_length=24, max_length=24)
 
     @field_validator("currency")
     @classmethod
