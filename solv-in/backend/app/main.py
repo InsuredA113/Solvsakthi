@@ -329,6 +329,22 @@ def list_claims(
     except PyMongoError as exc:
         raise HTTPException(status_code=503, detail="Unable to read claims from MongoDB.") from exc
 
+@app.get("/api/claims/{claim_id}")
+def get_claim_details(
+    claim_id: str,
+    user: dict = Depends(require_roles(*READ_ROLES))
+):
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    try:
+        claim = get_database()["claims"].find_one({"claim_id": claim_id}, {"_id": 0})
+        if not claim or not is_in_scope_claim(claim):
+            raise HTTPException(status_code=404, detail="Claim not found.")
+        return claim
+    except PyMongoError as exc:
+        raise HTTPException(status_code=503, detail="Unable to read claim details from MongoDB.") from exc
+
+
 @app.post("/api/claims", status_code=201)
 def create_claim(payload: ClaimCreate, user: dict = Depends(require_roles(*CREATE_CLAIM_ROLES))):
     if not database_is_available():
