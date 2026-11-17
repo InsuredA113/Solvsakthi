@@ -1,0 +1,1 @@
+export const environment = {\n  production: true,\n  apiBaseUrl: 'https://solvsakthi.onrender.com/api'\n};\n
