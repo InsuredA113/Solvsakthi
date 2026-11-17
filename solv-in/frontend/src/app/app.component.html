@@ -38,8 +38,8 @@
         <section class="bottom-grid">
           <article class="panel claims-panel">
             <div class="panel-heading"><h2>Recent claims</h2><button class="text-button" (click)="selectPage('Claims')">View all →</button></div>
-            <div class="table-scroll"><table><thead><tr><th>Claim ID</th><th>Insured</th><th>Loss cause</th><th>Status</th></tr></thead>
-              <tbody><tr *ngFor="let claim of claims.slice(0,5)"><td>{{ claim.claim_id }}</td><td>{{ claim.customer_name || "Not Found" }}</td><td>{{ claim.loss_cause || "Not Found" }}</td><td><span class="status" [title]="createdByTooltip(claim)">{{ claim.status }}</span></td></tr>
+            <div class="table-scroll"><table><thead><tr><th>Claim ID</th><th>Insured</th><th>Type</th><th>Status</th></tr></thead>
+              <tbody><tr *ngFor="let claim of claims.slice(0,5)"><td>{{ claim.claim_id }}</td><td>{{ claim.customer_name || "Not Found" }}</td><td>{{ claim.claim_type === "Casualty" ? "Commercial Casualty" : claim.claim_type }}</td><td><span class="status">{{ claim.status }}</span></td></tr>
                 <tr *ngIf="claims.length === 0"><td colspan="4" class="empty">No saved claims yet. Create your first FNOL.</td></tr></tbody>
             </table></div>
           </article>
@@ -64,7 +64,7 @@
           <div class="table-scroll" *ngIf="!loadingClaims"><table><thead><tr><th>Claim ID</th><th>Insured Name</th><th>Policy Number</th><th>Created Date</th><th>Incident Date</th><th>Loss Cause</th><th>Status</th><th>Mode of Upload</th></tr></thead>
             <tbody><tr *ngFor="let claim of claims">
               <td><button class="text-button" type="button" (click)="openClaimDetails(claim)" [attr.aria-label]="'Open claim ' + claim.claim_id">{{ claim.claim_id }}</button></td><td>{{ claim.customer_name || "Not Found" }}</td><td>{{ claim.policy_number || "Not Found" }}</td><td>{{ claim.created_at ? (claim.created_at | date:"mediumDate") : "Not Found" }}</td><td>{{ claim.incident_date || "Not Found" }}</td><td>{{ claim.loss_cause || "Not Found" }}</td>
-              <td><select class="status-select" [ngModel]="claim.status" (ngModelChange)="changeStatus(claim, $event)" [attr.aria-label]="'Update status for ' + claim.claim_id"><option *ngFor="let status of statuses" [value]="status">{{ status }}</option></select></td><td><span class="source-mode" [title]="createdByTooltip(claim)">{{ claim.source_mode === "email" || claim.source === "Email FNOL" ? "✉" : "⇧" }}</span></td>
+              <td><select class="status-select" [ngModel]="claim.status" (ngModelChange)="changeStatus(claim, $event)" [attr.aria-label]="'Update status for ' + claim.claim_id" [title]="createdByTooltip(claim)"><option *ngFor="let status of statuses" [value]="status">{{ status }}</option></select></td><td><span class="source-mode" [title]="createdByTooltip(claim)">{{ claim.source_mode === "email" || claim.source === "Email FNOL" ? "✉" : "⇧" }}</span></td>
             </tr><tr *ngIf="claims.length === 0"><td colspan="8" class="empty">No claims match your search. Create a new FNOL to get started.</td></tr></tbody>
           </table></div>
         </section>
