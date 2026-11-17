@@ -337,6 +337,32 @@ def list_claims(
     except PyMongoError as exc:
         raise HTTPException(status_code=503, detail="Unable to read claims from MongoDB.") from exc
 
+@app.get("/api/claims/loss-causes")
+def list_recorded_loss_causes(
+    user: dict = Depends(require_roles(*READ_ROLES))
+):
+    """Return only non-empty loss causes already recorded on in-scope claims."""
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    scope_query = {"$or": [
+        {"claim_type": "Property"},
+        {"claim_type": "Casualty", "casualty_segment": "Commercial"},
+        {"auto_intake_status": "Provisional"}
+    ]}
+    try:
+        recorded_values = get_database()["claims"].distinct("loss_cause", scope_query)
+        options = sorted({
+            value.strip()
+            for value in recorded_values
+            if isinstance(value, str)
+            and value.strip()
+            and value.strip().casefold() not in {"not found", "unknown", "undetermined"}
+        }, key=str.casefold)
+        return {"items": options, "count": len(options)}
+    except PyMongoError as exc:
+        raise HTTPException(status_code=503, detail="Unable to read recorded loss causes.") from exc
+
+
 @app.get("/api/claims/{claim_id}")
 def get_claim_details(
     claim_id: str,
