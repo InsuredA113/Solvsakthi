@@ -20,6 +20,7 @@ from .database import get_database, database_is_available
 from .models import ClaimCreate, ClaimStatusUpdate
 from .claims_analytics import build_claims_analytics, is_in_scope_claim, safe_csv_cell
 from .user_models import LoginRequest, UserCreate
+from .repair_rate_models import RepairRateCreate, RepairRateStatusUpdate
 from .email_intake import EmailIntakeCreate, EmailIntakeReview, extract_email_intake
 from .email_connector_routes import router as email_connector_router
 
@@ -1119,6 +1120,158 @@ def applicable_tax_rules(
         "items": selected, "count": len(selected), "ambiguous_tax_names": ambiguous,
         "profile_status": "Ambiguous" if ambiguous else ("Configured" if selected else "No verified matching tax profile"),
         "message": "Only active, verified, effective-dated rules are returned. This lookup is advisory; confirm the applicable tax treatment with the authorised tax/legal source."
+    }
+
+
+
+# Phase 12: geographically scoped, verified Property repair-rate catalogue
+REPAIR_RATE_READ_ROLES = (
+    "Super Administrator", "Insurance Company Administrator", "Claims Manager",
+    "Property Adjuster", "Surveyor", "Actuarial Analyst", "Approver", "Auditor"
+)
+REPAIR_RATE_ADMIN_ROLES = ("Super Administrator", "Insurance Company Administrator")
+
+
+@app.get("/api/repair-rates")
+def list_repair_rates(
+    country_code: str | None = Query(default=None, min_length=2, max_length=2),
+    state: str | None = Query(default=None, max_length=100),
+    city: str | None = Query(default=None, max_length=100),
+    category: str | None = Query(default=None, max_length=80),
+    status: str | None = Query(default=None, pattern="^(Draft|Active|Inactive)$"),
+    user: dict = Depends(require_roles(*REPAIR_RATE_READ_ROLES))
+):
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    query = {}
+    if country_code:
+        query["country_code"] = country_code.strip().upper()
+    if state:
+        query["state"] = {"$regex": f"^{state.strip()}$", "$options": "i"}
+    if city:
+        query["city"] = {"$regex": f"^{city.strip()}$", "$options": "i"}
+    if category:
+        query["category"] = {"$regex": f"^{category.strip()}$", "$options": "i"}
+    if status:
+        query["status"] = status
+    rows = list(get_database()["repair_rates"].find(query).sort([
+        ("country_code", 1), ("state", 1), ("city", 1), ("category", 1), ("item_name", 1)
+    ]).limit(1000))
+    for row in rows:
+        row["rate_id"] = str(row.pop("_id"))
+        row["unit_rate"] = str(row["unit_rate"])
+    return {"items": rows, "count": len(rows)}
+
+
+@app.post("/api/repair-rates", status_code=201)
+def create_repair_rate(
+    payload: RepairRateCreate,
+    user: dict = Depends(require_roles(*REPAIR_RATE_ADMIN_ROLES))
+):
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    if payload.effective_to and payload.effective_to < payload.effective_from:
+        raise HTTPException(status_code=422, detail="Effective-to date cannot be earlier than effective-from date.")
+    now = datetime.now(timezone.utc).isoformat()
+    record = payload.model_dump(mode="json")
+    record["unit_rate"] = str(payload.unit_rate)
+    record.update({
+        "status": "Draft", "version": 1, "created_at": now, "created_by": user["email"],
+        "verified_by": None, "verified_at": None, "activated_at": None,
+        "verification_note": None
+    })
+    try:
+        saved = get_database()["repair_rates"].insert_one(record)
+    except PyMongoError as exc:
+        raise HTTPException(status_code=503, detail="Unable to save repair rate.") from exc
+    record["rate_id"] = str(saved.inserted_id)
+    record.pop("_id", None)
+    return record
+
+
+@app.patch("/api/repair-rates/{rate_id}/status")
+def change_repair_rate_status(
+    rate_id: str,
+    payload: RepairRateStatusUpdate,
+    user: dict = Depends(require_roles(*REPAIR_RATE_ADMIN_ROLES))
+):
+    try:
+        object_id = ObjectId(rate_id)
+    except InvalidId as exc:
+        raise HTTPException(status_code=400, detail="Invalid repair-rate ID.") from exc
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    collection = get_database()["repair_rates"]
+    existing = collection.find_one({"_id": object_id})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Repair rate not found.")
+    if existing.get("status") == "Active" and payload.status == "Active":
+        raise HTTPException(status_code=409, detail="Active repair rates are immutable. Add a new rate version for any change.")
+    now = datetime.now(timezone.utc).isoformat()
+    changes = {
+        "status": payload.status, "status_updated_at": now,
+        "status_updated_by": user["email"], "verification_note": payload.verification_note.strip()
+    }
+    if payload.status == "Active":
+        if not existing.get("source_name") or not existing.get("source_reference"):
+            raise HTTPException(status_code=422, detail="A named pricing source and source reference are required before activation.")
+        changes.update({"verified_by": user["email"], "verified_at": now, "activated_at": now})
+    updated = collection.find_one_and_update(
+        {"_id": object_id, "status": existing.get("status")},
+        {"$set": changes}, return_document=ReturnDocument.AFTER, projection={"_id": 0}
+    )
+    if not updated:
+        raise HTTPException(status_code=409, detail="Repair rate changed concurrently. Refresh and retry.")
+    updated["rate_id"] = rate_id
+    updated["unit_rate"] = str(updated["unit_rate"])
+    return updated
+
+
+@app.get("/api/claims/{claim_id}/applicable-repair-rates")
+def applicable_repair_rates(
+    claim_id: str,
+    category: str | None = Query(default=None, max_length=80),
+    user: dict = Depends(require_roles(*REPAIR_RATE_READ_ROLES))
+):
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    claim = get_database()["claims"].find_one({"claim_id": claim_id}, {"_id": 0})
+    if not claim:
+        raise HTTPException(status_code=404, detail="Claim not found.")
+    if claim.get("claim_type") != "Property":
+        raise HTTPException(status_code=422, detail="Repair-rate lookup is currently available for Property claims only.")
+    country = (claim.get("country_code") or "").upper()
+    currency = (claim.get("currency") or "").upper()
+    state = (claim.get("region") or "").strip()
+    city = (claim.get("locality") or "").strip()
+    query = {"country_code": country, "currency": currency, "status": "Active"}
+    if state:
+        query["state"] = {"$regex": f"^{state}$", "$options": "i"}
+    if city:
+        query["city"] = {"$regex": f"^{city}$", "$options": "i"}
+    if category:
+        query["category"] = {"$regex": f"^{category.strip()}$", "$options": "i"}
+    rows = list(get_database()["repair_rates"].find(query).sort([
+        ("category", 1), ("item_name", 1), ("effective_from", -1)
+    ]).limit(500))
+    today = date.today()
+    applicable = []
+    for row in rows:
+        start = row.get("effective_from")
+        end = row.get("effective_to")
+        try:
+            start_date = date.fromisoformat(str(start)[:10])
+            end_date = date.fromisoformat(str(end)[:10]) if end else None
+        except ValueError:
+            continue
+        if start_date <= today and (end_date is None or end_date >= today):
+            row["rate_id"] = str(row.pop("_id"))
+            row["unit_rate"] = str(row["unit_rate"])
+            applicable.append(row)
+    return {
+        "claim_id": claim_id, "country_code": country, "currency": currency,
+        "state": state, "city": city, "items": applicable, "count": len(applicable),
+        "message": "Only active rates matching the claim's exact country, state and city are returned. Verify rate applicability and the pricing source before use."
     }
 
 
