@@ -462,7 +462,7 @@
             <tr><td>Less deductible</td><td>{{ formatAmount(+financialEstimate.deductible, financialEstimate.currency) }}</td></tr>
             <tr><th>Preliminary net estimate</th><th>{{ formatAmount(+financialEstimate.preliminary_net_estimate, financialEstimate.currency) }}</th></tr>
           </tbody></table></div>
-          <p class="muted">Pricing: {{ financialEstimate.pricing_source }}. This estimate is pending authorised review and is not a settlement decision.</p><p class="muted" *ngIf="financialEstimate.repair_rate_ids?.length">Verified repair catalogue records used: {{ financialEstimate.repair_rate_ids.join(', ') }}</p>
+          <p class="muted">Pricing: {{ financialEstimate.pricing_source }}. This estimate is pending authorised review and is not a settlement decision.</p><p class="muted" *ngIf="financialEstimate.repair_rate_ids?.length">Verified repair catalogue records used: {{ financialEstimate.repair_rate_ids?.join(', ') }}</p>
         </section>
         <section class="panel damage-results" *ngIf="financialEstimates.length">
           <div class="panel-heading"><h2>Saved financial estimates</h2><span class="subtle">{{ financialEstimates.length }} records</span></div>
