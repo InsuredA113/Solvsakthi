@@ -556,14 +556,14 @@ export class AppComponent implements OnInit {
     return `Created / received by: ${name}\nEmail ID: ${email}`;
   }
 
-  openClaimDetails(claim: Claim): void {
+  openClaimDetails(claim: Claim, editAfterOpen = false): void {
     this.errorMessage = '';
     this.successMessage = '';
     this.loadingClaimDetails = true;
     this.selectedClaim = null;
     this.activePage = 'Claim Details';
     this.http.get<Claim>(`${environment.apiBaseUrl}/claims/${encodeURIComponent(claim.claim_id)}`, { headers: this.authHeaders() }).subscribe({
-      next: result => { this.selectedClaim = result; this.loadingClaimDetails = false; this.loadClaimDocuments(); },
+      next: result => { this.selectedClaim = result; this.loadingClaimDetails = false; this.loadClaimDocuments(); if (editAfterOpen) this.startClaimEdit(); },
       error: error => { this.loadingClaimDetails = false; this.handleApiError(error); }
     });
   }
@@ -683,6 +683,17 @@ export class AppComponent implements OnInit {
       },
       error: error => { this.claimDeleteBusy = false; this.handleApiError(error); }
     });
+  }
+
+  openClaimForEdit(claim: Claim): void {
+    if (!this.canEditClaims()) return;
+    this.openClaimDetails(claim, true);
+  }
+
+  deleteClaimFromRegister(claim: Claim): void {
+    if (!this.canDeleteClaims()) return;
+    this.selectedClaim = claim;
+    this.deleteClaim();
   }
 
   loadClaimDocuments(): void {
