@@ -82,33 +82,40 @@
             </div>
           </div>
           <p class="muted" *ngIf="loadingClaimDetails">Loading claim details…</p>
-          <div *ngIf="selectedClaim && !claimEditMode" class="form-grid">
-            <div><small class="muted">Claim ID</small><p><b>{{ selectedClaim.claim_id }}</b></p></div>
-            <div><small class="muted">Status</small><p><span class="status">{{ selectedClaim.status }}</span></p></div>
-            <div><small class="muted">Insured name</small><p>{{ selectedClaim.customer_name || 'Not Found' }}</p></div>
-            <div><small class="muted">Loss cause</small><p>{{ selectedClaim.loss_cause || 'Not Found' }}</p></div>
-            <div><small class="muted">Policy number</small><p>{{ selectedClaim.policy_number || 'Not Found' }}</p></div>
-            <div><small class="muted">Email</small><p>{{ selectedClaim.email || 'Not Found' }}</p></div>
-            <div><small class="muted">Phone</small><p>{{ selectedClaim.phone || 'Not Found' }}</p></div>
-            <div><small class="muted">Incident date</small><p>{{ selectedClaim.incident_date ? (selectedClaim.incident_date | date:'mediumDate') : 'Not Found' }}</p></div>
-            <div><small class="muted">Estimated loss</small><p>{{ formatAmount(selectedClaim.estimated_loss, selectedClaim.currency) }}</p></div>
-            <div><small class="muted">Loss location</small><p>{{ selectedClaim.loss_location || 'Not Found' }}</p></div>
-            <div><small class="muted">Country / region</small><p>{{ selectedClaim.country_code || 'Not Found' }} · {{ selectedClaim.region || 'Not Found' }}</p></div>
-            <div *ngIf="selectedClaim.claim_type === 'Property'"><small class="muted">Property occupancy</small><p>{{ selectedClaim.property_occupancy || 'Not specified' }}</p></div>
-            <ng-container *ngIf="selectedClaim.claim_type === 'Casualty'">
-              <div><small class="muted">Business / insured entity</small><p>{{ selectedClaim.business_name }}</p></div>
-              <div><small class="muted">Industry</small><p>{{ selectedClaim.industry }}</p></div>
-              <div><small class="muted">Commercial liability type</small><p>{{ selectedClaim.commercial_liability_type }}</p></div>
-            </ng-container>
-            <div class="full"><small class="muted">Incident description</small><p>{{ selectedClaim.incident_description || 'Not Found' }}</p></div>
-            <div class="full" *ngIf="selectedClaim.auto_intake_status === 'Provisional' || (selectedClaim.missing_fields?.length || 0) > 0">
-              <div class="damage-disclaimer"><b>Provisional email claim — information required</b><p>Claim created automatically. Missing details are shown as Not Found; this record is not a coverage or liability decision.</p>
-                <p><b>Missing fields:</b> {{ selectedClaim.missing_fields?.join(', ') || 'Claim classification' }}</p>
-                <ul><li *ngFor="let suggestion of (selectedClaim.suggested_information | keyvalue)">{{ suggestion.key }}: {{ suggestion.value }}</li></ul>
+          <div *ngIf="selectedClaim" class="claim-field-grid">
+            <article class="claim-field-card protected-field">
+              <div class="claim-field-heading"><small>Claim ID</small><span class="protected-label">Protected</span></div>
+              <strong>{{ selectedClaim.claim_id }}</strong>
+            </article>
+            <article class="claim-field-card" *ngFor="let field of claimDetailFields()">
+              <div class="claim-field-heading"><small>{{ field.label }}</small><span class="required-label" *ngIf="field.required">Required</span></div>
+              <ng-container *ngIf="editingClaimField !== field.key">
+                <p class="claim-field-value" [class.long-value]="field.type === 'textarea'">{{ field.key === 'estimated_loss' ? (field.value ? formatAmount(+field.value, selectedClaim.currency) : 'Not Found') : (field.value || 'Not Found') }}</p>
+                <div class="claim-field-actions" *ngIf="canEditClaims()">
+                  <button class="text-button" type="button" (click)="startFieldEdit(field)">Edit</button>
+                  <button class="text-button danger-text" type="button" (click)="clearClaimField(field)" [disabled]="field.required" [title]="field.required ? 'Required field cannot be cleared' : 'Clear only this field'">Delete</button>
+                </div>
+              </ng-container>
+              <div class="claim-field-editor" *ngIf="editingClaimField === field.key">
+                <select *ngIf="field.options?.length" [(ngModel)]="claimFieldDraft" [name]="'field_'+field.key" [disabled]="claimFieldBusy">
+                  <option *ngFor="let option of field.options" [value]="option">{{ option }}</option>
+                </select>
+                <textarea *ngIf="field.type === 'textarea'" [(ngModel)]="claimFieldDraft" [name]="'field_'+field.key" rows="3" [disabled]="claimFieldBusy"></textarea>
+                <input *ngIf="!field.options?.length && field.type !== 'textarea'" [type]="field.type" [(ngModel)]="claimFieldDraft" [name]="'field_'+field.key" [required]="field.required" [disabled]="claimFieldBusy">
+                <div class="claim-field-actions">
+                  <button class="text-button" type="button" (click)="saveClaimField(field)" [disabled]="claimFieldBusy">{{ claimFieldBusy ? 'Saving…' : 'Save' }}</button>
+                  <button class="text-button muted-action" type="button" (click)="cancelFieldEdit()" [disabled]="claimFieldBusy">Cancel</button>
+                </div>
               </div>
-            </div>
-            <div><small class="muted">Created</small><p>{{ selectedClaim.created_at | date:'medium' }}</p></div>
-            <div><small class="muted">Last updated</small><p>{{ selectedClaim.updated_at | date:'medium' }}</p></div>
+            </article>
+            <article class="claim-field-card">
+              <div class="claim-field-heading"><small>Created date</small><span class="protected-label">Protected</span></div>
+              <p class="claim-field-value">{{ selectedClaim.created_at ? (selectedClaim.created_at | date:'medium') : 'Not Found' }}</p>
+            </article>
+            <article class="claim-field-card">
+              <div class="claim-field-heading"><small>Created by</small><span class="protected-label">Protected</span></div>
+              <p class="claim-field-value">{{ selectedClaim.created_by_name || selectedClaim.created_by_email || selectedClaim.created_by || 'Not Found' }}</p>
+            </article>
           </div>
           <section class="panel form-panel claim-edit-panel" *ngIf="selectedClaim && claimEditMode">
             <div class="panel-heading"><div><h2>Edit claim information</h2><p class="muted">Update the claim's recorded details. Claim ID, original creation time and source attribution remain protected.</p></div></div>
