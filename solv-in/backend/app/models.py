@@ -19,6 +19,7 @@ class ClaimCreate(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
     customer_name: str = Field(min_length=2, max_length=120)
+    loss_cause: str | None = Field(default=None, max_length=120)
     email: str | None = Field(default=None, max_length=254)
     phone: str | None = Field(default=None, max_length=30)
     policy_number: str = Field(min_length=2, max_length=80)
