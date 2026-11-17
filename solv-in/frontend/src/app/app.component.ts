@@ -133,7 +133,7 @@ export class AppComponent implements OnInit {
   analyticsCountry = '';
   analyticsCurrency = '';
   analyticsPortfolio = 'All';
-  readonly navigation = ['Dashboard', 'Claims', 'AI Damage Analysis', 'Policy Coverage', 'Financial Estimate', 'Tax Rules', 'Repair Rates', 'Reports', 'Users', 'Settings'];
+  readonly navigation = ['Dashboard', 'Claims', 'AI Damage Analysis', 'Policy Coverage', 'Financial Estimate', 'Repair Rates', 'Reports', 'Users', 'Settings'];
   readonly statuses = ['FNOL Received', 'Under Review', 'Investigation', 'Assessment', 'Pending Approval', 'Approved', 'Closed'];
   draft: ClaimDraft = this.emptyDraft();
 
@@ -470,7 +470,7 @@ export class AppComponent implements OnInit {
     if (page === 'Claims') this.loadClaims();
     if (page === 'AI Damage Analysis' && this.damageClaimId.trim()) this.loadDamageAssessments();
     if (page === 'Users') this.loadUsers();
-    if (page === 'Tax Rules' && this.canManageTaxRules()) this.loadTaxRules();
+    if (page === 'Financial Estimate' && this.canManageTaxRules()) this.loadTaxRules();
     if (page === 'Repair Rates' && this.canManageTaxRules()) this.loadRepairRates();
     if (page === 'Policy Coverage') this.loadPolicies();
     if (page === 'Reports') this.loadClaimsAnalytics();
