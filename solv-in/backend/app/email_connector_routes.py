@@ -248,8 +248,8 @@ def _save_email(provider: str, provider_message_id: str, sender_email: str,
             allowed = {"application/pdf", "image/jpeg", "image/png", "image/webp"}
             valid = (
                 (content_type == "application/pdf" and content.startswith(b"%PDF-")) or
-                (content_type == "image/jpeg" and content.startswith(b"\\xff\\xd8\\xff")) or
-                (content_type == "image/png" and content.startswith(b"\\x89PNG\\r\\n\\x1a\\n")) or
+                (content_type == "image/jpeg" and content.startswith(b"\xff\xd8\xff")) or
+                (content_type == "image/png" and content.startswith(b"\x89PNG\r\n\x1a\n")) or
                 (content_type == "image/webp" and content[:4] == b"RIFF" and content[8:12] == b"WEBP")
             )
             if not claim or content_type not in allowed or not valid or not content or len(content) > 15 * 1024 * 1024:
