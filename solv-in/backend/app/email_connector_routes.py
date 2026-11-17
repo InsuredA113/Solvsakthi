@@ -1,10 +1,13 @@
 """HTTP endpoints for Gmail Pub/Sub and Microsoft Graph notifications."""
+import base64
 import hmac
+import io
 import logging
 from datetime import datetime, timezone
 from email.utils import parseaddr, parsedate_to_datetime
 
 from bson import ObjectId
+from gridfs import GridFSBucket
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
 from pydantic import ValidationError
 from pymongo.errors import DuplicateKeyError
@@ -69,18 +72,118 @@ def _log_connector_failure(provider: str, stage: str, exc: Exception) -> None:
         )
 
 
+def _suggestions_for_missing(missing_fields: list[str]) -> dict[str, str]:
+    guidance = {
+        "customer_name": "Ask for the insured person's full legal name or the business contact name.",
+        "policy_number": "Request the policy number or policy schedule.",
+        "incident_date": "Ask for the date the incident or loss occurred (YYYY-MM-DD preferred).",
+        "incident_description": "Request a brief description of what happened and the reported damage or injury.",
+        "loss_location": "Request the full incident address, including city and country.",
+        "country_code": "Confirm the country where the loss occurred.",
+        "currency": "Confirm the currency for any reported loss amount.",
+        "business_name": "Request the affected business or insured legal entity name.",
+        "industry": "Ask which industry or business activity is involved.",
+        "commercial_liability_type": "Confirm the commercial liability line, such as Public Liability or Product Liability.",
+        "claim_type": "Ask whether this is a Property or Commercial Casualty claim.",
+    }
+    return {field: guidance.get(field, "Please confirm this information with the sender.") for field in missing_fields}
+
+
+def _create_provisional_claim(db, intake_id: str, sender_email: str, parsed: dict,
+                              received_at: str) -> dict | None:
+    classification = parsed.get("suggested_claim_type")
+    if classification == "Out of Scope":
+        return None
+    fields = parsed.get("extracted_fields") or {}
+    missing = list(parsed.get("missing_fields") or [])
+    claim_type = "Property" if classification == "Property" else "Casualty" if classification == "Commercial Casualty" else "Unclassified"
+    if claim_type == "Unclassified" and "claim_type" not in missing:
+        missing.append("claim_type")
+    if claim_type == "Casualty":
+        for name in ("business_name", "industry", "commercial_liability_type"):
+            if not fields.get(name) and name not in missing:
+                missing.append(name)
+
+    incident_date = fields.get("incident_date")
+    if incident_date:
+        try:
+            from datetime import date
+            incident_date = date.fromisoformat(str(incident_date)[:10]).isoformat()
+        except ValueError:
+            incident_date = None
+            if "incident_date" not in missing:
+                missing.append("incident_date")
+
+    def clean(field: str):
+        value = fields.get(field)
+        return value.strip() if isinstance(value, str) and value.strip() else None
+
+    loss_amount = None
+    raw_amount = clean("estimated_loss")
+    if raw_amount:
+        try:
+            loss_amount = float(raw_amount.replace(",", "").replace("INR", "").replace("USD", "").strip())
+            if loss_amount < 0:
+                loss_amount = None
+        except ValueError:
+            loss_amount = None
+
+    now = datetime.now(timezone.utc).isoformat()
+    sequence = db["counters"].find_one_and_update(
+        {"_id": f"claim_id_{datetime.now(timezone.utc).year}"},
+        {"$inc": {"sequence": 1}}, upsert=True, return_document=__import__("pymongo").ReturnDocument.AFTER
+    )
+    claim_id = f"CLM-{datetime.now(timezone.utc).year}-{sequence['sequence']:06d}"
+    claim = {
+        "claim_id": claim_id,
+        "customer_name": clean("customer_name"),
+        "email": clean("email") or sender_email,
+        "phone": clean("phone"),
+        "policy_number": clean("policy_number"),
+        "claim_type": claim_type,
+        "property_occupancy": None,
+        "casualty_segment": "Commercial" if claim_type == "Casualty" else None,
+        "business_name": clean("business_name"),
+        "industry": clean("industry"),
+        "commercial_liability_type": clean("commercial_liability_type"),
+        "incident_date": incident_date,
+        "incident_description": clean("incident_description"),
+        "loss_location": clean("loss_location"),
+        "country_code": clean("country_code"),
+        "region": None, "locality": None, "postal_code": None,
+        "estimated_loss": loss_amount,
+        "currency": clean("currency"),
+        "status": "Under Review",
+        "created_at": now, "updated_at": now,
+        "created_by": "system:gmail-auto-intake" if parsed else "system:email-auto-intake",
+        "created_by_type": "system", "source": "Email FNOL",
+        "source_intake_id": intake_id,
+        "auto_intake_status": "Provisional" if missing else "Created",
+        "missing_fields": sorted(set(missing)),
+        "suggested_information": _suggestions_for_missing(sorted(set(missing))),
+        "classification_reason": parsed.get("classification_reason"),
+        "source_received_at": received_at,
+    }
+    db["claims"].create_index("source_intake_id", unique=True, sparse=True)
+    db["claims"].insert_one(claim)
+    claim.pop("_id", None)
+    return claim
+
+
 def _save_email(provider: str, provider_message_id: str, sender_email: str,
-                subject: str, body_text: str, received_at: datetime | None):
+                subject: str, body_text: str, received_at: datetime | None,
+                attachments: list[dict] | None = None):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
-    collection = get_database()["email_intake"]
+    db = get_database()
+    collection = db["email_intake"]
     collection.create_index([("provider", 1), ("provider_message_id", 1)], unique=True)
     existing = collection.find_one(
         {"provider": provider, "provider_message_id": provider_message_id},
         {"_id": 0, "body_text": 0}
     )
     if existing:
-        return {"duplicate": True, "intake_id": existing["intake_id"]}
+        return {"duplicate": True, "intake_id": existing["intake_id"], "claim_id": existing.get("claim_id")}
     if not sender_email:
         return {"ignored": True, "reason": "missing_sender_address"}
     try:
@@ -94,15 +197,16 @@ def _save_email(provider: str, provider_message_id: str, sender_email: str,
         return {"ignored": True, "reason": "sender_address_missing_or_invalid"}
     parsed = extract_email_intake(payload.subject, payload.body_text)
     received = (payload.received_at or datetime.now(timezone.utc)).isoformat()
+    intake_id = str(ObjectId())
     record = {
-        "intake_id": str(ObjectId()), "provider": provider,
+        "intake_id": intake_id, "provider": provider,
         "provider_message_id": provider_message_id,
         "sender_email": str(payload.sender_email), "subject": payload.subject,
         "body_text": payload.body_text, "received_at": received,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "created_by": provider + "_connector", **parsed,
-        "received_at": received, "review_status": parsed["intake_status"],
-        "review_history": [],
+        "review_status": parsed["intake_status"], "review_history": [],
+        "auto_creation_status": "Pending",
     }
     try:
         collection.insert_one(record)
@@ -111,8 +215,87 @@ def _save_email(provider: str, provider_message_id: str, sender_email: str,
             {"provider": provider, "provider_message_id": provider_message_id},
             {"_id": 0, "body_text": 0}
         )
-        return {"duplicate": True, "intake_id": existing["intake_id"]}
-    return {"duplicate": False, "intake_id": record["intake_id"]}
+        return {"duplicate": True, "intake_id": existing["intake_id"], "claim_id": existing.get("claim_id")}
+
+    claim = None
+    try:
+        claim = _create_provisional_claim(db, intake_id, str(payload.sender_email), parsed, received)
+        if claim:
+            collection.update_one({"intake_id": intake_id}, {"$set": {
+                "claim_id": claim["claim_id"], "review_status": "Converted",
+                "conversion_state": "Completed", "auto_creation_status": claim["auto_intake_status"],
+                "missing_fields": claim["missing_fields"],
+                "suggested_information": claim["suggested_information"],
+                "converted_at": datetime.now(timezone.utc).isoformat(),
+            }})
+        else:
+            collection.update_one({"intake_id": intake_id}, {"$set": {
+                "auto_creation_status": "Out of Scope",
+                "auto_creation_note": "Personal-lines or unsupported claim indicators were detected; no in-scope claim record was created."
+            }})
+    except Exception:
+        logger.exception("Automatic claim creation failed for email intake %s", intake_id)
+        collection.update_one({"intake_id": intake_id}, {"$set": {"auto_creation_status": "Failed"}})
+        raise
+
+    saved_documents = []
+    for attachment in attachments or []:
+        try:
+            filename = (attachment.get("filename") or "email-attachment").replace("\\", "/").split("/")[-1][:180]
+            content_type = (attachment.get("content_type") or "").lower()
+            content = attachment.get("content") or b""
+            allowed = {"application/pdf", "image/jpeg", "image/png", "image/webp"}
+            valid = (
+                (content_type == "application/pdf" and content.startswith(b"%PDF-")) or
+                (content_type == "image/jpeg" and content.startswith(b"\\xff\\xd8\\xff")) or
+                (content_type == "image/png" and content.startswith(b"\\x89PNG\\r\\n\\x1a\\n")) or
+                (content_type == "image/webp" and content[:4] == b"RIFF" and content[8:12] == b"WEBP")
+            )
+            if not claim or content_type not in allowed or not valid or not content or len(content) > 15 * 1024 * 1024:
+                continue
+            file_id = GridFSBucket(db, bucket_name="claim_documents").upload_from_stream(
+                filename, io.BytesIO(content),
+                metadata={"claim_id": claim["claim_id"], "content_type": content_type,
+                          "size": len(content), "uploaded_at": datetime.now(timezone.utc).isoformat(),
+                          "uploaded_by": "system:email-attachment", "source": "email_attachment",
+                          "source_intake_id": intake_id}
+            )
+            saved_documents.append({"file_id": str(file_id), "filename": filename})
+        except Exception:
+            logger.exception("Unable to store an email attachment for intake %s", intake_id)
+    collection.update_one({"intake_id": intake_id}, {"$set": {
+        "attachment_count": len(saved_documents), "attachments_saved": saved_documents
+    }})
+    return {"duplicate": False, "intake_id": intake_id,
+            "claim_id": claim["claim_id"] if claim else None,
+            "attachments_saved": len(saved_documents)}
+
+
+def _gmail_attachment_parts(part: dict):
+    for child in part.get("parts", []) or []:
+        yield from _gmail_attachment_parts(child)
+    body = part.get("body") or {}
+    attachment_id = body.get("attachmentId")
+    filename = part.get("filename") or ""
+    if attachment_id and filename:
+        yield {"attachment_id": attachment_id, "filename": filename,
+               "content_type": (part.get("mimeType") or "").lower()}
+
+
+def _fetch_gmail_attachments(message: dict, message_id: str, token: str) -> list[dict]:
+    attachments = []
+    for part in _gmail_attachment_parts(message.get("payload") or {}):
+        if part["content_type"] not in {"application/pdf", "image/jpeg", "image/png", "image/webp"}:
+            continue
+        try:
+            result = gmail_api("GET", f"messages/{message_id}/attachments/{part['attachment_id']}", token)
+            data = result.get("data") or ""
+            content = base64.urlsafe_b64decode(data + "=" * (-len(data) % 4))
+            if content and len(content) <= 15 * 1024 * 1024:
+                attachments.append({"filename": part["filename"], "content_type": part["content_type"], "content": content})
+        except Exception:
+            logger.exception("Unable to retrieve a supported Gmail attachment from message %s", message_id)
+    return attachments
 
 
 @router.get("/api/email-connectors/status")
@@ -204,7 +387,7 @@ def gmail_pubsub(payload: dict, authorization: str | None = Header(default=None)
                         received = received.replace(tzinfo=timezone.utc)
                 except (TypeError, ValueError, OverflowError):
                     pass
-            _save_email("gmail", mailbox + ":" + message_id, sender, headers.get("subject", ""), gmail_body(message), received)
+            _save_email("gmail", mailbox + ":" + message_id, sender, headers.get("subject", ""), gmail_body(message), received, _fetch_gmail_attachments(message, message_id, token))
         states.update_one({"_id": "gmail:" + mailbox}, {"$set": {
             "last_history_id": latest_history_id,
             "last_notification_history_id": str(notified_history_id),
