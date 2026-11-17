@@ -99,6 +99,9 @@ export class AppComponent implements OnInit {
   coverageAssessment: any = null;
   coverageAssessments: any[] = [];
   taxRules: any[] = [];
+  usTaxResearchMatrix: any = null;
+  usTaxResearchBusy = false;
+
   taxRuleDraft: any = this.emptyTaxRuleDraft();
   taxRulesBusy = false;
   taxRuleCountryFilter = '';
@@ -307,6 +310,14 @@ export class AppComponent implements OnInit {
     return { country_code: '', currency: '', admin_area: '', region: '', locality: '', tax_name: '', tax_type: 'Sales tax', rate_percent: 0, calculation_order: 100, applies_to: 'depreciated_repair_subtotal', compound_on_prior_taxes: false, tax_point_type: 'Tax point date', effective_from: new Date().toISOString().slice(0, 10), effective_to: '', authority_name: '', authority_reference: '', source_url: '', notes: '' };
   }
 
+  loadUsTaxResearchMatrix(): void {
+    this.usTaxResearchBusy = true;
+    this.http.get<any>(`${environment.apiBaseUrl}/tax-research/us-water-restoration`, { headers: this.authHeaders() }).subscribe({
+      next: result => { this.usTaxResearchMatrix = result; this.usTaxResearchBusy = false; },
+      error: error => { this.usTaxResearchBusy = false; this.handleApiError(error); }
+    });
+  }
+
   loadTaxRules(): void {
     let params = new HttpParams();
     if (this.taxRuleCountryFilter.trim()) params = params.set('country_code', this.taxRuleCountryFilter.trim().toUpperCase());
@@ -470,7 +481,7 @@ export class AppComponent implements OnInit {
     if (page === 'Claims') this.loadClaims();
     if (page === 'AI Damage Analysis' && this.damageClaimId.trim()) this.loadDamageAssessments();
     if (page === 'Users') this.loadUsers();
-    if (page === 'Financial Estimate' && this.canManageTaxRules()) this.loadTaxRules();
+    if (page === 'Financial Estimate' && this.canManageTaxRules()) { this.loadTaxRules(); this.loadUsTaxResearchMatrix(); }
     if (page === 'Repair Rates' && this.canManageTaxRules()) this.loadRepairRates();
     if (page === 'Policy Coverage') this.loadPolicies();
     if (page === 'Reports') this.loadClaimsAnalytics();
