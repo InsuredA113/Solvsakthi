@@ -39,7 +39,7 @@
           <article class="panel claims-panel">
             <div class="panel-heading"><h2>Recent claims</h2><button class="text-button" (click)="selectPage('Claims')">View all →</button></div>
             <div class="table-scroll"><table><thead><tr><th>Claim ID</th><th>Customer</th><th>Type</th><th>Status</th></tr></thead>
-              <tbody><tr *ngFor="let claim of claims.slice(0,5)"><td>{{ claim.claim_id }}</td><td>{{ claim.customer_name }}</td><td>{{ claim.claim_type === 'Casualty' ? 'Commercial Casualty' : 'Property' }}</td><td><span class="status">{{ claim.status }}</span></td></tr>
+              <tbody><tr *ngFor="let claim of claims.slice(0,5)"><td>{{ claim.claim_id }}</td><td>{{ claim.customer_name || "Not Found" }}</td><td>{{ claim.claim_type === "Casualty" ? "Commercial Casualty" : claim.claim_type }}</td><td><span class="status">{{ claim.status }}</span></td></tr>
                 <tr *ngIf="claims.length === 0"><td colspan="4" class="empty">No saved claims yet. Create your first FNOL.</td></tr></tbody>
             </table></div>
           </article>
@@ -54,7 +54,7 @@
       <ng-container *ngIf="activePage === 'Claims'">
         <section class="panel filters">
           <input aria-label="Search claims" placeholder="Search claim ID, customer or policy…" [(ngModel)]="searchTerm" (keyup.enter)="loadClaims()">
-          <select aria-label="Filter claim type" [(ngModel)]="typeFilter" (change)="loadClaims()"><option value="">All claim types</option><option value="Property">Property</option><option value="Casualty">Commercial Casualty</option></select>
+          <select aria-label="Filter claim type" [(ngModel)]="typeFilter" (change)="loadClaims()"><option value="">All claim types</option><option value="Property">Property</option><option value="Casualty">Commercial Casualty</option><option value="Unclassified">Unclassified</option></select>
           <select aria-label="Filter status" [(ngModel)]="statusFilter" (change)="loadClaims()"><option value="">All statuses</option><option *ngFor="let status of statuses" [value]="status">{{ status }}</option></select>
           <button class="secondary-action" (click)="loadClaims()">Search</button>
         </section>
@@ -63,7 +63,7 @@
           <p class="muted" *ngIf="loadingClaims">Loading claims…</p>
           <div class="table-scroll" *ngIf="!loadingClaims"><table><thead><tr><th>Claim ID</th><th>Customer</th><th>Policy</th><th>Type</th><th>Incident date</th><th>Estimated loss</th><th>Status</th></tr></thead>
             <tbody><tr *ngFor="let claim of claims">
-              <td><button class="text-button" type="button" (click)="openClaimDetails(claim)" [attr.aria-label]="'Open claim ' + claim.claim_id">{{ claim.claim_id }}</button></td><td>{{ claim.customer_name }}</td><td>{{ claim.policy_number }}</td><td>{{ claim.claim_type }}</td><td>{{ claim.incident_date }}</td><td>{{ formatAmount(claim.estimated_loss, claim.currency) }}</td>
+              <td><button class="text-button" type="button" (click)="openClaimDetails(claim)" [attr.aria-label]="'Open claim ' + claim.claim_id">{{ claim.claim_id }}</button></td><td>{{ claim.customer_name || "Not Found" }}</td><td>{{ claim.policy_number || "Not Found" }}</td><td>{{ claim.claim_type === "Casualty" ? "Commercial Casualty" : claim.claim_type }}</td><td>{{ claim.incident_date || "Not Found" }}</td><td>{{ formatAmount(claim.estimated_loss, claim.currency) }}</td>
               <td><select class="status-select" [ngModel]="claim.status" (ngModelChange)="changeStatus(claim, $event)" [attr.aria-label]="'Update status for ' + claim.claim_id"><option *ngFor="let status of statuses" [value]="status">{{ status }}</option></select></td>
             </tr><tr *ngIf="claims.length === 0"><td colspan="7" class="empty">No claims match your search. Create a new FNOL to get started.</td></tr></tbody>
           </table></div>
@@ -80,21 +80,27 @@
           <div *ngIf="selectedClaim" class="form-grid">
             <div><small class="muted">Claim ID</small><p><b>{{ selectedClaim.claim_id }}</b></p></div>
             <div><small class="muted">Status</small><p><span class="status">{{ selectedClaim.status }}</span></p></div>
-            <div><small class="muted">Customer name</small><p>{{ selectedClaim.customer_name }}</p></div>
-            <div><small class="muted">Policy number</small><p>{{ selectedClaim.policy_number }}</p></div>
-            <div><small class="muted">Email</small><p>{{ selectedClaim.email || 'Not provided' }}</p></div>
-            <div><small class="muted">Phone</small><p>{{ selectedClaim.phone || 'Not provided' }}</p></div>
-            <div><small class="muted">Incident date</small><p>{{ selectedClaim.incident_date | date:'mediumDate' }}</p></div>
+            <div><small class="muted">Customer name</small><p>{{ selectedClaim.customer_name || 'Not Found' }}</p></div>
+            <div><small class="muted">Policy number</small><p>{{ selectedClaim.policy_number || 'Not Found' }}</p></div>
+            <div><small class="muted">Email</small><p>{{ selectedClaim.email || 'Not Found' }}</p></div>
+            <div><small class="muted">Phone</small><p>{{ selectedClaim.phone || 'Not Found' }}</p></div>
+            <div><small class="muted">Incident date</small><p>{{ selectedClaim.incident_date ? (selectedClaim.incident_date | date:'mediumDate') : 'Not Found' }}</p></div>
             <div><small class="muted">Estimated loss</small><p>{{ formatAmount(selectedClaim.estimated_loss, selectedClaim.currency) }}</p></div>
-            <div><small class="muted">Loss location</small><p>{{ selectedClaim.loss_location }}</p></div>
-            <div><small class="muted">Country / region</small><p>{{ selectedClaim.country_code }} · {{ selectedClaim.region || 'Not provided' }}</p></div>
+            <div><small class="muted">Loss location</small><p>{{ selectedClaim.loss_location || 'Not Found' }}</p></div>
+            <div><small class="muted">Country / region</small><p>{{ selectedClaim.country_code || 'Not Found' }} · {{ selectedClaim.region || 'Not Found' }}</p></div>
             <div *ngIf="selectedClaim.claim_type === 'Property'"><small class="muted">Property occupancy</small><p>{{ selectedClaim.property_occupancy || 'Not specified' }}</p></div>
             <ng-container *ngIf="selectedClaim.claim_type === 'Casualty'">
               <div><small class="muted">Business / insured entity</small><p>{{ selectedClaim.business_name }}</p></div>
               <div><small class="muted">Industry</small><p>{{ selectedClaim.industry }}</p></div>
               <div><small class="muted">Commercial liability type</small><p>{{ selectedClaim.commercial_liability_type }}</p></div>
             </ng-container>
-            <div class="full"><small class="muted">Incident description</small><p>{{ selectedClaim.incident_description }}</p></div>
+            <div class="full"><small class="muted">Incident description</small><p>{{ selectedClaim.incident_description || 'Not Found' }}</p></div>
+            <div class="full" *ngIf="selectedClaim.auto_intake_status === 'Provisional' || (selectedClaim.missing_fields?.length || 0) > 0">
+              <div class="damage-disclaimer"><b>Provisional email claim — information required</b><p>Claim created automatically. Missing details are shown as Not Found; this record is not a coverage or liability decision.</p>
+                <p><b>Missing fields:</b> {{ selectedClaim.missing_fields?.join(', ') || 'Claim classification' }}</p>
+                <ul><li *ngFor="let suggestion of (selectedClaim.suggested_information | keyvalue)">{{ suggestion.key }}: {{ suggestion.value }}</li></ul>
+              </div>
+            </div>
             <div><small class="muted">Created</small><p>{{ selectedClaim.created_at | date:'medium' }}</p></div>
             <div><small class="muted">Last updated</small><p>{{ selectedClaim.updated_at | date:'medium' }}</p></div>
           </div>
