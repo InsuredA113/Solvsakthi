@@ -1,7 +1,7 @@
 <ng-container *ngIf="isAuthenticated; else signInView">
 <div class="shell" [class.claim-detail-mode]="activePage === 'Claim Details'">
   <aside class="sidebar">
-    <div class="brand"><div class="brand-mark">S</div><div><strong>Solv-In</strong><small>Smarter Claims. Faster Decisions.</small></div></div>
+    <div class="brand"><div class="brand-mark" aria-hidden="true">✓</div><div><strong>Solv-In</strong><small>File • Track • Resolve</small></div></div>
     <nav aria-label="Main navigation">
       <ng-container *ngFor="let item of navigation"><button *ngIf="(item !== 'Users' || isAdmin()) && (item !== 'AI Damage Analysis' || canAnalyseDamage()) && (item !== 'Tax Rules' || canManageTaxRules()) && (item !== 'Repair Rates' || canManageTaxRules()) && (item !== 'Policy Coverage' || canViewPolicyCoverage())" (click)="selectPage(item)" [class.active]="activePage === item">
         <span class="nav-icon">{{ item === 'Dashboard' ? '⌂' : item === 'Claims' ? '▤' : item === 'New FNOL' ? '+' : item === 'Email FNOL' ? '✉' : item === 'AI Damage Analysis' ? '◈' : item === 'Tax Rules' ? '⌁' : item === 'Repair Rates' ? '⌖' : item === 'Policy Coverage' ? '▣' : item === 'Reports' ? '▥' : item === 'Users' ? '♙' : '⚙' }}</span>{{ item }}
@@ -20,7 +20,7 @@
       <div class="welcome">
         <div><p class="eyebrow">SOLV-IN WORKSPACE</p><h1>{{ activePage === 'Dashboard' ? 'Welcome to Solv-In' : activePage }}</h1>
         <p class="muted">{{ activePage === 'Dashboard' ? 'Your Property and Commercial Casualty claims at a glance' : 'Manage claim intake and operational workflows' }}</p></div>
-        <button class="primary-action" *ngIf="activePage !== 'New FNOL'" (click)="selectPage('New FNOL')">＋ New FNOL</button>
+        
       </div>
 
       <div class="alert error" *ngIf="errorMessage">{{ errorMessage }}</div>
@@ -59,7 +59,7 @@
           <button class="secondary-action" (click)="loadClaims()">Search</button>
         </section>
         <section class="panel claims-panel">
-          <div class="panel-heading"><h2>Claims register</h2><span class="subtle">{{ claims.length }} records shown</span></div>
+          <div class="panel-heading"><div><h2>Claims register</h2><span class="subtle">{{ claims.length }} records shown</span></div><button class="primary-action" type="button" (click)="selectPage('New FNOL')">＋ New FNOL</button></div>
           <p class="muted" *ngIf="loadingClaims">Loading claims…</p>
           <div class="table-scroll" *ngIf="!loadingClaims"><table><thead><tr><th>Claim ID</th><th>Insured Name</th><th>Policy Number</th><th>Created Date</th><th>Incident Date</th><th>Loss Cause</th><th>Status</th><th>Mode of Upload</th></tr></thead>
             <tbody><tr *ngFor="let claim of claims">
