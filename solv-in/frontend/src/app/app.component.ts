@@ -664,6 +664,8 @@ export class AppComponent implements OnInit {
     const f = item.extracted_fields || {};
     const type = item.confirmed_claim_type || item.suggested_claim_type;
     const commercial = type === 'Commercial Casualty';
+    const lossLocation = (f['loss_location'] || '').toLowerCase();
+    const indianLocation = /\\b(india|tamil nadu|coimbatore|chennai|bengaluru|bangalore|mumbai|pune|hyderabad|delhi|new delhi|kolkata|ahmedabad|jaipur|kochi|thiruvananthapuram|madurai|tiruchirappalli|salem|erode|tiruppur|vellore|mysuru|mysore)\\b/.test(lossLocation);
     this.draft = {
       customer_name: f['customer_name'] || '',
       email: f['email'] || item.sender_email || '',
@@ -678,12 +680,12 @@ export class AppComponent implements OnInit {
       incident_date: f['incident_date'] || '',
       incident_description: f['incident_description'] || '',
       loss_location: f['loss_location'] || '',
-      country_code: (f['country_code'] || '').toUpperCase(),
+      country_code: (f['country_code'] || (indianLocation ? 'IN' : '')).toUpperCase(),
       region: '',
       locality: '',
       postal_code: '',
       estimated_loss: f['estimated_loss'] && !isNaN(Number(f['estimated_loss'])) ? Number(f['estimated_loss']) : null,
-      currency: (f['currency'] || '').toUpperCase()
+      currency: (f['currency'] || (indianLocation ? 'INR' : '')).toUpperCase()
     };
     this.selectedEmailIntakeId = item.intake_id;
     this.selectPage('New FNOL');
