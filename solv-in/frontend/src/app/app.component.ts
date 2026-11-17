@@ -6,12 +6,13 @@ import { environment } from '../environments/environment';
 
 interface User { full_name: string; email: string; role: string; is_active?: boolean; }
 interface Claim {
-  claim_id: string; customer_name: string; email?: string; phone?: string;
-  policy_number: string; claim_type: 'Property' | 'Casualty'; property_occupancy?: string | null;
+  claim_id: string; customer_name?: string | null; email?: string | null; phone?: string | null;
+  policy_number?: string | null; claim_type: 'Property' | 'Casualty' | 'Unclassified'; property_occupancy?: string | null;
   casualty_segment?: 'Commercial' | null; business_name?: string | null; industry?: string | null;
-  commercial_liability_type?: string | null; incident_date: string;
-  incident_description: string; loss_location: string; country_code: string; region?: string; locality?: string; postal_code?: string; estimated_loss?: number | null;
-  currency: string; status: string; created_at?: string; updated_at?: string;
+  commercial_liability_type?: string | null; incident_date?: string | null;
+  incident_description?: string | null; loss_location?: string | null; country_code?: string | null; region?: string | null; locality?: string | null; postal_code?: string | null; estimated_loss?: number | null;
+  currency?: string | null; status: string; created_at?: string; updated_at?: string;
+  auto_intake_status?: string; missing_fields?: string[]; suggested_information?: Record<string, string>;
 }
 interface ClaimDocument { file_id: string; claim_id: string; filename: string; content_type: string; size: number; uploaded_at?: string; uploaded_by?: string; }
 interface DamageAssessment {
@@ -944,9 +945,10 @@ export class AppComponent implements OnInit {
     }
   }
 
-  formatAmount(amount: number | null | undefined, currency: string): string {
-    if (amount === null || amount === undefined) return 'Not provided';
+  formatAmount(amount: number | null | undefined, currency: string | null | undefined): string {
+    if (amount === null || amount === undefined) return 'Not Found';
+    if (!currency) return amount.toLocaleString();
     try { return new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(amount); }
-    catch { return `${currency} ${amount.toLocaleString()}`; }
+    catch { return currency + ' ' + amount.toLocaleString(); }
   }
 }
