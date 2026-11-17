@@ -32,8 +32,11 @@ def sample_payload(**overrides):
 def test_decimal_calculation_includes_depreciation_tax_fee_interest_and_deductible():
     result = calculate_estimate(sample_payload())
     assert result["gross_repair_cost"] == "1000.00"
+    assert result["replacement_cost_value"] == "1000.00"
     assert result["depreciation"] == "100.00"
     assert result["net_repair_cost"] == "900.00"
+    assert result["actual_cash_value"] == "900.00"
+    assert "policy wording may define valuation" in result["valuation_basis_note"]
     assert result["total_tax"] == "72.00"
     assert result["total_fees_and_charges"] == "50.00"
     assert result["interest"]["amount"] == "49.32"
