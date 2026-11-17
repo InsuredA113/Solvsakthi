@@ -706,6 +706,19 @@ def create_financial_estimate(
         raise HTTPException(status_code=404, detail="Claim not found.")
     if not is_in_scope_claim(claim):
         raise HTTPException(status_code=422, detail="Financial estimates are limited to all Property and Commercial Casualty claims.")
+    source_damage_assessment = None
+    if payload.source_damage_assessment_id:
+        if claim.get("claim_type") != "Property":
+            raise HTTPException(status_code=422, detail="AI damage assessment linking is currently available for Property claims only.")
+        try:
+            damage_object_id = ObjectId(payload.source_damage_assessment_id)
+        except InvalidId as exc:
+            raise HTTPException(status_code=422, detail="Invalid source damage assessment ID.") from exc
+        source_damage_assessment = db["damage_assessments"].find_one({"_id": damage_object_id, "claim_id": claim_id})
+        if not source_damage_assessment:
+            raise HTTPException(status_code=404, detail="The selected damage assessment was not found for this claim.")
+        if source_damage_assessment.get("status") not in {"Reviewed", "Approved"}:
+            raise HTTPException(status_code=409, detail="The AI damage assessment must be reviewed by an authorised adjuster before it can be used in a financial estimate.")
     if (claim.get("currency") or "").upper() != payload.currency:
         raise HTTPException(status_code=422, detail="Estimate currency must match the claim currency.")
     if (claim.get("country_code") and claim["country_code"].upper() != payload.country_code):
@@ -785,6 +798,15 @@ def create_financial_estimate(
     now = datetime.now(timezone.utc).isoformat()
     record = {
         **result, "claim_id": claim_id, "claim_type": claim.get("claim_type"),
+        "source_damage_assessment": ({
+            "assessment_id": str(source_damage_assessment["_id"]),
+            "status": source_damage_assessment.get("status"),
+            "damage_category": source_damage_assessment.get("damage_category"),
+            "affected_areas": source_damage_assessment.get("affected_areas", []),
+            "visible_observations": source_damage_assessment.get("visible_observations", []),
+            "confidence": source_damage_assessment.get("confidence"),
+            "created_at": source_damage_assessment.get("created_at")
+        } if source_damage_assessment else None),
         "created_at": now, "created_by": user["email"], "status": "Preliminary - Pending Review",
         "tax_application_confirmation": {
             "confirmed": bool(payload.tax_mode == "automatic" and payload.confirm_automatic_tax_application and tax_rule_snapshots),
