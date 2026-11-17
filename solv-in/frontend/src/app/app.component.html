@@ -54,7 +54,7 @@
       <ng-container *ngIf="activePage === 'Claims'">
         <section class="panel filters">
           <input aria-label="Search claims" placeholder="Search claim ID, insured or policy…" [(ngModel)]="searchTerm" (keyup.enter)="loadClaims()">
-          <select aria-label="Filter by loss cause" [(ngModel)]="lossCauseFilter" (change)="loadClaims()"><option value="">All loss causes</option><option>Fire</option><option>Flood</option><option>Storm</option><option>Water damage</option><option>Theft</option><option>Impact</option><option>Electrical</option><option>Other</option><option>Undetermined</option></select>
+          <select aria-label="Filter by loss cause" [(ngModel)]="lossCauseFilter" (change)="loadClaims()"><option value="">All recorded loss causes</option><option *ngFor="let cause of lossCauseOptions" [value]="cause">{{ cause }}</option></select>
           <select aria-label="Filter status" [(ngModel)]="statusFilter" (change)="loadClaims()"><option value="">All statuses</option><option *ngFor="let status of statuses" [value]="status">{{ status }}</option></select>
           <button class="secondary-action" (click)="loadClaims()">Search</button>
         </section>
