@@ -534,6 +534,26 @@
       <ng-container *ngIf="activePage === 'Financial Estimate' && canManageTaxRules()">
         <section class="panel form-panel">
           <div class="panel-heading"><div><h2>Tax jurisdiction rules</h2><p class="muted">Configure verified tax rules alongside this financial estimate. New rules are saved as Draft and must be verified and activated by an authorised administrator.</p></div></div>
+          <section class="panel claims-panel" style="margin-top:14px">
+            <div class="panel-heading">
+              <div><h2>50-state water damage restoration research</h2><p class="muted">Official-source research tracker. This is not a tax-rate table and does not automatically calculate tax.</p></div>
+              <button class="secondary-action" type="button" (click)="loadUsTaxResearchMatrix()" [disabled]="usTaxResearchBusy">{{ usTaxResearchBusy ? 'Refreshing…' : 'Refresh state matrix' }}</button>
+            </div>
+            <div class="damage-disclaimer" *ngIf="usTaxResearchMatrix">
+              {{ usTaxResearchMatrix.state_count }} states · {{ usTaxResearchMatrix.verified_state_count }} fully verified · {{ usTaxResearchMatrix.partially_researched_state_count }} partially researched · {{ usTaxResearchMatrix.pending_state_count }} pending.
+              Automatic tax application from this research tracker is disabled.
+            </div>
+            <div class="table-scroll" *ngIf="usTaxResearchMatrix">
+              <table><thead><tr><th>State</th><th>Research status</th><th>Activity findings</th><th>Official source</th></tr></thead><tbody>
+                <tr *ngFor="let state of usTaxResearchMatrix.items">
+                  <td>{{ state.state_name }} ({{ state.state_code }})</td>
+                  <td><span class="status">{{ state.status }}</span></td>
+                  <td><div *ngFor="let finding of state.verified_categories"><b>{{ finding.activity }}</b><small>Residential: {{ finding.residential }}</small><small>Commercial: {{ finding.commercial }}</small></div><small *ngIf="!state.verified_categories.length">No conclusion loaded — research required.</small></td>
+                  <td><a *ngIf="state.source_url" [href]="state.source_url" target="_blank" rel="noopener noreferrer">{{ state.source_name }} · {{ state.source_reference }}</a><span *ngIf="!state.source_url">Pending official source</span></td>
+                </tr>
+              </tbody></table>
+            </div>
+          </section>
           <div class="damage-disclaimer">Solv-In does not preload or guess worldwide tax rates. Verify each rate, jurisdiction, taxable base and effective date against the relevant official authority before activation. Active rules are immutable; create a new version for changes.</div>
           <div class="form-grid">
             <label>Country code (ISO alpha-2) *<input name="rule_country" maxlength="2" [(ngModel)]="taxRuleDraft.country_code" placeholder="US, GB, IN, AU"></label>
