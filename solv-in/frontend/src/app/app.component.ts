@@ -749,6 +749,7 @@ export class AppComponent implements OnInit {
     const indianLocation = /\b(india|tamil nadu|coimbatore|chennai|bengaluru|bangalore|mumbai|pune|hyderabad|delhi|new delhi|kolkata|ahmedabad|jaipur|kochi|thiruvananthapuram|madurai|tiruchirappalli|salem|erode|tiruppur|vellore|mysuru|mysore)\b/.test(lossLocation);
     this.draft = {
       customer_name: f['customer_name'] || '',
+      loss_cause: f['loss_cause'] || '',
       email: f['email'] || item.sender_email || '',
       phone: f['phone'] || '',
       policy_number: f['policy_number'] || '',
