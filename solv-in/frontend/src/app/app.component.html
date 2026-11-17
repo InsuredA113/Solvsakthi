@@ -284,6 +284,10 @@
                 <button *ngIf="canApproveDamage()" class="danger-action" type="button" (click)="reviewDamageAssessment(item, 'Rejected')" [disabled]="damageReviewBusyId === item.assessment_id">Reject assessment</button>
               </div>
             </div>
+            <div class="form-actions" *ngIf="item.claim_id && (item.status === 'Reviewed' || item.status === 'Approved')">
+              <button class="primary-action" type="button" (click)="prepareEstimateFromDamage(item)">Use reviewed findings in Financial Estimate</button>
+              <span class="muted">AI findings prefill the repair description only. Verify quantities and prices manually.</span>
+            </div>
           </article>
         </section>
       </ng-container>
@@ -357,6 +361,7 @@
       <ng-container *ngIf="activePage === 'Financial Estimate'">
         <section class="panel form-panel">
           <div class="panel-heading"><div><h2>Claims financial calculation</h2><p class="muted">Worldwide-ready Python Decimal calculations with configurable country, regional and local tax rules and ISO currency support.</p></div></div>
+          <div class="damage-disclaimer" *ngIf="estimateDraft.source_damage_assessment_id">Linked reviewed AI assessment: {{ estimateDraft.source_damage_assessment_id }}. AI findings provide repair-scoping context only; they do not supply verified quantities, unit rates or coverage terms.</div>
           <div class="damage-disclaimer">This is a preliminary estimate, not a coverage decision or settlement offer. Solv-In does not automatically assume a tax rate, fee or interest charge. Configure rules for the claim's country and loss jurisdiction using the correct tax point date, current law and policy wording. No country-specific rate is assumed.</div>
           <div class="form-grid">
             <label class="full">Claim ID *
@@ -443,7 +448,7 @@
         <section class="panel damage-results" *ngIf="financialEstimates.length">
           <div class="panel-heading"><h2>Saved financial estimates</h2><span class="subtle">{{ financialEstimates.length }} records</span></div>
           <article class="assessment-history-card" *ngFor="let estimate of financialEstimates">
-            <div class="panel-heading"><div><b>{{ formatAmount(+estimate.preliminary_net_estimate, estimate.currency) }}</b><p class="muted">{{ estimate.created_at | date:'medium' }} · {{ estimate.pricing_source }}</p><p class="muted">Tax profile: {{ estimate.tax_profile_status || 'Legacy estimate' }} · Review: {{ estimate.review_status || 'Pending Review' }}</p></div><span class="status">{{ estimate.status }}</span></div>
+            <div class="panel-heading"><div><b>{{ formatAmount(+estimate.preliminary_net_estimate, estimate.currency) }}</b><p class="muted">{{ estimate.created_at | date:'medium' }} · {{ estimate.pricing_source }}</p><p class="muted" *ngIf="estimate.source_damage_assessment">AI source: {{ estimate.source_damage_assessment.damage_category }} · {{ estimate.source_damage_assessment.assessment_id }}</p><p class="muted">Tax profile: {{ estimate.tax_profile_status || 'Legacy estimate' }} · Review: {{ estimate.review_status || 'Pending Review' }}</p></div><span class="status">{{ estimate.status }}</span></div>
             <div *ngIf="canReviewFinancialEstimate() && !isFinalEstimateReview(estimate)" class="form-grid">
               <label class="full">Reviewer notes<textarea rows="2" [(ngModel)]="financialReviewNotes" placeholder="Add review notes or explain additional evidence needed"></textarea></label>
               <div class="form-actions">
