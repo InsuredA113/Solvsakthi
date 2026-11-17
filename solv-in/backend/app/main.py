@@ -1254,7 +1254,10 @@ def applicable_repair_rates(
     rows = list(get_database()["repair_rates"].find(query).sort([
         ("category", 1), ("item_name", 1), ("effective_from", -1)
     ]).limit(500))
-    today = date.today()
+    try:
+        pricing_date = date.fromisoformat(str(claim.get("incident_date") or date.today().isoformat())[:10])
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Claim incident date must use YYYY-MM-DD before matching repair rates.") from exc
     applicable = []
     for row in rows:
         start = row.get("effective_from")
@@ -1264,13 +1267,13 @@ def applicable_repair_rates(
             end_date = date.fromisoformat(str(end)[:10]) if end else None
         except ValueError:
             continue
-        if start_date <= today and (end_date is None or end_date >= today):
+        if start_date <= pricing_date and (end_date is None or end_date >= pricing_date):
             row["rate_id"] = str(row.pop("_id"))
             row["unit_rate"] = str(row["unit_rate"])
             applicable.append(row)
     return {
         "claim_id": claim_id, "country_code": country, "currency": currency,
-        "state": state, "city": city, "items": applicable, "count": len(applicable),
+        "state": state, "city": city, "pricing_date": pricing_date.isoformat(), "items": applicable, "count": len(applicable),
         "message": "Only active rates matching the claim's exact country, state and city are returned. Verify rate applicability and the pricing source before use."
     }
 
