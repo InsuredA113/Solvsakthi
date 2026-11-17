@@ -93,6 +93,13 @@ export class AppComponent implements OnInit {
   taxRuleDraft: any = this.emptyTaxRuleDraft();
   taxRulesBusy = false;
   taxRuleCountryFilter = '';
+  repairRates: any[] = [];
+  repairRateDraft: any = this.emptyRepairRateDraft();
+  repairRateBusy = false;
+  repairRateCountryFilter = '';
+  repairRateStateFilter = '';
+  repairRateCityFilter = '';
+  repairRateStatusFilter = '';
   applicableTaxRules: any = null;
   estimateDraft: any = this.emptyEstimateDraft();
   newUser = { full_name: '', email: '', password: '', role: 'Claims Manager' };
@@ -114,7 +121,7 @@ export class AppComponent implements OnInit {
   analyticsCountry = '';
   analyticsCurrency = '';
   analyticsPortfolio = 'All';
-  readonly navigation = ['Dashboard', 'Claims', 'Email FNOL', 'New FNOL', 'AI Damage Analysis', 'Policy Coverage', 'Financial Estimate', 'Tax Rules', 'Reports', 'Users', 'Settings'];
+  readonly navigation = ['Dashboard', 'Claims', 'Email FNOL', 'New FNOL', 'AI Damage Analysis', 'Policy Coverage', 'Financial Estimate', 'Tax Rules', 'Repair Rates', 'Reports', 'Users', 'Settings'];
   readonly statuses = ['FNOL Received', 'Under Review', 'Investigation', 'Assessment', 'Pending Approval', 'Approved', 'Closed'];
   draft: ClaimDraft = this.emptyDraft();
 
@@ -307,6 +314,68 @@ export class AppComponent implements OnInit {
     this.http.patch<any>(`${environment.apiBaseUrl}/tax-rules/${encodeURIComponent(rule.rule_id)}/status`, { status, verification_note: note }, { headers: this.authHeaders() }).subscribe({ next: () => { this.successMessage = `Tax rule ${status.toLowerCase()}.`; this.loadTaxRules(); }, error: error => this.handleApiError(error) });
   }
 
+  emptyRepairRateDraft(): any {
+    return {
+      country_code: 'IN', currency: 'INR', state: '', city: '', category: 'Structural',
+      item_code: '', item_name: '', description: '', unit: 'sq.ft', unit_rate: null,
+      effective_from: new Date().toISOString().slice(0, 10), effective_to: '',
+      source_name: '', source_reference: '', source_url: '', notes: ''
+    };
+  }
+
+  loadRepairRates(): void {
+    let params = new HttpParams();
+    if (this.repairRateCountryFilter.trim()) params = params.set('country_code', this.repairRateCountryFilter.trim().toUpperCase());
+    if (this.repairRateStateFilter.trim()) params = params.set('state', this.repairRateStateFilter.trim());
+    if (this.repairRateCityFilter.trim()) params = params.set('city', this.repairRateCityFilter.trim());
+    if (this.repairRateStatusFilter) params = params.set('status', this.repairRateStatusFilter);
+    this.http.get<{items: any[]; count: number}>(`${environment.apiBaseUrl}/repair-rates`, {
+      params, headers: this.authHeaders()
+    }).subscribe({
+      next: result => this.repairRates = result.items,
+      error: error => this.handleApiError(error)
+    });
+  }
+
+  saveRepairRate(): void {
+    const d = this.repairRateDraft;
+    if (!/^[A-Z]{2}$/i.test(d.country_code) || !/^[A-Z]{3}$/i.test(d.currency) ||
+        !d.state.trim() || !d.city.trim() || !d.category.trim() || !d.item_code.trim() ||
+        !d.item_name.trim() || !d.unit.trim() || Number(d.unit_rate) <= 0 ||
+        !d.effective_from || !d.source_name.trim() || !d.source_reference.trim()) {
+      this.errorMessage = 'Complete country, currency, state, city, repair item, positive unit rate, effective date and pricing source.';
+      return;
+    }
+    this.repairRateBusy = true;
+    this.errorMessage = '';
+    const body = {
+      ...d, country_code: d.country_code.toUpperCase(), currency: d.currency.toUpperCase(),
+      unit_rate: Number(d.unit_rate), effective_to: d.effective_to || null,
+      source_url: d.source_url || null
+    };
+    this.http.post<any>(`${environment.apiBaseUrl}/repair-rates`, body, { headers: this.authHeaders() }).subscribe({
+      next: () => {
+        this.repairRateBusy = false;
+        this.successMessage = 'Repair rate saved as Draft. An authorised administrator must verify its source before activation.';
+        this.repairRateDraft = this.emptyRepairRateDraft();
+        this.loadRepairRates();
+      },
+      error: error => { this.repairRateBusy = false; this.handleApiError(error); }
+    });
+  }
+
+  setRepairRateStatus(rate: any, status: 'Active' | 'Inactive'): void {
+    const note = status === 'Active'
+      ? (window.prompt('Enter how this pricing source and rate were verified:') || '')
+      : 'Deactivated by authorised administrator.';
+    if (status === 'Active' && !note.trim()) return;
+    this.http.patch<any>(`${environment.apiBaseUrl}/repair-rates/${encodeURIComponent(rate.rate_id)}/status`,
+      { status, verification_note: note }, { headers: this.authHeaders() }).subscribe({
+        next: () => { this.successMessage = `Repair rate ${status.toLowerCase()}.`; this.loadRepairRates(); },
+        error: error => this.handleApiError(error)
+      });
+  }
+
   resetTaxRuleConfirmation(): void {
     this.estimateDraft.confirm_automatic_tax_application = false;
     this.applicableTaxRules = null;
@@ -391,6 +460,7 @@ export class AppComponent implements OnInit {
     if (page === 'AI Damage Analysis' && this.damageClaimId.trim()) this.loadDamageAssessments();
     if (page === 'Users') this.loadUsers();
     if (page === 'Tax Rules' && this.canManageTaxRules()) this.loadTaxRules();
+    if (page === 'Repair Rates' && this.canManageTaxRules()) this.loadRepairRates();
     if (page === 'Policy Coverage') this.loadPolicies();
     if (page === 'Reports') this.loadClaimsAnalytics();
   }
