@@ -1,7 +1,7 @@
 <ng-container *ngIf="isAuthenticated; else signInView">
 <div class="shell" [class.claim-detail-mode]="activePage === 'Claim Details'">
   <aside class="sidebar">
-    <div class="brand"><div class="brand-mark" aria-hidden="true">✓</div><div><strong>Solv-In</strong><small>File • Track • Resolve</small></div></div>
+    <div class="brand"><img class="brand-logo" src="https://raw.githubusercontent.com/InsuredA113/Solvsakthi/main/Solv-in-logo.png.png" alt="Solv-In logo"><div><strong>Solv-In</strong><small>File • Track • Resolve</small></div></div>
     <nav aria-label="Main navigation">
       <ng-container *ngFor="let item of navigation"><button *ngIf="(item !== 'Users' || isAdmin()) && (item !== 'AI Damage Analysis' || canAnalyseDamage()) && (item !== 'Tax Rules' || canManageTaxRules()) && (item !== 'Repair Rates' || canManageTaxRules()) && (item !== 'Policy Coverage' || canViewPolicyCoverage())" (click)="selectPage(item)" [class.active]="activePage === item">
         <span class="nav-icon">{{ item === 'Dashboard' ? '⌂' : item === 'Claims' ? '▤' : item === 'New FNOL' ? '+' : item === 'Email FNOL' ? '✉' : item === 'AI Damage Analysis' ? '◈' : item === 'Tax Rules' ? '⌁' : item === 'Repair Rates' ? '⌖' : item === 'Policy Coverage' ? '▣' : item === 'Reports' ? '▥' : item === 'Users' ? '♙' : '⚙' }}</span>{{ item }}
@@ -739,7 +739,7 @@
 <ng-template #signInView>
   <main class="login-screen">
     <section class="login-card">
-      <div class="login-brand"><div class="brand-mark">S</div><div><strong>Solv-In</strong><small>Smarter Claims. Faster Decisions.</small></div></div>
+      <div class="login-brand"><img class="login-logo" src="https://raw.githubusercontent.com/InsuredA113/Solvsakthi/main/Solv-in-logo.png.png" alt="Solv-In logo"><div><strong>Solv-In</strong><small>Smarter Claims. Faster Decisions.</small></div></div>
       <p class="eyebrow">SECURE WORKSPACE</p>
       <h1>Sign in to Solv-In</h1>
       <p class="muted login-description">Access your Property &amp; Casualty claims workspace using your assigned account.</p>
