@@ -59,6 +59,7 @@ export class AppComponent implements OnInit {
   loadingClaimDetails = false;
   claimDocuments: ClaimDocument[] = [];
   selectedClaimDocument: File | null = null;
+  selectedFnolDocument: File | null = null;
   documentUploadBusy = false;
   documentsLoading = false;
   users: User[] = [];
@@ -539,8 +540,27 @@ export class AppComponent implements OnInit {
     this.selectPage('Claims');
   }
 
-  submitFnol(): void {
+  onFnolDocumentSelected(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0] || null;
+    this.selectedFnolDocument = null;
+    if (!file) return;
+    const allowed = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
+    if (!allowed.includes(file.type)) {
+      this.errorMessage = 'Choose a PDF, JPG, JPEG, PNG or WEBP file.';
+      input.value = '';
+      return;
+    }
+    if (file.size > 15 * 1024 * 1024) {
+      this.errorMessage = 'Each file must be 15 MB or smaller.';
+      input.value = '';
+      return;
+    }
     this.errorMessage = '';
+    this.selectedFnolDocument = file;
+  }
+
+  submitFnol(): void {    this.errorMessage = '';
     this.successMessage = '';
     if (!this.draft.customer_name.trim() || !this.draft.policy_number.trim() ||
         !this.draft.incident_date || !this.draft.incident_description.trim() ||
@@ -555,12 +575,30 @@ export class AppComponent implements OnInit {
       : `${environment.apiBaseUrl}/claims`;
     this.http.post<Claim>(url, this.draft, { headers: this.authHeaders() }).subscribe({
       next: claim => {
-        this.savingClaim = false;
-        this.successMessage = `Claim ${claim.claim_id} was created successfully.`;
+        const evidenceFile = this.selectedFnolDocument;
         this.draft = this.emptyDraft();
         this.selectedEmailIntakeId = '';
+        this.selectedFnolDocument = null;
         this.loadClaims();
         this.loadDashboard();
+        if (evidenceFile) {
+          const body = new FormData();
+          body.append('file', evidenceFile);
+          this.http.post<ClaimDocument>(`${environment.apiBaseUrl}/claims/${encodeURIComponent(claim.claim_id)}/documents`, body, { headers: this.authHeaders() }).subscribe({
+            next: uploaded => {
+              this.savingClaim = false;
+              this.successMessage = `Claim ${claim.claim_id} was created and ${uploaded.filename} was uploaded successfully.`;
+            },
+            error: error => {
+              this.savingClaim = false;
+              this.successMessage = `Claim ${claim.claim_id} was created successfully.`;
+              this.errorMessage = `The claim was saved, but the evidence upload failed: ${error.error?.detail || 'Please open the claim and upload the document from Evidence & Documents.'}`;
+            }
+          });
+        } else {
+          this.savingClaim = false;
+          this.successMessage = `Claim ${claim.claim_id} was created successfully.`;
+        }
       },
       error: error => { this.savingClaim = false; this.handleApiError(error); }
     });
