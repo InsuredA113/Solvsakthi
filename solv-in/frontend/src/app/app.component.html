@@ -74,10 +74,14 @@
         <section class="panel claims-panel">
           <div class="panel-heading">
             <div><h2>Claim details</h2><p class="muted" *ngIf="selectedClaim">{{ selectedClaim.claim_id }} · {{ selectedClaim.claim_type === 'Casualty' ? 'Commercial Casualty' : 'Property' }}</p></div>
-            <button class="secondary-action" type="button" (click)="backToClaims()">← Back to claims</button>
+            <div class="claim-detail-actions">
+              <button class="secondary-action" type="button" *ngIf="selectedClaim && canEditClaims() && !claimEditMode" (click)="startClaimEdit()">✎ Edit claim</button>
+              <button class="danger-action" type="button" *ngIf="selectedClaim && canDeleteClaims()" (click)="deleteClaim()" [disabled]="claimDeleteBusy">{{ claimDeleteBusy ? 'Deleting…' : 'Delete claim' }}</button>
+              <button class="secondary-action" type="button" (click)="backToClaims()">← Back to claims</button>
+            </div>
           </div>
           <p class="muted" *ngIf="loadingClaimDetails">Loading claim details…</p>
-          <div *ngIf="selectedClaim" class="form-grid">
+          <div *ngIf="selectedClaim && !claimEditMode" class="form-grid">
             <div><small class="muted">Claim ID</small><p><b>{{ selectedClaim.claim_id }}</b></p></div>
             <div><small class="muted">Status</small><p><span class="status">{{ selectedClaim.status }}</span></p></div>
             <div><small class="muted">Insured name</small><p>{{ selectedClaim.customer_name || 'Not Found' }}</p></div>
@@ -105,6 +109,40 @@
             <div><small class="muted">Created</small><p>{{ selectedClaim.created_at | date:'medium' }}</p></div>
             <div><small class="muted">Last updated</small><p>{{ selectedClaim.updated_at | date:'medium' }}</p></div>
           </div>
+          <section class="panel form-panel claim-edit-panel" *ngIf="selectedClaim && claimEditMode">
+            <div class="panel-heading"><div><h2>Edit claim information</h2><p class="muted">Update the claim's recorded details. Claim ID, original creation time and source attribution remain protected.</p></div></div>
+            <form (ngSubmit)="saveClaimEdit()">
+              <div class="form-grid">
+                <label>Insured name *<input name="edit_customer_name" [(ngModel)]="claimEditDraft.customer_name" required minlength="2" maxlength="120"></label>
+                <label>Loss cause<input name="edit_loss_cause" [(ngModel)]="claimEditDraft.loss_cause" maxlength="120" placeholder="Enter recorded loss cause"></label>
+                <label>Policy number *<input name="edit_policy_number" [(ngModel)]="claimEditDraft.policy_number" required minlength="2" maxlength="80"></label>
+                <label>Claim type *<select name="edit_claim_type" [(ngModel)]="claimEditDraft.claim_type" (change)="onClaimEditTypeChange()"><option value="Property">Property</option><option value="Casualty">Commercial Casualty</option></select></label>
+                <label>Email<input type="email" name="edit_email" [(ngModel)]="claimEditDraft.email" maxlength="254"></label>
+                <label>Phone<input name="edit_phone" [(ngModel)]="claimEditDraft.phone" maxlength="30"></label>
+                <label>Incident date *<input type="date" name="edit_incident_date" [(ngModel)]="claimEditDraft.incident_date" required></label>
+                <label>Claim status *<select name="edit_status" [(ngModel)]="selectedClaim.status"><option *ngFor="let status of statuses" [value]="status">{{ status }}</option></select></label>
+                <label *ngIf="claimEditDraft.claim_type === 'Property'">Property occupancy<select name="edit_property_occupancy" [(ngModel)]="claimEditDraft.property_occupancy"><option value="Residential">Residential</option><option value="Commercial">Commercial</option><option value="Industrial">Industrial</option><option value="Mixed Use">Mixed Use</option><option value="Other">Other</option></select></label>
+                <label *ngIf="claimEditDraft.claim_type === 'Casualty'">Business / insured entity *<input name="edit_business_name" [(ngModel)]="claimEditDraft.business_name" required minlength="2" maxlength="160"></label>
+                <label *ngIf="claimEditDraft.claim_type === 'Casualty'">Industry *<input name="edit_industry" [(ngModel)]="claimEditDraft.industry" required minlength="2" maxlength="120"></label>
+                <label *ngIf="claimEditDraft.claim_type === 'Casualty'">Commercial liability type *<select name="edit_commercial_liability_type" [(ngModel)]="claimEditDraft.commercial_liability_type" required><option value="Commercial General Liability">Commercial General Liability</option><option value="Professional Liability">Professional Liability</option><option value="Product Liability">Product Liability</option><option value="Employers Liability">Employers Liability</option><option value="Public Liability">Public Liability</option><option value="Other Commercial Liability">Other Commercial Liability</option></select></label>
+                <label>Estimated loss<input type="number" name="edit_estimated_loss" [(ngModel)]="claimEditDraft.estimated_loss" min="0" step="0.01"></label>
+                <label>Currency (ISO 4217) *<input name="edit_currency" [(ngModel)]="claimEditDraft.currency" required minlength="3" maxlength="3" placeholder="INR"></label>
+                <label>Country code (ISO 3166-1) *<input name="edit_country_code" [(ngModel)]="claimEditDraft.country_code" required minlength="2" maxlength="2" placeholder="IN"></label>
+                <label>State / region<input name="edit_region" [(ngModel)]="claimEditDraft.region" maxlength="120"></label>
+                <label>City / locality<input name="edit_locality" [(ngModel)]="claimEditDraft.locality" maxlength="120"></label>
+                <label>Postal code<input name="edit_postal_code" [(ngModel)]="claimEditDraft.postal_code" maxlength="30"></label>
+                <label class="full">Loss location *<input name="edit_loss_location" [(ngModel)]="claimEditDraft.loss_location" required minlength="2" maxlength="250"></label>
+                <label class="full">Incident description *<textarea name="edit_incident_description" [(ngModel)]="claimEditDraft.incident_description" required minlength="5" maxlength="5000" rows="4"></textarea></label>
+              </div>
+              <div class="form-actions">
+                <span class="muted">All changes are recorded with the editor's account and update timestamp.</span>
+                <div class="claim-detail-actions">
+                  <button class="secondary-action" type="button" (click)="cancelClaimEdit()" [disabled]="claimEditBusy">Cancel</button>
+                  <button class="primary-action" type="submit" [disabled]="claimEditBusy">{{ claimEditBusy ? 'Saving…' : 'Save changes' }}</button>
+                </div>
+              </div>
+            </form>
+          </section>
           <section class="panel form-panel" *ngIf="selectedClaim" style="margin-top:14px">
             <div class="panel-heading"><div><h2>Evidence &amp; documents</h2><p class="muted">Upload and keep claim evidence securely linked to {{ selectedClaim.claim_id }}.</p></div><span class="subtle">{{ claimDocuments.length }} files</span></div>
             <div class="form-grid">
