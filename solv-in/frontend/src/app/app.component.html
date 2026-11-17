@@ -548,7 +548,7 @@
                 <tr *ngFor="let state of usTaxResearchMatrix.items">
                   <td>{{ state.state_name }} ({{ state.state_code }})</td>
                   <td><span class="status">{{ state.status }}</span></td>
-                  <td><div *ngFor="let finding of state.verified_categories"><b>{{ finding.activity }}</b><small>Residential: {{ finding.residential }}</small><small>Commercial: {{ finding.commercial }}</small></div><small *ngIf="!state.verified_categories.length">No conclusion loaded — research required.</small></td>
+                  <td><div *ngFor="let finding of state.verified_categories"><b>{{ finding.activity }}</b><small>Residential: {{ finding.residential }}</small><small>Commercial: {{ finding.commercial }}</small><small>Finding status: {{ finding.status }}</small></div><small *ngIf="!state.verified_categories.length">No conclusion loaded — research required.</small><small *ngIf="state.notes">{{ state.notes }}</small></td>
                   <td><a *ngIf="state.source_url" [href]="state.source_url" target="_blank" rel="noopener noreferrer">{{ state.source_name }} · {{ state.source_reference }}</a><span *ngIf="!state.source_url">Pending official source</span></td>
                 </tr>
               </tbody></table>
