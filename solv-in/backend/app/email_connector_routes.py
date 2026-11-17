@@ -10,6 +10,7 @@ from bson import ObjectId
 from gridfs import GridFSBucket
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
 from pydantic import ValidationError
+from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 import httpx
 
@@ -131,7 +132,7 @@ def _create_provisional_claim(db, intake_id: str, sender_email: str, parsed: dic
     now = datetime.now(timezone.utc).isoformat()
     sequence = db["counters"].find_one_and_update(
         {"_id": f"claim_id_{datetime.now(timezone.utc).year}"},
-        {"$inc": {"sequence": 1}}, upsert=True, return_document=__import__("pymongo").ReturnDocument.AFTER
+        {"$inc": {"sequence": 1}}, upsert=True, return_document=ReturnDocument.AFTER
     )
     claim_id = f"CLM-{datetime.now(timezone.utc).year}-{sequence['sequence']:06d}"
     claim = {
