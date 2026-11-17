@@ -54,6 +54,8 @@ export class AppComponent implements OnInit {
   typeFilter = '';
   statusFilter = '';
   claims: Claim[] = [];
+  selectedClaim: Claim | null = null;
+  loadingClaimDetails = false;
   users: User[] = [];
   roles: string[] = [];
   userBusy = false;
@@ -445,6 +447,23 @@ export class AppComponent implements OnInit {
       next: result => { this.claims = result.items; this.loadingClaims = false; },
       error: error => { this.loadingClaims = false; this.handleApiError(error); this.claims = []; }
     });
+  }
+
+  openClaimDetails(claim: Claim): void {
+    this.errorMessage = '';
+    this.successMessage = '';
+    this.loadingClaimDetails = true;
+    this.selectedClaim = null;
+    this.activePage = 'Claim Details';
+    this.http.get<Claim>(`${environment.apiBaseUrl}/claims/${encodeURIComponent(claim.claim_id)}`, { headers: this.authHeaders() }).subscribe({
+      next: result => { this.selectedClaim = result; this.loadingClaimDetails = false; },
+      error: error => { this.loadingClaimDetails = false; this.handleApiError(error); }
+    });
+  }
+
+  backToClaims(): void {
+    this.selectedClaim = null;
+    this.selectPage('Claims');
   }
 
   submitFnol(): void {
