@@ -374,6 +374,25 @@
             <label>City / locality<input name="estimate_locality" [(ngModel)]="estimateDraft.locality" (ngModelChange)="resetTaxRuleConfirmation()" placeholder="City or municipality"></label>
             <label>Postal / ZIP code<input name="estimate_postal" [(ngModel)]="estimateDraft.postal_code" placeholder="Optional postal code"></label>
             <label>Loss date *<input type="date" name="estimate_loss_date" [(ngModel)]="estimateDraft.loss_date"></label>
+            <div class="full">
+              <h3>Verified repair-rate catalogue</h3>
+              <p class="muted">For Property claims, retrieve active rates matching the claim's country, state, city and loss date. If the claim location is incomplete or no verified rate exists, contact an administrator to update the claim or catalogue. Do not substitute guessed prices.</p>
+              <button type="button" class="secondary-action" (click)="loadApplicableRepairRates()" [disabled]="repairRatesLookupBusy || !estimateClaimId.trim()">{{ repairRatesLookupBusy ? 'Loading active rates…' : 'Load active repair rates for this claim' }}</button>
+              <div class="form-grid" *ngIf="applicableRepairRates.length">
+                <label class="full">Select catalogue repair item
+                  <select name="estimate_repair_rate" [(ngModel)]="selectedRepairRateId" (ngModelChange)="selectRepairRateById($event)">
+                    <option value="">Choose an active verified repair item</option>
+                    <option *ngFor="let rate of applicableRepairRates" [value]="rate.rate_id">{{ rate.category }} · {{ rate.item_name }} · {{ rate.unit_rate }} {{ rate.currency }}/{{ rate.unit }} · {{ rate.source_name }}</option>
+                  </select>
+                </label>
+              </div>
+              <div class="assessment-history-card" *ngIf="estimateDraft.repair_rate_id">
+                <b>Catalogue rate selected</b>
+                <p class="muted">{{ estimateDraft.description }} · {{ estimateDraft.unit_rate }} {{ estimateDraft.currency }}/{{ estimateDraft.unit }}</p>
+                <p class="muted">Source: {{ estimateDraft.pricing_source }} · Effective from {{ estimateDraft.pricing_effective_date }}</p>
+                <p class="muted">Python will revalidate this catalogue record before using the price.</p>
+              </div>
+            </div>
             <label>Tax point / taxable event date *<input type="date" name="estimate_tax_point_date" [(ngModel)]="estimateDraft.tax_point_date" (ngModelChange)="resetTaxRuleConfirmation()"><small class="muted">Tax rule effective dates are checked against this date, not automatically against the loss date.</small></label>
             <label class="full">Repair item description *<input name="estimate_description" [(ngModel)]="estimateDraft.description" placeholder="e.g. Replace damaged roof tiles"></label>
             <label>Quantity *<input type="number" min="0.0001" step="0.0001" name="estimate_quantity" [(ngModel)]="estimateDraft.quantity"></label>
@@ -443,7 +462,7 @@
             <tr><td>Less deductible</td><td>{{ formatAmount(+financialEstimate.deductible, financialEstimate.currency) }}</td></tr>
             <tr><th>Preliminary net estimate</th><th>{{ formatAmount(+financialEstimate.preliminary_net_estimate, financialEstimate.currency) }}</th></tr>
           </tbody></table></div>
-          <p class="muted">Pricing: {{ financialEstimate.pricing_source }}. This estimate is pending authorised review and is not a settlement decision.</p>
+          <p class="muted">Pricing: {{ financialEstimate.pricing_source }}. This estimate is pending authorised review and is not a settlement decision.</p><p class="muted" *ngIf="financialEstimate.repair_rate_ids?.length">Verified repair catalogue records used: {{ financialEstimate.repair_rate_ids.join(', ') }}</p>
         </section>
         <section class="panel damage-results" *ngIf="financialEstimates.length">
           <div class="panel-heading"><h2>Saved financial estimates</h2><span class="subtle">{{ financialEstimates.length }} records</span></div>
