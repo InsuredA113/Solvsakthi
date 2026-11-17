@@ -553,10 +553,9 @@ export class AppComponent implements OnInit {
   }
 
   createdByTooltip(claim: Claim): string {
-    const isEmailIntake = claim.source_mode === 'email' || claim.source === 'Email FNOL';
-    const name = claim.created_by_name || (isEmailIntake ? 'Email automation' : claim.created_by) || 'Not recorded';
-    const email = claim.created_by_email || (isEmailIntake ? claim.email : claim.created_by) || 'Not available';
-    return `Created / received by: ${name}\nEmail ID: ${email}`;
+    const name = claim.created_by_name || claim.created_by || 'Not recorded';
+    const email = claim.created_by_email || 'Not recorded';
+    return `Created by: ${name}\nEmail address: ${email}`;
   }
 
   openClaimDetails(claim: Claim, editAfterOpen = false): void {
