@@ -694,3 +694,74 @@ for state in US_STATES:
     research = _SECOND_PARTIAL_STATE_RESEARCH.get(state["state_code"])
     if research:
         state.update(research)
+
+
+# Third research batch: official contractor guidance from five additional states.
+# These entries identify selected tax mechanics; they do not authorize automation.
+_THIRD_PARTIAL_STATE_RESEARCH = {
+    "AZ": {
+        "status": "Partially researched — MRRA classification required",
+        "source_name": "Arizona Department of Revenue",
+        "source_url": "https://azdor.gov/transaction-privilege-tax/contracting-guidelines/mrra-contracting",
+        "source_reference": "Contracting Guidelines — Maintenance, Repair, Replacement and Alteration (MRRA); A.R.S. § 42-5075(O)",
+        "effective_date": None,
+        "notes": "Arizona distinguishes MRRA work on existing property from modification and other contracting classifications. For MRRA, gross receipts are generally not subject to prime-contracting TPT; materials generally bear retail TPT when purchased or used, and tax is not separately listed on the customer invoice. Confirm thresholds, project type, city/local rules and statutory deductions. No rate is stored.",
+        "verified_categories": [
+            {"activity": "Water-loss repair and restoration to existing real property", "residential": "If the scope qualifies as MRRA on existing property, prime-contracting TPT generally does not apply to gross receipts; contractor pays retail TPT on materials unless a statutory deduction/exclusion applies.", "commercial": "Same MRRA framework for existing real property; verify whether scope exceeds alteration thresholds or is a modification project.", "status": "Conditional — MRRA versus modification and threshold analysis required", "source_url": "https://azdor.gov/transaction-privilege-tax/contracting-guidelines/mrra-contracting", "source_reference": "Arizona DOR MRRA Contracting"},
+            {"activity": "Materials used in MRRA projects", "residential": "Retail TPT on materials is generally due at purchase or use; tax is not separately itemized on the customer invoice for MRRA work.", "commercial": "Same general rule; location of project and any statutory deduction matter.", "status": "Conditional — materials, purchase/use location and deductions required", "source_url": "https://azdor.gov/transaction-privilege-tax/contracting-guidelines/contracting-faqs", "source_reference": "Arizona DOR Contracting FAQs"}
+        ]
+    },
+    "MN": {
+        "status": "Partially researched — real-property contractor rules located",
+        "source_name": "Minnesota Department of Revenue",
+        "source_url": "https://www.revenue.state.mn.us/guide/general-contractors-and-subcontractors-applies-all-contractor-types",
+        "source_reference": "General Contractors and Subcontractors guide (last updated June 18, 2024); Contractors and Other Property Installers guide",
+        "effective_date": None,
+        "notes": "Minnesota says contractors pay sales/use tax on materials, supplies and equipment used to complete construction contracts. For real-property repairs/improvements, tax paid on materials is part of the contractor's cost and sales tax should not be separately charged on the construction-contract invoice. Special tangible-property items and separate repair-parts methods require review. No rate is stored.",
+        "verified_categories": [
+            {"activity": "Real-property water-loss reconstruction and repair", "residential": "Contractor pays sales/use tax on materials, supplies and equipment used; do not charge sales tax on the construction-contract work.", "commercial": "Same general real-property contractor rule; verify exemptions and whether an item is treated as tangible personal property.", "status": "Conditional — real property versus tangible property classification required", "source_url": "https://www.revenue.state.mn.us/guide/general-contractors-and-subcontractors-applies-all-contractor-types", "source_reference": "Minnesota DOR General Contractors and Subcontractors"},
+            {"activity": "Repair parts and separately transferred materials", "residential": "Special repair-material methods and taxable tangible-property transfers may apply; use the specific Minnesota repair-parts guidance rather than treating all items as construction materials.", "commercial": "Same classification issue; itemized invoice and contractor method may affect treatment.", "status": "Conditional — invoice method and transferred item analysis required", "source_url": "https://www.revenue.state.mn.us/guide/handling-sales-tax-repair-paint-and-repair-materials", "source_reference": "Minnesota DOR Handling Sales Tax on Repair Paint and Repair Materials"}
+        ]
+    },
+    "AL": {
+        "status": "Partially researched — contractor material and labor rules located",
+        "source_name": "Alabama Department of Revenue",
+        "source_url": "https://www.revenue.alabama.gov/faqs/who-is-a-contractor/",
+        "source_reference": "ADOR FAQ — Who is a contractor?; Sales Tax page; Rule 810-6-1-.46, Contractor's Liability",
+        "effective_date": None,
+        "notes": "Alabama treats contractors as consumers, not resellers, of materials they attach to realty; contractor generally pays sales/use tax on materials used or consumed in construction, repair or alteration. Separately stated repair/installation labor may be exempt. Qualifying government-project exemptions are narrow and require documentation. No rate is stored.",
+        "verified_categories": [
+            {"activity": "Materials incorporated into real property", "residential": "Contractor is treated as consumer of building materials and generally pays sales/use tax on materials used in repair or alteration.", "commercial": "Same general rule; check specific government-project or other statutory exemptions.", "status": "Conditional — contractor status and exemption eligibility required", "source_url": "https://www.revenue.alabama.gov/faqs/who-is-a-contractor/", "source_reference": "Alabama DOR Who is a contractor?; Rule 810-6-1-.46"},
+            {"activity": "Separately stated repair or installation labor", "residential": "Alabama DOR states labor to repair or install property is exempt when separately billed on the customer invoice; fabrication labor is not included in this statement.", "commercial": "Same general rule; confirm invoice separation and service characterization.", "status": "Conditional — separately stated labor and scope required", "source_url": "https://www.revenue.alabama.gov/sales-use/sales-tax/", "source_reference": "Alabama DOR Sales Tax"}
+        ]
+    },
+    "TN": {
+        "status": "Partially researched — realty labor and contractor materials rules located",
+        "source_name": "Tennessee Department of Revenue",
+        "source_url": "https://revenue.support.tn.gov/hc/en-us/articles/360058619211--SUT-22-Sales-Price-Charges-for-Labor",
+        "source_reference": "SUT-22 Sales Price — Charges for Labor; SUT-21 Sales and Use Tax for Contractors — Overview; Tennessee Sales and Use Tax Manual",
+        "effective_date": None,
+        "notes": "Tennessee states that labor performed on real property is not subject to sales tax, while labor on tangible personal property is taxable. Contractors generally are users/consumers of materials and taxable services used in real-property improvement contracts and pay tax on purchases. Distinguish building work from contents restoration and equipment/personal-property repairs. No rate is stored.",
+        "verified_categories": [
+            {"activity": "Labor for water extraction, drying and repair performed on real property", "residential": "Labor on real property is generally not subject to sales tax; determine whether the service is performed on realty or tangible personal property.", "commercial": "Same distinction; confirm classification of each service and invoice component.", "status": "Conditional — realty versus tangible personal property classification required", "source_url": "https://revenue.support.tn.gov/hc/en-us/articles/360058619211--SUT-22-Sales-Price-Charges-for-Labor", "source_reference": "Tennessee DOR SUT-22"},
+            {"activity": "Materials and supplies used by restoration contractors", "residential": "Contractor generally pays sales/use tax on materials, supplies and taxable services used in performing real-property improvement contracts.", "commercial": "Same general contractor rule; review any exemption and whether property is incorporated into realty.", "status": "Conditional — contractor purchases and exemptions required", "source_url": "https://revenue.support.tn.gov/hc/en-us/articles/360058171112-SUT-21-Sales-and-Use-Tax-for-Contractors-Overview", "source_reference": "Tennessee DOR SUT-21"}
+        ]
+    },
+    "NM": {
+        "status": "Partially researched — gross receipts tax treatment requires classification",
+        "source_name": "New Mexico Taxation and Revenue Department",
+        "source_url": "https://www.tax.newmexico.gov/businesses/gross-receipts-overview/who-must-file/",
+        "source_reference": "Gross Receipts Tax Overview — Who must file?",
+        "effective_date": None,
+        "notes": "New Mexico imposes gross receipts tax on persons engaged in business in the state, including receipts from services; the Department's overview expressly includes construction services and construction materials becoming part of a project. This is a gross-receipts-tax system, not a conventional sales-tax conclusion. Research deductions, government/tribal exemptions, location sourcing and current rates before any estimate. No rate is stored.",
+        "verified_categories": [
+            {"activity": "Water restoration and construction services", "residential": "Gross receipts from services performed in New Mexico are within the general filing/tax framework; determine the applicable statutory deduction or exemption and whether the work is classified as construction.", "commercial": "Same general gross-receipts framework; contract type, receipts, deductions and project location require review.", "status": "Conditional — gross receipts, deductions and location sourcing required", "source_url": "https://www.tax.newmexico.gov/businesses/gross-receipts-overview/who-must-file/", "source_reference": "New Mexico TRD Gross Receipts Tax — Who must file?"},
+            {"activity": "Construction materials becoming part of a project", "residential": "New Mexico's overview includes construction materials that become part of a construction project within the service/construction gross-receipts framework; verify applicable deductions and contractor treatment.", "commercial": "Same general rule; determine project location and any applicable deduction or exemption.", "status": "Conditional — construction classification and deductions required", "source_url": "https://www.tax.newmexico.gov/businesses/gross-receipts-overview/who-must-file/", "source_reference": "New Mexico TRD Gross Receipts Tax — Who must file?"}
+        ]
+    }
+}
+
+for state in US_STATES:
+    research = _THIRD_PARTIAL_STATE_RESEARCH.get(state["state_code"])
+    if research:
+        state.update(research)
