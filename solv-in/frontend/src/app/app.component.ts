@@ -5,6 +5,7 @@ import { FormsModule } from '@angular/forms';
 import { environment } from '../environments/environment';
 
 interface User { full_name: string; email: string; role: string; is_active?: boolean; }
+interface Adjuster { full_name: string; email: string; role: 'Property Adjuster' | 'Casualty Adjuster'; }
 interface Claim {
   claim_id: string; customer_name?: string | null; loss_cause?: string | null; email?: string | null; phone?: string | null;
   policy_number?: string | null; claim_type: 'Property' | 'Casualty' | 'Unclassified'; property_occupancy?: string | null;
@@ -13,6 +14,7 @@ interface Claim {
   incident_description?: string | null; loss_location?: string | null; country_code?: string | null; region?: string | null; locality?: string | null; postal_code?: string | null; estimated_loss?: number | null;
   currency?: string | null; status: string; created_at?: string; updated_at?: string;
   created_by?: string; created_by_name?: string; created_by_email?: string; source?: string; source_mode?: string;
+  assigned_adjuster_email?: string | null; assigned_adjuster_name?: string | null; assigned_adjuster_role?: string | null; closed_at?: string | null;
   auto_intake_status?: string; missing_fields?: string[]; suggested_information?: Record<string, string>;
 }
 interface ClaimDocument { file_id: string; claim_id: string; filename: string; content_type: string; size: number; uploaded_at?: string; uploaded_by?: string; }
@@ -127,6 +129,15 @@ export class AppComponent implements OnInit {
   pendingClaims = 0;
   closedClaims = 0;
   unclassifiedLegacyCasualtyClaims = 0;
+  adjusters: Adjuster[] = [];
+  dashboardAnalytics: any = null;
+  dashboardBusy = false;
+  dashboardYear = '';
+  dashboardMonth = '';
+  dashboardStatus = '';
+  dashboardClaimType = 'All';
+  dashboardAdjuster = '';
+  readonly dashboardMonths = [{value:'1',label:'January'},{value:'2',label:'February'},{value:'3',label:'March'},{value:'4',label:'April'},{value:'5',label:'May'},{value:'6',label:'June'},{value:'7',label:'July'},{value:'8',label:'August'},{value:'9',label:'September'},{value:'10',label:'October'},{value:'11',label:'November'},{value:'12',label:'December'}];
   analyticsData: any = null;
   emailIntakeItems: EmailIntakeItem[] = [];
   emailIntakeBusy = false;
@@ -139,7 +150,7 @@ export class AppComponent implements OnInit {
   analyticsCountry = '';
   analyticsCurrency = '';
   analyticsPortfolio = 'All';
-  readonly navigation = ['Dashboard', 'Claims', 'AI Damage Analysis', 'Policy Coverage', 'Financial Estimate', 'Repair Rates', 'Reports', 'Users', 'Settings'];
+  readonly navigation = ['Dashboard', 'Claims', 'AI Damage Analysis', 'Policy Coverage', 'Financial Estimate', 'Repair Rates', 'Users', 'Settings'];
   readonly statuses = ['FNOL Received', 'Under Review', 'Investigation', 'Assessment', 'Pending Approval', 'Approved', 'Closed'];
   draft: ClaimDraft = this.emptyDraft();
 
@@ -191,6 +202,8 @@ export class AppComponent implements OnInit {
   private afterLogin(): void {
     this.apiStatus = 'Signed in';
     this.loadDashboard();
+    this.loadDashboardAnalytics();
+    this.loadAdjusters();
     this.loadClaims();
     if (this.isAdmin()) this.loadUsers();
   }
@@ -487,7 +500,7 @@ export class AppComponent implements OnInit {
     if (page === 'Financial Estimate' && this.canManageTaxRules()) { this.loadTaxRules(); this.loadUsTaxResearchMatrix(); }
     if (page === 'Repair Rates' && this.canManageTaxRules()) this.loadRepairRates();
     if (page === 'Policy Coverage') this.loadPolicies();
-    if (page === 'Reports') this.loadClaimsAnalytics();
+    if (page === 'Dashboard') this.loadDashboardAnalytics();
   }
 
   loadDashboard(): void {
@@ -502,6 +515,31 @@ export class AppComponent implements OnInit {
       },
       error: error => this.handleApiError(error)
     });
+  }
+
+
+  loadAdjusters(): void {
+    this.http.get<{items: Adjuster[]; count: number}>(`${environment.apiBaseUrl}/adjusters`, { headers: this.authHeaders() }).subscribe({ next: result => this.adjusters = result.items || [], error: error => this.handleApiError(error) });
+  }
+
+  canAssignClaims(): boolean {
+    return ['Super Administrator', 'Insurance Company Administrator', 'Claims Manager'].includes(this.currentUser?.role || '');
+  }
+
+  loadDashboardAnalytics(): void {
+    this.dashboardBusy = true;
+    let params = new HttpParams();
+    if (this.dashboardYear) params = params.set('year', this.dashboardYear);
+    if (this.dashboardMonth) params = params.set('month', this.dashboardMonth);
+    if (this.dashboardStatus) params = params.set('status', this.dashboardStatus);
+    if (this.dashboardClaimType !== 'All') params = params.set('claim_type', this.dashboardClaimType);
+    if (this.dashboardAdjuster) params = params.set('adjuster_email', this.dashboardAdjuster);
+    this.http.get<any>(`${environment.apiBaseUrl}/dashboard/analytics`, { params, headers: this.authHeaders() }).subscribe({ next: data => { this.dashboardAnalytics = data; this.dashboardBusy = false; }, error: error => { this.dashboardBusy = false; this.handleApiError(error); } });
+  }
+
+  assignAdjuster(claim: Claim, email: string): void {
+    if (!this.canAssignClaims() || !email) return;
+    this.http.patch<Claim>(`${environment.apiBaseUrl}/claims/${encodeURIComponent(claim.claim_id)}/assign-adjuster`, { adjuster_email: email }, { headers: this.authHeaders() }).subscribe({ next: updated => { this.claims = this.claims.map(item => item.claim_id === updated.claim_id ? updated : item); this.successMessage = `Assigned ${updated.claim_id} to ${updated.assigned_adjuster_name}.`; this.loadDashboardAnalytics(); }, error: error => this.handleApiError(error) });
   }
 
   loadClaimsAnalytics(): void {
