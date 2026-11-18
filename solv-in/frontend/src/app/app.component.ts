@@ -672,6 +672,10 @@ export class AppComponent implements OnInit {
     this.estimateClaimId = claim.claim_id;
     this.financialEstimates = [];
     this.adjusterReports = [];
+    this.comparisonComments = [];
+    this.comparisonCommentDraft = '';
+    this.comparisonCommentFieldKey = '';
+    this.selectedComparisonSectionId = 'initial-review';
     this.expandedClaimSections = ['initial-review'];
     this.expandedClaimSubsections = ['initial-review:claim-status'];
     this.activePage = 'Claim Details';
