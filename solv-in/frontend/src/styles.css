@@ -286,3 +286,12 @@
 .shell.claim-detail-mode .claim-comparison-table .comparison-state{white-space:normal;line-height:1.35}
 .shell.claim-detail-mode .claim-comparison-table-wrap{border:1px solid #e8eef5;border-radius:9px}
 @media(max-width:760px){.shell.claim-detail-mode .claim-comparison-table{min-width:860px}.shell.claim-detail-mode .claim-comparison-panel{padding:16px}}
+
+
+/* Field-by-field comparison table */
+.shell.claim-detail-mode .field-comparison-table{min-width:900px}
+.shell.claim-detail-mode .field-comparison-table th:first-child,.shell.claim-detail-mode .field-comparison-table td:first-child{min-width:155px}
+.shell.claim-detail-mode .field-comparison-table td{vertical-align:middle;overflow-wrap:anywhere}
+.shell.claim-detail-mode .field-comparison-table td:first-child strong{font-size:11px;color:#203b5c}
+.shell.claim-detail-mode .field-comparison-table td:nth-child(n+2):nth-child(-n+4){min-width:155px;max-width:290px;white-space:normal}
+.shell.claim-detail-mode .comparison-state.mismatch{background:#fff0f0;color:#b43b3b}
