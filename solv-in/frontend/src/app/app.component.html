@@ -6,7 +6,7 @@
       <ng-container *ngFor="let item of navigation"><button *ngIf="(item !== 'Users' || isAdmin()) && (item !== 'AI Damage Analysis' || canAnalyseDamage()) && (item !== 'Tax Rules' || canManageTaxRules()) && (item !== 'Repair Rates' || canManageTaxRules()) && (item !== 'Policy Coverage' || canViewPolicyCoverage())" (click)="selectPage(item)" [class.active]="activePage === item">
         <span class="nav-icon">{{ item === 'Dashboard' ? '⌂' : item === 'Claims' ? '▤' : item === 'New FNOL' ? '+' : item === 'Email FNOL' ? '✉' : item === 'AI Damage Analysis' ? '◈' : item === 'Tax Rules' ? '⌁' : item === 'Repair Rates' ? '⌖' : item === 'Policy Coverage' ? '▣' : item === 'Reports' ? '▥' : item === 'Users' ? '♙' : '⚙' }}</span>{{ item }}
       </button></ng-container>
-      <button *ngIf="activePage === 'Claim Details'" type="button" (click)="selectPage('Reports')" [class.active]="activePage === 'Reports'"><span class="nav-icon">▥</span>Reports</button>
+      <button *ngIf="activePage === 'Claim Details'" type="button" (click)="selectPage('Reports')"><span class="nav-icon">▥</span>Reports</button>
     </nav>
     <div class="sidebar-foot">P&C Claims Intelligence<br><span>Property &amp; Casualty</span></div>
   </aside>
