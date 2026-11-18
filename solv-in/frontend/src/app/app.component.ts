@@ -50,6 +50,11 @@ export class AppComponent implements OnInit {
   loginPassword = '';
   loginBusy = false;
   activePage = 'Dashboard';
+  isSidebarCollapsed = false;
+
+  toggleSidebar(): void {
+    this.isSidebarCollapsed = !this.isSidebarCollapsed;
+  }
   settingsSection = 'Company Profile';
   selectedAIProvider = '';
   readonly aiProviderSetup: Record<string, {purpose: string; environmentKey: string; setup: string; note: string}> = {
