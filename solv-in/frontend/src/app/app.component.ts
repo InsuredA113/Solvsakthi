@@ -50,6 +50,7 @@ export class AppComponent implements OnInit {
   loginPassword = '';
   loginBusy = false;
   activePage = 'Dashboard';
+  settingsSection = 'Company Profile';
   apiStatus = 'Checking API…';
   loadingClaims = false;
   savingClaim = false;
@@ -150,7 +151,7 @@ export class AppComponent implements OnInit {
   analyticsCountry = '';
   analyticsCurrency = '';
   analyticsPortfolio = 'All';
-  readonly navigation = ['Dashboard', 'Claims', 'AI Damage Analysis', 'Policy Coverage', 'Financial Estimate', 'Users', 'Settings'];
+  readonly navigation = ['Dashboard', 'Claims', 'AI Damage Analysis', 'Policy Coverage', 'Financial Estimate', 'Settings'];
   readonly statuses = ['FNOL Received', 'Under Review', 'Investigation', 'Assessment', 'Pending Approval', 'Approved', 'Closed'];
   draft: ClaimDraft = this.emptyDraft();
 
@@ -490,13 +491,16 @@ export class AppComponent implements OnInit {
   }
 
   selectPage(page: string): void {
-    if (page === 'Users' && !this.isAdmin()) return;
     this.activePage = page;
+    if (page === 'Settings') {
+      this.settingsSection = 'Company Profile';
+      if (this.isAdmin()) this.loadUsers();
+      if (this.canManageEmailConnectors()) this.loadEmailConnectorStatus();
+    }
     this.errorMessage = '';
     this.successMessage = '';
     if (page === 'Claims') this.loadClaims();
     if (page === 'AI Damage Analysis' && this.damageClaimId.trim()) this.loadDamageAssessments();
-    if (page === 'Users') this.loadUsers();
     if (page === 'Financial Estimate' && this.canManageTaxRules()) { this.loadTaxRules(); this.loadUsTaxResearchMatrix(); }
     if (page === 'Repair Rates' && this.canManageTaxRules()) this.loadRepairRates();
     if (page === 'Policy Coverage') this.loadPolicies();
