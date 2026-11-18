@@ -19,3 +19,48 @@
 
 /* Solv-In official repository logo */
 .brand-logo{width:46px;height:46px;object-fit:contain;flex:0 0 46px;border-radius:8px;background:#fff}.login-logo{width:64px;height:64px;object-fit:contain;flex:0 0 64px;border-radius:10px;background:#fff}.brand{gap:11px}.login-brand{gap:14px}
+
+/* Claim Details accordion workspace */
+.claim-overview{display:grid;grid-template-columns:1.5fr repeat(4,minmax(0,1fr));gap:12px;padding:17px 18px;margin:10px 0 16px;border:1px solid #dfe8f2;border-radius:12px;background:linear-gradient(120deg,#f7fbff,#fff)}
+.claim-overview-identity,.claim-overview-stat{display:flex;flex-direction:column;justify-content:center;gap:6px;min-width:0}
+.claim-overview-label{font-size:9px;letter-spacing:1.1px;color:#7b8ba0;font-weight:700}
+.claim-overview-identity>strong{font-size:17px;color:#1b3557;overflow-wrap:anywhere}
+.claim-overview-insured{font-size:11px;color:#718198}
+.claim-overview-stat{border-left:1px solid #e4ebf3;padding-left:13px}
+.claim-overview-stat small{font-size:10px;color:#8291a5}
+.claim-overview-stat strong{font-size:12px;color:#253b59;overflow-wrap:anywhere}
+.claim-accordion-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:12px 0}
+.claim-detail-search{display:flex;align-items:center;gap:9px;min-width:240px;max-width:420px;flex:1;border:1px solid #dce5ef;background:#fff;border-radius:9px;padding:0 12px;color:#8190a3}
+.claim-detail-search input{width:100%;min-width:0;border:0;outline:0;padding:11px 0;font:12px Inter;color:#253b59;background:transparent}
+.claim-accordion-tools{display:flex;align-items:center;justify-content:flex-end;gap:12px;flex-wrap:wrap}
+.claim-search-hint{font-size:10px;color:#8291a5}
+.claim-accordion-list{display:grid;gap:9px;margin:10px 0 16px}
+.claim-accordion-section{border:1px solid #e1e9f2;border-radius:11px;background:#fff;overflow:hidden;box-shadow:0 2px 8px #17385b06}
+.claim-accordion-heading,.claim-subsection-heading{width:100%;border:0;background:#fff;display:flex;align-items:center;justify-content:space-between;gap:14px;text-align:left;cursor:pointer}
+.claim-accordion-heading{padding:15px 17px}
+.claim-accordion-heading:hover,.claim-subsection-heading:hover{background:#f8fbff}
+.claim-accordion-leading{display:flex;align-items:center;gap:13px;min-width:0}
+.claim-section-number{width:34px;height:34px;display:grid;place-items:center;border-radius:9px;background:#edf4fc;color:#286bb2;font-size:11px;font-weight:800;flex-shrink:0}
+.claim-section-title-wrap{display:grid;gap:4px;min-width:0}
+.claim-section-title-wrap strong{font-size:13px;color:#243b5b}
+.claim-section-title-wrap small,.claim-subsection-heading small{font-size:10px;color:#8291a5;font-weight:400}
+.claim-section-meta{display:flex;align-items:center;gap:10px;flex-shrink:0}
+.claim-section-progress{font-size:10px;color:#4f789f}
+.claim-section-pending{font-size:9px;color:#9b7027;background:#fff6e4;border-radius:20px;padding:4px 7px}
+.claim-chevron{font-size:18px;color:#8191a4;display:inline-block;transition:transform .2s ease}
+.claim-chevron.rotated{transform:rotate(180deg)}
+.claim-accordion-content{padding:0 15px 14px;border-top:1px solid #edf1f6;animation:claimAccordionIn .18s ease-out}
+.claim-subsection{border:1px solid #e8edf4;border-radius:9px;margin-top:10px;overflow:hidden}
+.claim-subsection-heading{padding:12px 13px}
+.claim-subsection-heading>span:first-child{display:grid;gap:4px}
+.claim-subsection-heading strong{font-size:11px;color:#344b69}
+.claim-subsection-body{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding:0 10px 10px}
+.claim-subsection-body .claim-field-card{background:#fbfcfe;padding:12px}
+.claim-placeholder-note{padding:11px 13px;background:#fbfcfe;border-top:1px solid #edf1f6;color:#8291a5;font-size:10px;line-height:1.6}
+.placeholder-subsection small{color:#a17b3e}
+.claim-audit-meta{display:flex;gap:22px;flex-wrap:wrap;color:#8291a5;font-size:10px;padding:5px 2px 14px}
+.claim-audit-meta b{color:#52647d}
+@keyframes claimAccordionIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
+@media(max-width:1050px){.claim-overview{grid-template-columns:repeat(3,minmax(0,1fr))}.claim-overview-identity{grid-column:span 3}.claim-overview-stat:nth-child(2){border-left:0;padding-left:0}}
+@media(max-width:700px){.claim-overview{grid-template-columns:1fr 1fr;padding:13px}.claim-overview-identity{grid-column:1/-1;padding-bottom:9px;border-bottom:1px solid #e4ebf3}.claim-overview-stat{border-left:0;padding-left:0}.claim-accordion-toolbar{align-items:stretch;flex-direction:column}.claim-detail-search{max-width:none;width:100%}.claim-accordion-tools{justify-content:space-between}.claim-section-meta{gap:5px}.claim-section-progress{display:none}.claim-accordion-heading{padding:12px}.claim-section-title-wrap strong{font-size:12px}.claim-section-title-wrap small{font-size:9px}.claim-subsection-body{grid-template-columns:1fr}.claim-accordion-content{padding:0 9px 10px}}
+@media(prefers-reduced-motion:reduce){.claim-chevron,.claim-accordion-content{transition:none;animation:none}}
