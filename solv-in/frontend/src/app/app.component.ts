@@ -832,6 +832,37 @@ export class AppComponent implements OnInit {
     return fields;
   }
 
+  claimReportComparisonRows(): Array<{key:string;label:string;initial:string;adjuster:string;estimate:string;status:'Match'|'Mismatch'|'Not Available'}> {
+    const claim: any = this.selectedClaim || {};
+    const adjusterReport: any = claim.adjuster_report || claim.adjuster_report_data || null;
+    const estimate: any = this.financialEstimates.length ? this.financialEstimates[0] : null;
+    return this.claimDetailFields().map(field => {
+      const initial = String((claim as any)[field.key] ?? '').trim();
+      const adjuster = String(adjusterReport?.[field.key] ?? '').trim();
+      let estimateRaw: any = estimate?.[field.key];
+      if (field.key === 'estimated_loss' && estimate) estimateRaw = estimate.preliminary_net_estimate;
+      if (field.key === 'status' && estimate) estimateRaw = estimate.review_status || estimate.status;
+      const estimateValue = String(estimateRaw ?? '').trim();
+      const values = [initial, adjuster, estimateValue].filter(value => value.length > 0);
+      const status: 'Match'|'Mismatch'|'Not Available' = values.length < 2
+        ? 'Not Available'
+        : values.every(value => value.toLocaleLowerCase() === values[0].toLocaleLowerCase()) ? 'Match' : 'Mismatch';
+      const display = (value: string, currency?: string) => {
+        if (!value) return 'Not Available';
+        if (field.key === 'estimated_loss' && !Number.isNaN(Number(value))) return this.formatAmount(Number(value), currency || claim.currency || estimate?.currency);
+        return value;
+      };
+      return {
+        key: field.key,
+        label: field.label,
+        initial: display(initial, claim.currency),
+        adjuster: display(adjuster, claim.currency),
+        estimate: display(estimateValue, estimate?.currency),
+        status
+      };
+    });
+  }
+
   trackByClaimField(_index: number, field: {key: string}): string {
     return field.key;
   }
