@@ -143,6 +143,12 @@
             </div>
           </div>
 
+          <div class="claim-detail-workspace" *ngIf="selectedClaim">
+          <section class="claim-management-summary">
+            <div class="claim-management-summary-head"><div><span class="claim-detail-kicker">CLAIM MANAGEMENT</span><strong>Review sections</strong></div><span class="claim-management-count">{{ claimOverallProgress().complete }} / {{ claimOverallProgress().total }} fields</span></div>
+            <div class="claim-management-progress"><span [style.width.%]="claimOverallProgress().total ? (claimOverallProgress().complete / claimOverallProgress().total) * 100 : 0"></span></div>
+            <div class="claim-management-summary-foot"><span>Recorded field completeness</span><span>{{ claimOverallProgress().total ? ((claimOverallProgress().complete / claimOverallProgress().total) * 100 | number:'1.0-0') : 0 }}%</span></div>
+          </section>
           <section class="claim-comparison-panel" *ngIf="selectedClaim">
             <div class="claim-comparison-heading">
               <div><span class="claim-detail-kicker">CLAIM REVIEW WORKSPACE</span><h3>Report comparison</h3><p>Review information across intake, adjuster findings and financial estimates.</p></div>
@@ -237,6 +243,7 @@
             </section>
           </div>
 
+          </div>
           <div *ngIf="selectedClaim" class="claim-audit-meta">
             <span><b>Created date:</b> {{ selectedClaim.created_at ? (selectedClaim.created_at | date:'medium') : 'Not Found' }}</span>
             <span><b>Created by:</b> {{ selectedClaim.created_by_name || selectedClaim.created_by_email || selectedClaim.created_by || 'Not Found' }}</span>
