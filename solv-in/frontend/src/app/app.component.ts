@@ -71,6 +71,7 @@ export class AppComponent implements OnInit {
   claims: Claim[] = [];
   selectedClaim: Claim | null = null;
   claimDetailSearch = '';
+  claimComparisonTab: 'initial' | 'adjuster' | 'estimates' = 'initial';
   expandedClaimSections: string[] = ['initial-review'];
   expandedClaimSubsections: string[] = ['initial-review:claim-status'];
   loadingClaimDetails = false;
@@ -652,11 +653,14 @@ export class AppComponent implements OnInit {
     this.loadingClaimDetails = true;
     this.selectedClaim = null;
     this.claimDetailSearch = '';
+    this.claimComparisonTab = 'initial';
+    this.estimateClaimId = claim.claim_id;
+    this.financialEstimates = [];
     this.expandedClaimSections = ['initial-review'];
     this.expandedClaimSubsections = ['initial-review:claim-status'];
     this.activePage = 'Claim Details';
     this.http.get<Claim>(`${environment.apiBaseUrl}/claims/${encodeURIComponent(claim.claim_id)}`, { headers: this.authHeaders() }).subscribe({
-      next: result => { this.selectedClaim = result; this.loadingClaimDetails = false; this.loadClaimDocuments(); if (editAfterOpen) this.startClaimEdit(); },
+      next: result => { this.selectedClaim = result; this.loadingClaimDetails = false; this.loadClaimDocuments(); this.loadFinancialEstimates(); if (editAfterOpen) this.startClaimEdit(); },
       error: error => { this.loadingClaimDetails = false; this.handleApiError(error); }
     });
   }
