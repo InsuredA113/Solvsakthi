@@ -5,6 +5,7 @@ It never treats an email as proof of coverage, liability, fraud or settlement.
 """
 import re
 import io
+import json
 from datetime import datetime, timezone
 from typing import Literal
 
@@ -117,6 +118,45 @@ def ocr_pdf_text(content: bytes, max_pages: int = 10, max_chars: int = 20000) ->
         return "\\n\\n".join(extracted)[:max_chars]
     except Exception:
         return ""
+
+
+def extract_structured_claim_fields(source_text: str) -> dict:
+    """Use Gemini to map document text into known FNOL fields; unknowns stay null."""
+    allowed_fields = tuple(LABELS.keys())
+    if not GEMINI_API_KEY or not source_text or not source_text.strip():
+        return {}
+    prompt = (
+        "Extract factual insurance first-notice-of-loss information from the source text. "
+        "Return one JSON object with exactly these keys: " + ", ".join(allowed_fields) + ". "
+        "Values must be strings or null. Do not infer missing facts, do not invent values, "
+        "do not decide coverage, liability, fraud, settlement, or claim approval. "
+        "Preserve names, policy identifiers, addresses, phone numbers and amounts exactly. "
+        "For incident_date, use YYYY-MM-DD only when the date is unambiguous; otherwise return "
+        "the original date text. For country_code use ISO 3166-1 alpha-2 only when explicitly "
+        "supported by the document. For currency use an explicit currency code when present. "
+        "For estimated_loss return the numeric amount as text without currency symbols. "
+        "Source text:\\n" + source_text[:30000]
+    )
+    try:
+        client = genai.Client(api_key=GEMINI_API_KEY)
+        response = client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=prompt,
+            config=types.GenerateContentConfig(response_mime_type="application/json"),
+        )
+        raw = (getattr(response, "text", None) or "").strip()
+        data = json.loads(raw)
+        if not isinstance(data, dict):
+            return {}
+        result = {}
+        for key in allowed_fields:
+            value = data.get(key)
+            if isinstance(value, (str, int, float)) and str(value).strip():
+                result[key] = str(value).strip()[:500]
+        return result
+    except Exception:
+        return {}
+
 
 def extract_email_intake(subject: str, body_text: str) -> dict:
     text = f"{subject}\n{body_text}".lower()
