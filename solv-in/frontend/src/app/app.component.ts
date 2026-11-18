@@ -17,6 +17,7 @@ interface Claim {
   assigned_adjuster_email?: string | null; assigned_adjuster_name?: string | null; assigned_adjuster_role?: string | null; closed_at?: string | null;
   auto_intake_status?: string; missing_fields?: string[]; suggested_information?: Record<string, string>;
 }
+interface AdjusterReport { report_id: string; claim_id: string; report_title: string; report_reference?: string | null; report_date?: string | null; findings?: string | null; report_fields: Record<string, string | number | boolean | null>; created_at: string; created_by: string; }
 interface ClaimDocument { file_id: string; claim_id: string; filename: string; content_type: string; size: number; uploaded_at?: string; uploaded_by?: string; }
 interface DamageAssessment {
   assessment_id: string; claim_id?: string | null; damage_category: string;
@@ -108,6 +109,8 @@ export class AppComponent implements OnInit {
   estimateBusy = false;
   financialEstimate: FinancialEstimate | null = null;
   financialEstimates: FinancialEstimate[] = [];
+  adjusterReports: AdjusterReport[] = [];
+  adjusterReportsBusy = false;
   financialReviewNotes = '';
   financialReviewBusyId = '';
   policies: any[] = [];
@@ -662,11 +665,12 @@ export class AppComponent implements OnInit {
     this.claimComparisonTab = 'initial';
     this.estimateClaimId = claim.claim_id;
     this.financialEstimates = [];
+    this.adjusterReports = [];
     this.expandedClaimSections = ['initial-review'];
     this.expandedClaimSubsections = ['initial-review:claim-status'];
     this.activePage = 'Claim Details';
     this.http.get<Claim>(`${environment.apiBaseUrl}/claims/${encodeURIComponent(claim.claim_id)}`, { headers: this.authHeaders() }).subscribe({
-      next: result => { this.selectedClaim = result; this.loadingClaimDetails = false; this.loadClaimDocuments(); this.loadFinancialEstimates(); if (editAfterOpen) this.startClaimEdit(); },
+      next: result => { this.selectedClaim = result; this.loadingClaimDetails = false; this.loadClaimDocuments(); this.loadFinancialEstimates(); this.loadAdjusterReports(); if (editAfterOpen) this.startClaimEdit(); },
       error: error => { this.loadingClaimDetails = false; this.handleApiError(error); }
     });
   }
@@ -835,7 +839,7 @@ export class AppComponent implements OnInit {
 
   claimReportComparisonRows(): Array<{key:string;label:string;initial:string;adjuster:string;estimate:string;status:'Match'|'Mismatch'|'Not Available'}> {
     const claim: any = this.selectedClaim || {};
-    const adjusterReport: any = claim.adjuster_report || claim.adjuster_report_data || null;
+    const adjusterReport: any = this.adjusterReports.length ? this.adjusterReports[0].report_fields : null;
     const estimate: any = this.financialEstimates.length ? this.financialEstimates[0] : null;
     return this.claimDetailFields().map(field => {
       const initial = String((claim as any)[field.key] ?? '').trim();
@@ -1423,6 +1427,16 @@ export class AppComponent implements OnInit {
     this.http.post<FinancialEstimate>(`${environment.apiBaseUrl}/claims/${encodeURIComponent(this.estimateClaimId.trim())}/financial-estimates`, body, { headers: this.authHeaders() }).subscribe({
       next: result => { this.financialEstimate = result; this.estimateBusy = false; this.successMessage = 'Preliminary financial estimate calculated and saved for authorised review.'; this.loadFinancialEstimates(); },
       error: error => { this.estimateBusy = false; this.handleApiError(error); }
+    });
+  }
+
+  loadAdjusterReports(): void {
+    const id = this.selectedClaim?.claim_id;
+    if (!id) { this.adjusterReports = []; return; }
+    this.adjusterReportsBusy = true;
+    this.http.get<{items: AdjusterReport[]; count: number}>(`${environment.apiBaseUrl}/claims/${encodeURIComponent(id)}/adjuster-reports`, { headers: this.authHeaders() }).subscribe({
+      next: result => { this.adjusterReports = result.items || []; this.adjusterReportsBusy = false; },
+      error: error => { this.adjusterReports = []; this.adjusterReportsBusy = false; this.handleApiError(error); }
     });
   }
 
