@@ -431,7 +431,7 @@ export class AppComponent implements OnInit {
 
   emptyEstimateDraft(): any {
     return {
-      description: '', quantity: 1, unit: 'item', unit_rate: 0, repair_rate_id: null, depreciation_rate: 0, taxable: true, tax_mode: 'automatic',
+      line_items: [this.emptyEstimateLineItem()], tax_mode: 'automatic',
       source_damage_assessment_id: null,
       currency: '', currency_minor_units: 2, country_code: '', state_or_jurisdiction: '', region: '', locality: '', postal_code: '',
       loss_date: new Date().toISOString().slice(0, 10), tax_point_date: new Date().toISOString().slice(0, 10),
@@ -1225,17 +1225,48 @@ export class AppComponent implements OnInit {
       });
   }
 
-  selectRepairRateById(rateId: string): void {
+  emptyEstimateLineItem(): any {
+    return { description: '', quantity: 1, unit: 'item', unit_rate: 0, repair_rate_id: null, depreciation_rate: 0, taxable: true };
+  }
+
+  addEstimateLineItem(): void {
+    if (this.estimateDraft.line_items.length >= 100) return;
+    this.estimateDraft.line_items.push(this.emptyEstimateLineItem());
+  }
+
+  removeEstimateLineItem(index: number): void {
+    if (this.estimateDraft.line_items.length <= 1) return;
+    this.estimateDraft.line_items.splice(index, 1);
+  }
+
+  estimateLineTotal(item: any): number {
+    const quantity = Number(item.quantity || 0);
+    const rate = Number(item.unit_rate || 0);
+    return Number.isFinite(quantity * rate) ? quantity * rate : 0;
+  }
+
+  selectRepairRateForLine(index: number, rateId: string): void {
+    const line = this.estimateDraft.line_items[index];
+    if (!line) return;
+    if (!rateId) {
+      line.repair_rate_id = null;
+      return;
+    }
     const rate = this.applicableRepairRates.find(item => item.rate_id === rateId);
     if (!rate) return;
-    this.selectedRepairRateId = rate.rate_id;
-    this.estimateDraft.repair_rate_id = rate.rate_id;
-    this.estimateDraft.description = rate.item_name;
-    this.estimateDraft.unit = rate.unit;
-    this.estimateDraft.unit_rate = Number(rate.unit_rate);
-    this.estimateDraft.pricing_source = `${rate.source_name} · ${rate.source_reference}`;
+    line.repair_rate_id = rate.rate_id;
+    line.description = rate.item_name;
+    line.unit = rate.unit;
+    line.unit_rate = Number(rate.unit_rate);
+    const sources = [...new Set(this.estimateDraft.line_items
+      .filter((item: any) => item.repair_rate_id)
+      .map((item: any) => {
+        const selected = this.applicableRepairRates.find(rateItem => rateItem.rate_id === item.repair_rate_id);
+        return selected ? `${selected.source_name} · ${selected.source_reference}` : '';
+      }).filter(Boolean))];
+    this.estimateDraft.pricing_source = sources.join(' | ') || '';
     this.estimateDraft.pricing_effective_date = rate.effective_from;
-    this.successMessage = `Selected verified catalogue item: ${rate.item_name}. Python will re-check its active status, location and effective date before calculation.`;
+    this.successMessage = `Selected ${rate.item_name}. The server will revalidate this rate's status, location and effective date when calculating.`;
   }
 
   calculateFinancialEstimate(): void {
@@ -1243,12 +1274,15 @@ export class AppComponent implements OnInit {
     const claim = this.claims.find(x => x.claim_id === this.estimateClaimId.trim());
     const currency = (claim?.currency || d.currency || '').toUpperCase();
     const countryCode = (claim?.country_code || d.country_code || '').toUpperCase();
-    if (!this.estimateClaimId.trim() || !d.description.trim() || !countryCode ||
+    if (!this.estimateClaimId.trim() || !countryCode ||
         !d.state_or_jurisdiction.trim() || !currency || !/^[A-Z]{3}$/.test(currency) ||
         !/^[A-Z]{2}$/.test(countryCode) || !d.loss_date || !d.tax_point_date ||
         !d.pricing_source.trim() || !d.pricing_effective_date ||
-        Number(d.quantity) <= 0 || Number(d.unit_rate) < 0) {
-      this.errorMessage = 'Enter a Claim ID, repair details, ISO country and currency codes, loss/tax dates, jurisdiction and verified pricing source.';
+        !Array.isArray(d.line_items) || d.line_items.length === 0 ||
+        d.line_items.some((item: any) => !item.description?.trim() || !item.unit?.trim() ||
+          Number(item.quantity) <= 0 || Number(item.unit_rate) < 0 ||
+          Number(item.depreciation_rate) < 0 || Number(item.depreciation_rate) > 100)) {
+      this.errorMessage = 'Enter a Claim ID, at least one complete repair line, valid quantities, ISO country/currency codes, loss/tax dates, jurisdiction and pricing evidence.';
       return;
     }
     if (d.tax_mode === 'automatic' && this.applicableTaxRules?.count > 0 && !d.confirm_automatic_tax_application) {
@@ -1268,7 +1302,11 @@ export class AppComponent implements OnInit {
       currency, country_code: countryCode,
       state_or_jurisdiction: d.state_or_jurisdiction, region: claim?.region || d.region, locality: claim?.locality || d.locality,
       postal_code: claim?.postal_code || d.postal_code, loss_date: claim?.incident_date || d.loss_date, tax_point_date: d.tax_point_date,
-      line_items: [{ description: d.description, quantity: Number(d.quantity), unit: d.unit, unit_rate: Number(d.unit_rate), repair_rate_id: d.repair_rate_id || null, taxable: !!d.taxable, depreciation_rate: Number(d.depreciation_rate) }],
+      line_items: d.line_items.map((item: any) => ({
+        description: item.description.trim(), quantity: Number(item.quantity), unit: item.unit.trim(),
+        unit_rate: Number(item.unit_rate), repair_rate_id: item.repair_rate_id || null,
+        taxable: !!item.taxable, depreciation_rate: Number(item.depreciation_rate || 0)
+      })),
       source_damage_assessment_id: d.source_damage_assessment_id || null,
       tax_mode: d.tax_mode,
       confirm_automatic_tax_application: !!d.confirm_automatic_tax_application,
