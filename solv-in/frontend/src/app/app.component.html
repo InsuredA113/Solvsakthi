@@ -906,15 +906,15 @@
                     <label>Full name *<input name="new_full_name" [(ngModel)]="newUser.full_name" required minlength="2" maxlength="120" placeholder="Full name"></label>
                     <label>Email address *<input type="email" name="new_email" [(ngModel)]="newUser.email" required placeholder="user@company.com"></label>
                     <label>Temporary password *<input type="password" name="new_password" [(ngModel)]="newUser.password" required minlength="12" placeholder="At least 12 characters with letters and numbers"></label>
-                    <label>Role *<select name="new_role" [(ngModel)]="newUser.role"><option *ngFor="let role of roles" [value]="role">{{ role }}</option></select></label>
+                    <fieldset class="form-field" style="border:0;padding:0;margin:0"><legend>Roles * <small class="muted">Select one or more roles</small></legend><div class="role-checkbox-grid"><label *ngFor="let role of roles" class="checkbox-label"><input type="checkbox" [checked]="newUser.roles.includes(role)" (change)="toggleNewUserRole(role, $any($event.target).checked)"><span>{{ role }}</span></label></div></fieldset>
                   </div>
                   <div class="form-actions"><span class="muted">User provisioning remains restricted to the Super Administrator.</span><button class="primary-action" type="submit" [disabled]="userBusy">{{ userBusy ? 'Creating…' : 'Create user' }}</button></div>
                 </form>
               </section>
               <section class="panel claims-panel" style="margin-top:14px">
                 <div class="panel-heading"><h2>Workspace users</h2><span class="subtle">{{ users.length }} accounts</span></div>
-                <div class="table-scroll"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Account status</th></tr></thead>
-                  <tbody><tr *ngFor="let account of users"><td>{{ account.full_name }}</td><td>{{ account.email }}</td><td>{{ account.role }}</td><td><span class="status">{{ account.is_active ? 'Active' : 'Inactive' }}</span></td></tr>
+                <div class="table-scroll"><table><thead><tr><th>Name</th><th>Email</th><th>Assigned roles</th><th>Account status</th></tr></thead>
+                  <tbody><tr *ngFor="let account of users"><td>{{ account.full_name }}</td><td>{{ account.email }}</td><td>{{ (account.roles?.length ? account.roles : [account.role]).join(', ') }}</td><td><span class="status">{{ account.is_active ? 'Active' : 'Inactive' }}</span></td></tr>
                     <tr *ngIf="users.length === 0"><td colspan="4" class="empty">No user accounts found.</td></tr></tbody></table></div>
               </section>
             </ng-container>
