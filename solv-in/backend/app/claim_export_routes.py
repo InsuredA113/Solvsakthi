@@ -13,6 +13,7 @@ from fastapi.responses import StreamingResponse
 from gridfs import GridFSBucket
 from pymongo.errors import PyMongoError
 from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER
 from reportlab.lib.pagesizes import A4
@@ -92,8 +93,8 @@ def _xlsx_bytes(records: list[tuple[str, dict]]) -> bytes:
     summary.column_dimensions["B"].width = 42
     summary.column_dimensions["C"].width = 90
     for cell in summary[1]:
-        cell.font = cell.font.copy(bold=True, color="FFFFFF")
-        cell.fill = __import__("openpyxl").styles.PatternFill("solid", fgColor="17365D")
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor="17365D")
     for record_type, record in records:
         if record_type in {"Claim", "Policy"}:
             sheet = workbook.create_sheet(record_type[:31])
@@ -174,7 +175,7 @@ def _load_claim_export(claim_id: str) -> tuple[Any, list[tuple[str, dict]], list
         content = bucket.open_download_stream(stored._id).read()
         filename = re.sub(r"[^A-Za-z0-9._-]", "_", stored.filename or f"document-{index + 1}")
         documents.append((f"evidence/{index + 1:03d}_{filename}", content))
-    if bucket.find({"metadata.claim_id": claim_id}).limit(MAX_EXPORT_DOCUMENTS + 1).count() > MAX_EXPORT_DOCUMENTS:
+    if db["claim_documents.files"].count_documents({"metadata.claim_id": claim_id}) > MAX_EXPORT_DOCUMENTS:
         raise HTTPException(status_code=413, detail="This claim has more than 200 evidence files. Download evidence files separately.")
     return db, records, documents
 
