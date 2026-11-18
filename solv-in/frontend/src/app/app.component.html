@@ -878,7 +878,24 @@
               <p class="damage-disclaimer">Provider credentials and webhook settings belong in the backend environment, not in the browser.</p>
             </section>
 
-            <section class="panel placeholder" *ngIf="['AI Configuration','Currency & Regional Settings','Notifications','Security & Audit'].includes(settingsSection)">
+            <section class="panel form-panel" *ngIf="settingsSection === 'AI Configuration' && canManageEmailConnectors()">
+              <div class="panel-heading"><div><h2>AI Tools Catalogue</h2><p class="muted">Review AI providers for Solv-In. Connect opens secure setup guidance; API secrets must remain in the backend environment.</p></div></div>
+              <div class="integration-grid ai-provider-grid">
+                <article class="integration-card"><div class="integration-head"><b>ChatGPT · OpenAI</b><span class="status">Available to configure</span></div><p>Claim summaries, reasoning and document assistance.</p><small>Backend environment variable: OPENAI_API_KEY</small><button class="primary-action" type="button" (click)="openAIProviderSetup('ChatGPT')">Connect</button></article>
+                <article class="integration-card"><div class="integration-head"><b>Claude · Anthropic</b><span class="status">Available to configure</span></div><p>Long-document analysis, policy wording review and report drafting.</p><small>Backend environment variable: ANTHROPIC_API_KEY</small><button class="primary-action" type="button" (click)="openAIProviderSetup('Claude')">Connect</button></article>
+                <article class="integration-card"><div class="integration-head"><b>Gemini · Google</b><span class="status">Existing integration</span></div><p>Preliminary image damage analysis and document extraction.</p><small>Uses the existing backend GEMINI_API_KEY configuration.</small><button class="secondary-action" type="button" (click)="openAIProviderSetup('Gemini')">Manage Connection</button></article>
+                <article class="integration-card"><div class="integration-head"><b>GitHub Copilot</b><span class="status">Developer tool</span></div><p>Developer productivity, code assistance and software testing.</p><small>Managed through GitHub organisation licensing and IDE sign-in.</small><button class="secondary-action" type="button" (click)="openAIProviderSetup('GitHub Copilot')">Connect</button></article>
+              </div>
+              <p class="damage-disclaimer">Security: provider API keys are never collected or stored in this browser screen. Configure secrets in the backend service environment. Provider runtime integration and live connection testing require a backend connector and are not activated by this catalogue alone.</p>
+            </section>
+
+            <section class="panel form-panel" *ngIf="settingsSection === 'AI Configuration' && selectedAIProvider">
+              <div class="panel-heading"><div><h2>{{ selectedAIProvider }} setup</h2><p class="muted">{{ aiProviderSetup[selectedAIProvider].purpose }}</p></div><button class="secondary-action" type="button" (click)="closeAIProviderSetup()">Close</button></div>
+              <div class="settings-info"><b>Secure configuration</b><span>{{ aiProviderSetup[selectedAIProvider].setup }}</span><small *ngIf="aiProviderSetup[selectedAIProvider].environmentKey">Required backend variable: {{ aiProviderSetup[selectedAIProvider].environmentKey }}</small><small>{{ aiProviderSetup[selectedAIProvider].note }}</small></div>
+              <p class="damage-disclaimer" style="margin-top:14px">This screen does not accept API keys or claim a connection is active. A secure backend credential-management and provider health-check endpoint must be implemented before Solv-In can save credentials or verify live connectivity.</p>
+            </section>
+
+            <section class="panel placeholder" *ngIf="['Currency & Regional Settings','Notifications','Security & Audit'].includes(settingsSection)">
               <div class="placeholder-icon">⚙</div><h2>{{ settingsSection }}</h2><p>This settings area is reserved for its secure configuration workflow. Existing application behaviour is unchanged until the corresponding backend controls are implemented.</p>
             </section>
           </div>
