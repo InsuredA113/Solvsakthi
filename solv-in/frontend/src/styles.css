@@ -87,3 +87,10 @@
 @media(max-width:900px){.settings-layout{grid-template-columns:1fr}.settings-menu{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.integration-grid{grid-template-columns:1fr}}
 
 .ai-provider-grid .integration-card .primary-action,.ai-provider-grid .integration-card .secondary-action{align-self:flex-start;margin-top:5px}.ai-provider-grid .integration-card{min-height:190px}
+
+/* Dashboard summary cards are interactive navigation controls. */
+.metric-clickable{width:100%;font:inherit;text-align:left;color:inherit;cursor:pointer;transition:transform .15s ease,box-shadow .15s ease,border-color .15s ease}
+.metric-clickable:hover{transform:translateY(-2px);border-color:#9fc6ed;box-shadow:0 7px 18px #17385b12}
+.metric-clickable:focus-visible{outline:3px solid #78b8f2;outline-offset:3px}
+.dashboard-quick-filter{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 14px;margin-bottom:12px;border:1px solid #cfe1f5;border-radius:9px;background:#f4f9ff;color:#52647d;font-size:12px}
+@media(prefers-reduced-motion:reduce){.metric-clickable{transition:none}.metric-clickable:hover{transform:none}}
