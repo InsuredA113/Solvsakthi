@@ -4,10 +4,12 @@ This module deliberately performs conservative, label-based extraction only.
 It never treats an email as proof of coverage, liability, fraud or settlement.
 """
 import re
+import io
 from datetime import datetime, timezone
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pypdf import PdfReader
 
 
 class EmailIntakeCreate(BaseModel):
@@ -62,6 +64,27 @@ def _label_value(body: str, labels: tuple[str, ...]) -> str | None:
             return match.group(1).strip()[:500]
     return None
 
+
+def extract_pdf_text(content: bytes, max_pages: int = 40, max_chars: int = 30000) -> str:
+    """Extract selectable text from a bounded PDF; scanned PDFs need OCR/manual review."""
+    if not content or not content.startswith(b"%PDF-") or len(content) > 15 * 1024 * 1024:
+        return ""
+    try:
+        reader = PdfReader(io.BytesIO(content), strict=False)
+        if reader.is_encrypted:
+            return ""
+        chunks = []
+        total = 0
+        for page in reader.pages[:max_pages]:
+            page_text = page.extract_text() or ""
+            if page_text:
+                chunks.append(page_text)
+                total += len(page_text)
+            if total >= max_chars:
+                break
+        return "\n".join(chunks)[:max_chars]
+    except Exception:
+        return ""
 
 def extract_email_intake(subject: str, body_text: str) -> dict:
     text = f"{subject}\n{body_text}".lower()
