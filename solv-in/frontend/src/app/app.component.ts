@@ -59,6 +59,9 @@ export class AppComponent implements OnInit {
   statusFilter = '';
   claims: Claim[] = [];
   selectedClaim: Claim | null = null;
+  claimDetailSearch = '';
+  expandedClaimSections: string[] = ['initial-review'];
+  expandedClaimSubsections: string[] = ['initial-review:claim-status'];
   loadingClaimDetails = false;
   claimEditMode = false;
   claimEditBusy = false;
@@ -746,6 +749,121 @@ export class AppComponent implements OnInit {
   trackByClaimField(_index: number, field: {key: string}): string {
     return field.key;
   }
+  claimDetailSections(): Array<{id: string; number: string; title: string; description: string; subsections: Array<{id: string; title: string; fieldKeys: string[]; configured?: boolean; note?: string}>}> {
+    return [
+      {id:'initial-review',number:'01',title:'Initial Claim Review',description:'Triage, status and first notice information',subsections:[
+        {id:'claim-status',title:'Claim status and loss cause',fieldKeys:['status','loss_cause']}
+      ]},
+      {id:'claim-details',number:'02',title:'Claim Details',description:'Insured, incident and claim classification',subsections:[
+        {id:'insured',title:'Insured and contact information',fieldKeys:['customer_name','email','phone','business_name','industry']},
+        {id:'incident',title:'Incident and claim information',fieldKeys:['claim_type','incident_date','incident_description','commercial_liability_type']}
+      ]},
+      {id:'carrier-participation',number:'03',title:'Carrier Participation',description:'Participating carrier and share information',subsections:[
+        {id:'carrier-1',title:'Carrier 1',fieldKeys:[],configured:false,note:'Carrier participation fields and share percentages are not currently present in the claim model.'},
+        {id:'carrier-2',title:'Carrier 2',fieldKeys:[],configured:false},
+        {id:'carrier-3',title:'Carrier 3',fieldKeys:[],configured:false},
+        {id:'carrier-4',title:'Carrier 4',fieldKeys:[],configured:false},
+        {id:'carrier-5',title:'Carrier 5',fieldKeys:[],configured:false},
+        {id:'carrier-6',title:'Carrier 6',fieldKeys:[],configured:false}
+      ]},
+      {id:'policy-coverage-details',number:'04',title:'Policy and Coverage Details',description:'Policy data and coverage administration',subsections:[
+        {id:'policy-information',title:'Policy Information',fieldKeys:['policy_number']},
+        {id:'policy-period',title:'Policy Period',fieldKeys:[],configured:false},
+        {id:'recovery-assessment',title:'Recovery Assessment',fieldKeys:[],configured:false},
+        {id:'subrogation',title:'Subrogation',fieldKeys:[],configured:false},
+        {id:'salvage',title:'Salvage',fieldKeys:[],configured:false},
+        {id:'deductibles',title:'Deductibles',fieldKeys:[],configured:false},
+        {id:'financial-information',title:'Financial Information',fieldKeys:['estimated_loss','currency']},
+        {id:'mortgage-details',title:'Mortgage Details',fieldKeys:[],configured:false}
+      ]},
+      {id:'coverage-deductible',number:'05',title:'Coverage and Deductible',description:'Coverage review and applicable deductible details',subsections:[
+        {id:'coverage-review',title:'Coverage and deductible review',fieldKeys:[],configured:false,note:'Coverage limits, insured interests and deductible values require verified policy and coverage records.'}
+      ]},
+      {id:'location-property',number:'06',title:'Location-Level Coverage and Property Characteristics',description:'Risk location, property and building details',subsections:[
+        {id:'location-information',title:'Location Information',fieldKeys:['loss_location','country_code','region','locality','postal_code']},
+        {id:'building-information',title:'Building Information',fieldKeys:[],configured:false},
+        {id:'construction-occupancy',title:'Construction and Occupancy',fieldKeys:['property_occupancy']},
+        {id:'roof-information',title:'Roof Information',fieldKeys:[],configured:false},
+        {id:'property-coverage',title:'Property Coverage',fieldKeys:[],configured:false},
+        {id:'endorsements',title:'Endorsements',fieldKeys:[],configured:false}
+      ]},
+      {id:'adjuster-report',number:'07',title:'Adjuster Report',description:'Inspection findings and adjuster documentation',subsections:[
+        {id:'adjuster-report-content',title:'Adjuster report',fieldKeys:[],configured:false,note:'No adjuster report fields or linked report records are currently exposed in Claim Details.'}
+      ]},
+      {id:'estimate-reports',number:'08',title:'Estimate Reports',description:'Repair estimates and supporting reports',subsections:[
+        {id:'estimate-report-content',title:'Estimate reports',fieldKeys:[],configured:false,note:'Estimate reports remain in the existing Financial Estimate workflow. This section will link verified report records when available.'}
+      ]}
+    ];
+  }
+
+  claimFieldsFor(keys: string[]): Array<{key: string; label: string; value: string; type: string; required: boolean; options?: string[]}> {
+    const fields = this.claimDetailFields().filter(field => keys.includes(field.key));
+    const query = this.claimDetailSearch.trim().toLowerCase();
+    return query ? fields.filter(field => field.label.toLowerCase().includes(query) || field.value.toLowerCase().includes(query) || field.key.toLowerCase().includes(query)) : fields;
+  }
+
+  sectionProgress(section: {subsections: Array<{fieldKeys: string[]}>}): {complete: number; total: number; pending: number} {
+    const keys = [...new Set(section.subsections.flatMap(item => item.fieldKeys))];
+    const fields = this.claimDetailFields().filter(field => keys.includes(field.key));
+    const complete = fields.filter(field => !!field.value.trim()).length;
+    return {complete,total:fields.length,pending:fields.length-complete};
+  }
+
+  claimOverallProgress(): {complete: number; total: number} {
+    const sections = this.claimDetailSections();
+    const keys = [...new Set(sections.flatMap(section => section.subsections.flatMap(item => item.fieldKeys)))];
+    const fields = this.claimDetailFields().filter(field => keys.includes(field.key));
+    return {complete:fields.filter(field => !!field.value.trim()).length,total:fields.length};
+  }
+
+  isClaimSectionExpanded(id: string): boolean { return this.expandedClaimSections.includes(id); }
+  isClaimSubsectionExpanded(id: string): boolean { return this.expandedClaimSubsections.includes(id); }
+
+  toggleClaimSection(id: string): void {
+    this.expandedClaimSections = this.isClaimSectionExpanded(id) ? this.expandedClaimSections.filter(value => value !== id) : [...this.expandedClaimSections,id];
+  }
+
+  toggleClaimSubsection(id: string): void {
+    this.expandedClaimSubsections = this.isClaimSubsectionExpanded(id) ? this.expandedClaimSubsections.filter(value => value !== id) : [...this.expandedClaimSubsections,id];
+  }
+
+  expandAllClaimSections(): void {
+    this.expandedClaimSections = this.claimDetailSections().map(section => section.id);
+    this.expandedClaimSubsections = this.claimDetailSections().flatMap(section => section.subsections.map(item => section.id + ':' + item.id));
+  }
+
+  collapseAllClaimSections(): void {
+    this.expandedClaimSections = [];
+    this.expandedClaimSubsections = [];
+  }
+
+  onClaimDetailSearchChange(): void {
+    const query = this.claimDetailSearch.trim().toLowerCase();
+    if (!query) {
+      this.expandedClaimSections = ['initial-review'];
+      this.expandedClaimSubsections = ['initial-review:claim-status'];
+      return;
+    }
+    const matchingSections: string[] = [];
+    const matchingSubsections: string[] = [];
+    for (const section of this.claimDetailSections()) {
+      for (const subsection of section.subsections) {
+        const matches = this.claimDetailFields().filter(field => subsection.fieldKeys.includes(field.key) &&
+          (field.label.toLowerCase().includes(query) || field.value.toLowerCase().includes(query) || field.key.toLowerCase().includes(query)));
+        if (matches.length) {
+          matchingSections.push(section.id);
+          matchingSubsections.push(section.id + ':' + subsection.id);
+        }
+      }
+    }
+    this.expandedClaimSections = [...new Set(matchingSections)];
+    this.expandedClaimSubsections = [...new Set(matchingSubsections)];
+  }
+
+  trackByClaimSection(_index: number, section: {id: string}): string { return section.id; }
+  trackByClaimSubsection(_index: number, subsection: {id: string}): string { return subsection.id; }
+
+
 
   startFieldEdit(field: {key: string; value: string}): void {
     if (!this.canEditClaims()) return;
