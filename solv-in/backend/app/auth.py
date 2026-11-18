@@ -19,7 +19,7 @@ def normalize_email(email: str) -> str:
     return email.strip().lower()
 
 def hash_password(password: str) -> str:
-    if len(password) < 12 or not re.search(r"[A-Za-z]", password) or not re.search(r"\\d", password):
+    if len(password) < 12 or not re.search(r"[A-Za-z]", password) or not re.search(r"\d", password):
         raise HTTPException(status_code=422, detail="Password must be at least 12 characters and include letters and numbers.")
     return password_hash.hash(password)
 
