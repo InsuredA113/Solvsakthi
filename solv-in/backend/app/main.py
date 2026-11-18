@@ -131,7 +131,10 @@ def create_user(payload: UserCreate, actor: dict = Depends(require_roles(*ADMIN_
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     email = normalize_email(str(payload.email))
-    if payload.role == "Super Administrator" and actor["role"] != "Super Administrator":
+    assigned_roles = list(dict.fromkeys(payload.roles or ([payload.role] if payload.role else [])))
+    if not assigned_roles:
+        raise HTTPException(status_code=422, detail="At least one role must be selected.")
+    if "Super Administrator" in assigned_roles and actor.get("role") != "Super Administrator":
         raise HTTPException(status_code=403, detail="Only a Super Administrator can create another Super Administrator.")
     users = get_database()["users"]
     if users.find_one({"email": email}):
@@ -140,7 +143,8 @@ def create_user(payload: UserCreate, actor: dict = Depends(require_roles(*ADMIN_
         "full_name": payload.full_name,
         "email": email,
         "password_hash": hash_password(payload.password),
-        "role": payload.role,
+        "role": assigned_roles[0],
+        "roles": assigned_roles,
         "is_active": True,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "created_by": actor["email"]
