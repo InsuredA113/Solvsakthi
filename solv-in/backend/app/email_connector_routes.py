@@ -16,7 +16,7 @@ import httpx
 
 from .auth import require_roles
 from .database import database_is_available, get_database
-from .email_intake import EmailIntakeCreate, extract_email_intake, extract_pdf_text, ocr_pdf_text
+from .email_intake import EmailIntakeCreate, extract_email_intake, extract_pdf_text, ocr_pdf_text, extract_structured_claim_fields
 from .email_connectors import (
     setting, gmail_configured, microsoft_configured, gmail_access_token,
     gmail_api, gmail_pubsub_identity, parse_gmail_notification, gmail_headers,
@@ -220,6 +220,25 @@ def _save_email(provider: str, provider_message_id: str, sender_email: str,
     except ValidationError:
         return {"ignored": True, "reason": "sender_address_missing_or_invalid"}
     parsed = extract_email_intake(payload.subject, payload.body_text)
+    document_text = "\n".join(pdf_text_parts)
+    structured_fields = extract_structured_claim_fields(document_text) if document_text.strip() else {}
+    # Keep explicit label-based values first; Gemini fills only fields the parser missed.
+    extracted_fields = parsed.get("extracted_fields") or {}
+    for field_name, field_value in structured_fields.items():
+        if not extracted_fields.get(field_name) and field_value:
+            extracted_fields[field_name] = field_value
+    parsed["extracted_fields"] = extracted_fields
+    parsed["document_ai_extraction"] = "completed" if structured_fields else (
+        "no_document_text" if not document_text.strip() else "no_fields_returned"
+    )
+    required_fields = ["customer_name", "policy_number", "incident_date",
+                       "incident_description", "loss_location", "country_code", "currency"]
+    if parsed.get("suggested_claim_type") == "Commercial Casualty":
+        required_fields += ["business_name", "industry", "commercial_liability_type"]
+    if parsed.get("suggested_claim_type") == "Out of Scope":
+        parsed["missing_fields"] = []
+    else:
+        parsed["missing_fields"] = [name for name in required_fields if not extracted_fields.get(name)]
     received = (payload.received_at or datetime.now(timezone.utc)).isoformat()
     intake_id = str(ObjectId())
     record = {
