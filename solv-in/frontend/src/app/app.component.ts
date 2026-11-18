@@ -81,6 +81,7 @@ export class AppComponent implements OnInit {
   claimComparisonTab: 'initial' | 'adjuster' | 'estimates' = 'initial';
   expandedClaimSections: string[] = ['initial-review'];
   selectedComparisonSectionId = 'initial-review';
+  selectedComparisonSubsectionId = '';
   comparisonComments: ComparisonComment[] = [];
   comparisonCommentsLoading = false;
   comparisonCommentBusy = false;
@@ -885,9 +886,10 @@ export class AppComponent implements OnInit {
     });
   }
 
-  comparisonRowsForSection(section: {subsections: Array<{id?: string; title?: string; fieldKeys: string[]}>}): ReturnType<AppComponent['claimReportComparisonRows']> {
+  comparisonRowsForSection(section: {subsections: Array<{id?: string; title?: string; fieldKeys: string[]}>}, selectedSubsectionId = ''): ReturnType<AppComponent['claimReportComparisonRows']> {
+    const activeSubsections = selectedSubsectionId ? section.subsections.filter(subsection => subsection.id === selectedSubsectionId) : section.subsections;
     const baseRows = this.claimReportComparisonRows();
-    const keys = new Set(section.subsections.flatMap(subsection => subsection.fieldKeys));
+    const keys = new Set(activeSubsections.flatMap(subsection => subsection.fieldKeys));
     const rows = baseRows.filter(row => keys.has(row.key));
     const claim: any = this.selectedClaim || {};
     const adjuster: any = this.adjusterReports[0]?.report_fields || {};
@@ -920,7 +922,7 @@ export class AppComponent implements OnInit {
       }
       return '';
     };
-    for (const subsection of section.subsections) {
+    for (const subsection of activeSubsections) {
       if (subsection.fieldKeys.length) continue;
       const defs = definitions[subsection.id || ''] || (subsection.id ? [{key:subsection.id,label:subsection.title || subsection.id,aliases:[subsection.id]}] : []);
       for (const def of defs) {
@@ -938,12 +940,14 @@ export class AppComponent implements OnInit {
   }
 
   selectedComparisonSectionTitle(): string {
-    return this.claimDetailSections().find(section => section.id === this.selectedComparisonSectionId)?.title || 'Initial Claim Review';
+    const section = this.claimDetailSections().find(item => item.id === this.selectedComparisonSectionId);
+    const subsection = section?.subsections.find(item => item.id === this.selectedComparisonSubsectionId);
+    return subsection ? `${section?.title || 'Claim Review'} · ${subsection.title}` : section?.title || 'Initial Claim Review';
   }
 
   selectedComparisonRows(): ReturnType<AppComponent['claimReportComparisonRows']> {
     const section = this.claimDetailSections().find(item => item.id === this.selectedComparisonSectionId);
-    return section ? this.comparisonRowsForSection(section) : [];
+    return section ? this.comparisonRowsForSection(section, this.selectedComparisonSubsectionId) : [];
   }
 
   trackByClaimField(_index: number, field: {key: string}): string {
@@ -1048,10 +1052,16 @@ export class AppComponent implements OnInit {
 
   toggleClaimSection(id: string): void {
     this.selectedComparisonSectionId = id;
+    this.selectedComparisonSubsectionId = '';
     this.expandedClaimSections = this.isClaimSectionExpanded(id) ? this.expandedClaimSections.filter(value => value !== id) : [...this.expandedClaimSections,id];
   }
 
   toggleClaimSubsection(id: string): void {
+    const separator = id.indexOf(':');
+    if (separator >= 0) {
+      this.selectedComparisonSectionId = id.slice(0, separator);
+      this.selectedComparisonSubsectionId = id.slice(separator + 1);
+    }
     this.expandedClaimSubsections = this.isClaimSubsectionExpanded(id) ? this.expandedClaimSubsections.filter(value => value !== id) : [...this.expandedClaimSubsections,id];
   }
 
