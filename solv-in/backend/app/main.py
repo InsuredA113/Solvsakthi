@@ -61,6 +61,10 @@ class DamageReviewUpdate(BaseModel):
     notes: str = Field(default="", max_length=2000)
 
 
+
+class AdjusterAssignment(BaseModel):
+    adjuster_email: str = Field(..., min_length=5, max_length=254)
+
 class FinancialEstimateReviewUpdate(BaseModel):
     status: str = Field(..., max_length=40)
     notes: str = Field(default="", max_length=2000)
@@ -271,6 +275,174 @@ def export_claims_analytics_csv(
         content=output.getvalue(), media_type="text/csv",
         headers={"Content-Disposition": 'attachment; filename="solv-in-claims-analytics.csv"'}
     )
+
+
+
+@app.get("/api/adjusters")
+def list_adjusters(user: dict = Depends(require_roles(*READ_ROLES))):
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    try:
+        rows = list(get_database()["users"].find(
+            {"is_active": True, "role": {"$in": ["Property Adjuster", "Casualty Adjuster"]}},
+            {"_id": 0, "full_name": 1, "email": 1, "role": 1}
+        ).sort("full_name", 1))
+        return {"items": rows, "count": len(rows)}
+    except PyMongoError as exc:
+        raise HTTPException(status_code=503, detail="Unable to retrieve adjusters.") from exc
+
+
+@app.patch("/api/claims/{claim_id}/assign-adjuster")
+def assign_claim_adjuster(
+    claim_id: str,
+    payload: AdjusterAssignment,
+    user: dict = Depends(require_roles("Super Administrator", "Insurance Company Administrator", "Claims Manager"))
+):
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    db = get_database()
+    claim = db["claims"].find_one({"claim_id": claim_id})
+    if not claim or (not is_in_scope_claim(claim) and claim.get("auto_intake_status") != "Provisional"):
+        raise HTTPException(status_code=404, detail="Claim not found.")
+    adjuster_email = normalize_email(payload.adjuster_email)
+    adjuster = db["users"].find_one({"email": adjuster_email, "is_active": True})
+    if not adjuster or adjuster.get("role") not in {"Property Adjuster", "Casualty Adjuster"}:
+        raise HTTPException(status_code=422, detail="Select an active Property or Casualty Adjuster.")
+    expected_role = "Property Adjuster" if claim.get("claim_type") == "Property" else "Casualty Adjuster" if claim.get("claim_type") == "Casualty" else None
+    if expected_role and adjuster.get("role") != expected_role:
+        raise HTTPException(status_code=422, detail=f"This claim must be assigned to a {expected_role}.")
+    now = datetime.now(timezone.utc).isoformat()
+    try:
+        updated = db["claims"].find_one_and_update(
+            {"claim_id": claim_id},
+            {"$set": {
+                "assigned_adjuster_email": adjuster_email,
+                "assigned_adjuster_name": adjuster.get("full_name") or adjuster_email,
+                "assigned_adjuster_role": adjuster["role"],
+                "assigned_at": now,
+                "assigned_by": user["email"],
+                "updated_at": now,
+                "updated_by": user["email"]
+            }},
+            return_document=ReturnDocument.AFTER,
+            projection={"_id": 0}
+        )
+        return updated
+    except PyMongoError as exc:
+        raise HTTPException(status_code=503, detail="Unable to assign claim.") from exc
+
+
+@app.get("/api/dashboard/analytics")
+def dashboard_analytics(
+    year: int | None = Query(default=None, ge=2000, le=2100),
+    month: int | None = Query(default=None, ge=1, le=12),
+    status: str | None = Query(default=None, max_length=40),
+    claim_type: str = Query(default="All", pattern="^(All|Property|Casualty)$"),
+    adjuster_email: str | None = Query(default=None, max_length=254),
+    user: dict = Depends(require_roles(*READ_ROLES))
+):
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    now = datetime.now(timezone.utc)
+    query_parts = [{"$or": [
+        {"claim_type": "Property"},
+        {"claim_type": "Casualty", "casualty_segment": "Commercial"}
+    ]}]
+    if claim_type == "Property":
+        query_parts.append({"claim_type": "Property"})
+    elif claim_type == "Casualty":
+        query_parts.append({"claim_type": "Casualty", "casualty_segment": "Commercial"})
+    if status:
+        query_parts.append({"status": status})
+    if adjuster_email:
+        query_parts.append({"assigned_adjuster_email": normalize_email(adjuster_email)})
+    date_query = {}
+    if year is not None:
+        date_query["$gte"] = f"{year:04d}-{month or 1:02d}-01T00:00:00"
+        if month is not None:
+            if month == 12:
+                date_query["$lt"] = f"{year + 1:04d}-01-01T00:00:00"
+            else:
+                date_query["$lt"] = f"{year:04d}-{month + 1:02d}-01T00:00:00"
+        else:
+            date_query["$lt"] = f"{year + 1:04d}-01-01T00:00:00"
+        query_parts.append({"created_at": date_query})
+    try:
+        claims = list(get_database()["claims"].find({"$and": query_parts}, {"_id": 0}).sort("created_at", 1).limit(50000))
+        by_month = {}
+        by_status = {}
+        adjusters = {}
+        overdue_count = 0
+        handling_days = []
+        for claim in claims:
+            created = claim.get("created_at")
+            created_dt = None
+            if isinstance(created, str):
+                try:
+                    created_dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
+                    if created_dt.tzinfo is None:
+                        created_dt = created_dt.replace(tzinfo=timezone.utc)
+                except ValueError:
+                    pass
+            month_key = created_dt.strftime("%Y-%m") if created_dt else "Unknown"
+            by_month[month_key] = by_month.get(month_key, 0) + 1
+            claim_status = claim.get("status") or "Unspecified"
+            by_status[claim_status] = by_status.get(claim_status, 0) + 1
+            email = claim.get("assigned_adjuster_email")
+            key = email or "__unassigned__"
+            row = adjusters.setdefault(key, {
+                "adjuster_email": email,
+                "adjuster_name": claim.get("assigned_adjuster_name") or ("Unassigned" if not email else email),
+                "adjuster_role": claim.get("assigned_adjuster_role") or "",
+                "assigned": 0, "open": 0, "pending": 0, "closed": 0,
+                "overdue": 0, "completed_handling_days_total": 0.0, "completed_handling_count": 0
+            })
+            row["assigned"] += 1
+            if claim_status == "Closed":
+                row["closed"] += 1
+                closed_value = claim.get("closed_at")
+                if created_dt and isinstance(closed_value, str):
+                    try:
+                        closed_dt = datetime.fromisoformat(closed_value.replace("Z", "+00:00"))
+                        if closed_dt.tzinfo is None:
+                            closed_dt = closed_dt.replace(tzinfo=timezone.utc)
+                        days = max(0.0, (closed_dt - created_dt).total_seconds() / 86400)
+                        row["completed_handling_days_total"] += days
+                        row["completed_handling_count"] += 1
+                        handling_days.append(days)
+                    except ValueError:
+                        pass
+            else:
+                row["open"] += 1
+                if claim_status == "Pending Approval":
+                    row["pending"] += 1
+                if created_dt and (now - created_dt).total_seconds() > 30 * 86400:
+                    row["overdue"] += 1
+                    overdue_count += 1
+        adjuster_rows = []
+        for row in adjusters.values():
+            count = row.pop("completed_handling_count")
+            total = row.pop("completed_handling_days_total")
+            row["average_handling_days"] = round(total / count, 1) if count else None
+            adjuster_rows.append(row)
+        adjuster_rows.sort(key=lambda item: (item["adjuster_name"] == "Unassigned", item["adjuster_name"].casefold()))
+        return {
+            "data_mode": "live",
+            "filters": {"year": year, "month": month, "status": status, "claim_type": claim_type, "adjuster_email": adjuster_email},
+            "summary": {
+                "total_claims": len(claims),
+                "open_claims": sum(1 for c in claims if c.get("status") != "Closed"),
+                "closed_claims": sum(1 for c in claims if c.get("status") == "Closed"),
+                "pending_claims": sum(1 for c in claims if c.get("status") == "Pending Approval"),
+                "overdue_claims": overdue_count,
+                "average_handling_days": round(sum(handling_days) / len(handling_days), 1) if handling_days else None
+            },
+            "by_month": [{"month": k, "claim_count": v} for k, v in sorted(by_month.items())],
+            "by_status": [{"status": k, "claim_count": v} for k, v in sorted(by_status.items())],
+            "by_adjuster": adjuster_rows
+        }
+    except PyMongoError as exc:
+        raise HTTPException(status_code=503, detail="Unable to build dashboard analytics.") from exc
 
 
 @app.get("/api/dashboard/summary")
@@ -604,8 +776,9 @@ def update_claim_status(
             {"$set": {
                 "status": payload.status,
                 "updated_at": datetime.now(timezone.utc).isoformat(),
-                "updated_by": user["email"]
-            }},
+                "updated_by": user["email"],
+                **({"closed_at": datetime.now(timezone.utc).isoformat()} if payload.status == "Closed" else {})
+            }, **({"$unset": {"closed_at": ""}} if payload.status != "Closed" else {})},
             return_document=ReturnDocument.AFTER,
             projection={"_id": 0}
         )
