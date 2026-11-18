@@ -432,6 +432,14 @@ def dashboard_analytics(
             row["average_handling_days"] = round(total / count, 1) if count else None
             adjuster_rows.append(row)
         adjuster_rows.sort(key=lambda item: (item["adjuster_name"] == "Unassigned", item["adjuster_name"].casefold()))
+        year_rows = get_database()["claims"].find(
+            {"$or": [{"claim_type": "Property"}, {"claim_type": "Casualty", "casualty_segment": "Commercial"}]},
+            {"_id": 0, "created_at": 1}
+        )
+        for year_row in year_rows:
+            created_value = year_row.get("created_at")
+            if isinstance(created_value, str) and len(created_value) >= 4 and created_value[:4].isdigit():
+                available_years.add(int(created_value[:4]))
         return {
             "data_mode": "live",
             "filters": {"year": year, "month": month, "status": status, "claim_type": claim_type, "adjuster_email": adjuster_email},
