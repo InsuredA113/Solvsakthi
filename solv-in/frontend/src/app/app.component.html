@@ -59,6 +59,13 @@
             </tbody></table></div>
           </article>
         </section>
+        <section class="panel claims-panel" *ngIf="dashboardAnalytics">
+          <div class="panel-heading"><h2>Monthly status breakdown</h2><span class="subtle">Claim creation month × workflow status</span></div>
+          <div class="table-scroll"><table><thead><tr><th>Month</th><th *ngFor="let status of statuses">{{ status }}</th></tr></thead><tbody>
+            <tr *ngFor="let row of dashboardAnalytics.by_month_status"><td>{{ row.month }}</td><td *ngFor="let status of statuses">{{ row.statuses[status] || 0 }}</td></tr>
+            <tr *ngIf="dashboardAnalytics.by_month_status.length === 0"><td [attr.colspan]="statuses.length + 1" class="empty">No monthly status records for this period.</td></tr>
+          </tbody></table></div>
+        </section>
         <section class="panel claims-panel dashboard-adjusters" *ngIf="dashboardAnalytics">
           <div class="panel-heading"><div><h2>Adjuster workload &amp; performance</h2><p class="muted">Average handling time uses closed claims with recorded closure dates. Overdue means open for more than 30 calendar days.</p></div></div>
           <div class="table-scroll"><table><thead><tr><th>Adjuster</th><th>Role</th><th>Assigned</th><th>Open</th><th>Pending</th><th>Closed</th><th>Overdue</th><th>Avg. handling days</th></tr></thead><tbody>
