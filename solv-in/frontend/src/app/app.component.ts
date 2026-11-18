@@ -577,6 +577,9 @@ export class AppComponent implements OnInit {
     this.successMessage = '';
     this.loadingClaimDetails = true;
     this.selectedClaim = null;
+    this.claimDetailSearch = '';
+    this.expandedClaimSections = ['initial-review'];
+    this.expandedClaimSubsections = ['initial-review:claim-status'];
     this.activePage = 'Claim Details';
     this.http.get<Claim>(`${environment.apiBaseUrl}/claims/${encodeURIComponent(claim.claim_id)}`, { headers: this.authHeaders() }).subscribe({
       next: result => { this.selectedClaim = result; this.loadingClaimDetails = false; this.loadClaimDocuments(); if (editAfterOpen) this.startClaimEdit(); },
