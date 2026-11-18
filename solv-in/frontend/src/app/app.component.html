@@ -496,31 +496,38 @@
             <label>Postal / ZIP code<input name="estimate_postal" [(ngModel)]="estimateDraft.postal_code" placeholder="Optional postal code"></label>
             <label>Loss date *<input type="date" name="estimate_loss_date" [(ngModel)]="estimateDraft.loss_date"></label>
             <div class="full">
-              <h3>Verified repair-rate catalogue</h3>
-              <p class="muted">For Property claims, retrieve active rates matching the claim's country, state, city and loss date. If the claim location is incomplete or no verified rate exists, contact an administrator to update the claim or catalogue. Do not substitute guessed prices.</p>
-              <button type="button" class="secondary-action" (click)="loadApplicableRepairRates()" [disabled]="repairRatesLookupBusy || !estimateClaimId.trim()">{{ repairRatesLookupBusy ? 'Loading active rates…' : 'Load active repair rates for this claim' }}</button>
-              <div class="form-grid" *ngIf="applicableRepairRates.length">
-                <label class="full">Select catalogue repair item
-                  <select name="estimate_repair_rate" [(ngModel)]="selectedRepairRateId" (ngModelChange)="selectRepairRateById($event)">
-                    <option value="">Choose an active verified repair item</option>
-                    <option *ngFor="let rate of applicableRepairRates" [value]="rate.rate_id">{{ rate.category }} · {{ rate.item_name }} · {{ rate.unit_rate }} {{ rate.currency }}/{{ rate.unit }} · {{ rate.source_name }}</option>
-                  </select>
-                </label>
+              <div class="panel-heading">
+                <div><h3>Repair items and rates</h3><p class="muted">Add multiple repair activities. Select an active verified catalogue rate for automatic population, or enter a manually sourced rate.</p></div>
+                <button type="button" class="secondary-action" (click)="addEstimateLineItem()" [disabled]="estimateDraft.line_items.length >= 100">Add repair row</button>
               </div>
-              <div class="assessment-history-card" *ngIf="estimateDraft.repair_rate_id">
-                <b>Catalogue rate selected</b>
-                <p class="muted">{{ estimateDraft.description }} · {{ estimateDraft.unit_rate }} {{ estimateDraft.currency }}/{{ estimateDraft.unit }}</p>
-                <p class="muted">Source: {{ estimateDraft.pricing_source }} · Effective from {{ estimateDraft.pricing_effective_date }}</p>
-                <p class="muted">Python will revalidate this catalogue record before using the price.</p>
+              <button type="button" class="secondary-action" (click)="loadApplicableRepairRates()" [disabled]="repairRatesLookupBusy || !estimateClaimId.trim()">{{ repairRatesLookupBusy ? 'Loading active rates…' : 'Load active rates for this claim' }}</button>
+              <p class="muted" *ngIf="applicableRepairRates.length">Showing {{ applicableRepairRates.length }} active rate(s) matched to the Property claim location and loss date. Each selected rate is checked again by the backend.</p>
+              <div class="table-scroll">
+                <table>
+                  <thead><tr><th>Catalogue rate</th><th>Repair description</th><th>Qty</th><th>Unit</th><th>Unit rate</th><th>Depreciation %</th><th>Taxable</th><th>Line total</th><th></th></tr></thead>
+                  <tbody>
+                    <tr *ngFor="let line of estimateDraft.line_items; let i = index">
+                      <td>
+                        <select [name]="'repair_catalogue_' + i" [ngModel]="line.repair_rate_id || ''" (ngModelChange)="selectRepairRateForLine(i, $event)">
+                          <option value="">Manual rate</option>
+                          <option *ngFor="let rate of applicableRepairRates" [value]="rate.rate_id">{{ rate.category }} · {{ rate.item_name }} · {{ rate.unit_rate }} {{ rate.currency }}/{{ rate.unit }}</option>
+                        </select>
+                      </td>
+                      <td><input [name]="'repair_description_' + i" [(ngModel)]="line.description" placeholder="Repair activity"></td>
+                      <td><input type="number" min="0.0001" step="0.0001" [name]="'repair_quantity_' + i" [(ngModel)]="line.quantity"></td>
+                      <td><input [name]="'repair_unit_' + i" [(ngModel)]="line.unit" placeholder="sq.ft"></td>
+                      <td><input type="number" min="0" step="0.000001" [name]="'repair_rate_' + i" [(ngModel)]="line.unit_rate"></td>
+                      <td><input type="number" min="0" max="100" step="0.01" [name]="'repair_depreciation_' + i" [(ngModel)]="line.depreciation_rate"></td>
+                      <td><input type="checkbox" [name]="'repair_taxable_' + i" [(ngModel)]="line.taxable" aria-label="Repair line is taxable"></td>
+                      <td>{{ formatAmount(estimateLineTotal(line), estimateDraft.currency || 'USD') }}</td>
+                      <td><button type="button" class="danger-action" (click)="removeEstimateLineItem(i)" [disabled]="estimateDraft.line_items.length <= 1">Remove</button></td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
+              <p class="muted">Line totals are quantity × unit rate. Final calculations, currency rounding, depreciation and tax bases are calculated by the Python backend.</p>
             </div>
             <label>Tax point / taxable event date *<input type="date" name="estimate_tax_point_date" [(ngModel)]="estimateDraft.tax_point_date" (ngModelChange)="resetTaxRuleConfirmation()"><small class="muted">Tax rule effective dates are checked against this date, not automatically against the loss date.</small></label>
-            <label class="full">Repair item description *<input name="estimate_description" [(ngModel)]="estimateDraft.description" placeholder="e.g. Replace damaged roof tiles"></label>
-            <label>Quantity *<input type="number" min="0.0001" step="0.0001" name="estimate_quantity" [(ngModel)]="estimateDraft.quantity"></label>
-            <label>Unit<input name="estimate_unit" [(ngModel)]="estimateDraft.unit" placeholder="item, sq ft, hour"></label>
-            <label>Verified unit rate *<input type="number" min="0" step="0.01" name="estimate_rate" [(ngModel)]="estimateDraft.unit_rate"></label>
-            <label>Depreciation (%)<input type="number" min="0" max="100" step="0.01" name="estimate_depreciation" [(ngModel)]="estimateDraft.depreciation_rate"></label>
-            <label class="full"><span><input type="checkbox" name="estimate_taxable" [(ngModel)]="estimateDraft.taxable"> Repair item is taxable under the applicable rule</span></label>
             <label>Tax calculation mode<select name="estimate_tax_mode" [(ngModel)]="estimateDraft.tax_mode" (ngModelChange)="resetTaxRuleConfirmation()"><option value="automatic">Automatic - use verified active tax rules</option><option value="manual">Manual - enter approved tax components</option></select><small class="muted">Automatic mode is the default. Conflicting active rules stop calculation; no matching rule never means tax is assumed to be zero.</small></label>
             <div class="full"><button class="secondary-action" type="button" (click)="lookupApplicableTaxRules()">Find verified tax rules for this claim</button><div *ngIf="applicableTaxRules" class="assessment-history-card"><b>{{ applicableTaxRules.profile_status }}</b><p class="muted">{{ applicableTaxRules.message }}</p><p *ngFor="let rule of applicableTaxRules.items">{{ rule.tax_name }} · {{ rule.rate_percent }}% · {{ rule.admin_area }} · {{ rule.authority_name }} · {{ rule.authority_reference }}</p><p *ngIf="applicableTaxRules.ambiguous_tax_names?.length" class="muted">Ambiguous rules: {{ applicableTaxRules.ambiguous_tax_names.join(', ') }}</p><label *ngIf="estimateDraft.tax_mode === 'automatic' && applicableTaxRules.count > 0"><input type="checkbox" name="confirm_automatic_tax_application" [(ngModel)]="estimateDraft.confirm_automatic_tax_application"> I reviewed the listed authority, rate, jurisdiction and effective date, and confirm these matched tax rules may be applied to this preliminary estimate.</label></div></div>            <div class="full"><h3>Applicable taxes (optional)</h3><p class="muted">Add every applicable national, state/provincial, regional, municipal or other tax component. Tax-on-tax can be enabled where the verified local rule requires it. Maximum 20 components.</p></div>
             <div class="full" *ngIf="estimateDraft.tax_mode === 'manual'">
@@ -662,7 +669,7 @@
       <ng-container *ngIf="activePage === 'Repair Rates' && canManageTaxRules()">
         <section class="panel form-panel">
           <div class="panel-heading"><div><h2>Property repair-rate catalogue</h2><p class="muted">Maintain verified repair pricing by country, state and city. New rates are Draft and are not used in estimates until an authorised administrator activates them.</p></div></div>
-          <div class="damage-disclaimer">Do not enter guessed market prices. Record the source, effective date, currency and unit. Active rates are immutable; add a new record when a rate changes. This catalogue does not yet auto-populate estimate line items.</div>
+          <div class="damage-disclaimer">Do not enter guessed market prices. Record the source, effective date, currency and unit. Active rates are immutable; add a new record when a rate changes. Select an active, location-matched catalogue rate in the Financial Estimate table to populate a repair row.</div>
           <div class="form-grid">
             <label>Country code (ISO alpha-2) *<input name="repair_country" maxlength="2" [(ngModel)]="repairRateDraft.country_code" placeholder="IN"></label>
             <label>Currency (ISO 4217) *<input name="repair_currency" maxlength="3" [(ngModel)]="repairRateDraft.currency" placeholder="INR"></label>
