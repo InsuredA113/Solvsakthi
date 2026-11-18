@@ -25,6 +25,7 @@ from .email_intake import EmailIntakeCreate, EmailIntakeReview, extract_email_in
 from .email_connector_routes import router as email_connector_router
 from .adjuster_report_routes import router as adjuster_report_router
 from .comparison_comment_routes import router as comparison_comment_router
+from .claim_export_routes import router as claim_export_router
 
 app = FastAPI(
     title="Solv-In API",
@@ -34,6 +35,7 @@ app = FastAPI(
 app.include_router(email_connector_router)
 app.include_router(adjuster_report_router)
 app.include_router(comparison_comment_router)
+app.include_router(claim_export_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
