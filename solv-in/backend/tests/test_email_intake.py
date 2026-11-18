@@ -1,6 +1,6 @@
 import pytest
 from pydantic import ValidationError
-from app.email_intake import EmailIntakeCreate, extract_email_intake
+from app.email_intake import EmailIntakeCreate, extract_email_intake, extract_pdf_text
 
 
 def test_property_email_is_classified_but_requires_human_review():
@@ -46,3 +46,8 @@ def test_label_extraction_is_conservative_and_normalized():
 def test_email_requires_provider_message_id_and_valid_sender():
     with pytest.raises(ValidationError):
         EmailIntakeCreate(sender_email="bad", provider_message_id="", body_text="claim")
+
+
+def test_pdf_extraction_rejects_non_pdf_and_oversized_content():
+    assert extract_pdf_text(b"not a pdf") == ""
+    assert extract_pdf_text(b"%PDF-" + (b"0" * (15 * 1024 * 1024 + 1))) == ""
