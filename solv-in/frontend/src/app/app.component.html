@@ -170,6 +170,35 @@
             </div>
             <p class="empty comparison-empty" *ngIf="!selectedComparisonRows().length">No claim fields are configured in this section yet.</p>
             <div class="claim-discrepancy-note"><span class="claim-discrepancy-icon">!</span><span><strong>Status logic:</strong> Match or Mismatch is shown only when at least two report sources contain a value for the same field. Missing report data is shown as Not Available; it is not treated as a mismatch.</span></div>
+
+            <section class="comparison-indicators" aria-label="Comparison indicators">
+              <div class="comparison-subsection-heading"><div><span class="claim-detail-kicker">REVIEW SUMMARY</span><h4>Indicators</h4><p>Calculated from the selected claim management section.</p></div><span class="comparison-indicator-rate">{{ comparisonMatchRate() }}% match rate</span></div>
+              <div class="comparison-indicator-grid">
+                <article class="comparison-indicator-card"><span>Matching fields</span><strong class="indicator-match">{{ comparisonIndicatorCount('Match') }}</strong><small>Same value across available sources</small></article>
+                <article class="comparison-indicator-card"><span>Discrepancies</span><strong class="indicator-mismatch">{{ comparisonIndicatorCount('Mismatch') }}</strong><small>Values differ between sources</small></article>
+                <article class="comparison-indicator-card"><span>Missing information</span><strong class="indicator-missing">{{ comparisonIndicatorCount('Not Available') }}</strong><small>Fewer than two source values</small></article>
+              </div>
+            </section>
+
+            <section class="comparison-comments" aria-label="Comparison comments">
+              <div class="comparison-subsection-heading"><div><span class="claim-detail-kicker">REVIEW DISCUSSION</span><h4>Comments</h4><p>Claim-level observations and field-specific review notes.</p></div><span class="comparison-comment-count">{{ comparisonComments.length }} comments</span></div>
+              <div class="comparison-comment-composer" *ngIf="canAddComparisonComment()">
+                <label class="comparison-comment-field"><span>Related field</span><select [(ngModel)]="comparisonCommentFieldKey"><option value="">Overall comparison</option><option *ngFor="let row of selectedComparisonRows()" [value]="row.key">{{ row.label }}</option></select></label>
+                <label class="comparison-comment-field"><span>Add a comment</span><textarea [(ngModel)]="comparisonCommentDraft" rows="3" maxlength="3000" placeholder="Record your observation or explain a discrepancy…"></textarea></label>
+                <div class="comparison-comment-actions"><small>{{ comparisonCommentDraft.length }}/3000 characters</small><button type="button" class="primary-action" [disabled]="comparisonCommentDraft.trim().length < 2 || comparisonCommentBusy" (click)="addComparisonComment()">{{ comparisonCommentBusy ? 'Saving…' : 'Add comment' }}</button></div>
+              </div>
+              <div class="comparison-comment-list" *ngIf="comparisonComments.length">
+                <article class="comparison-comment-item" *ngFor="let item of comparisonComments">
+                  <div class="comparison-comment-meta"><strong>{{ item.created_by }}</strong><span>{{ item.created_at | date:'medium' }}</span></div>
+                  <span class="comparison-comment-field-tag">{{ item.field_label || 'Overall comparison' }}</span>
+                  <p>{{ item.comment }}</p>
+                  <small>{{ item.created_by_role }}</small>
+                </article>
+              </div>
+              <p class="empty comparison-comments-empty" *ngIf="comparisonCommentsLoading">Loading comments…</p>
+              <p class="empty comparison-comments-empty" *ngIf="!comparisonCommentsLoading && !comparisonComments.length">No comments yet. Add the first review observation.</p>
+              <p class="comparison-comments-readonly" *ngIf="!canAddComparisonComment()">You have read-only access to comparison comments.</p>
+            </section>
           </section>
 
           <div class="claim-accordion-toolbar" *ngIf="selectedClaim">
