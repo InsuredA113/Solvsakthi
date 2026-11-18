@@ -223,7 +223,7 @@
                 <ng-container *ngFor="let subsection of section.subsections; trackBy: trackByClaimSubsection">
                   <div class="claim-subsection" *ngIf="subsection.configured === false && !claimDetailSearch">
                     <button class="claim-subsection-heading placeholder-subsection" type="button" (click)="toggleClaimSubsection(section.id + ':' + subsection.id)" [attr.aria-expanded]="isClaimSubsectionExpanded(section.id + ':' + subsection.id)">
-                      <span><strong>{{ subsection.title }}</strong><small>Not yet connected to claim data</small></span><span class="claim-chevron" [class.rotated]="isClaimSubsectionExpanded(section.id + ':' + subsection.id)">⌄</span>
+                      <span><strong>{{ subsection.title }}</strong><small>{{ subsectionConnectionLabel(section.id, subsection) }}</small></span><span class="claim-chevron" [class.rotated]="isClaimSubsectionExpanded(section.id + ':' + subsection.id)">⌄</span>
                     </button>
                     <div class="claim-placeholder-note" *ngIf="isClaimSubsectionExpanded(section.id + ':' + subsection.id)">{{ subsection.note || 'This subsection will be enabled when its verified fields and API data are available. No placeholder values are saved.' }}</div>
                   </div>
