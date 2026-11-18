@@ -7,28 +7,19 @@ from pwdlib import PasswordHash
 from pymongo.errors import PyMongoError
 from .config import JWT_SECRET_KEY, JWT_ALGORITHM, ACCESS_TOKEN_MINUTES
 from .database import get_database, database_is_available
+from .rbac import PREDEFINED_ROLES, get_user_roles, normalize_role, user_has_any_role
 
 password_hash = PasswordHash.recommended()
 bearer = HTTPBearer(auto_error=False)
 
-ROLES = (
-    "Super Administrator",
-    "Insurance Company Administrator",
-    "Claims Manager",
-    "Property Adjuster",
-    "Casualty Adjuster",
-    "Surveyor",
-    "Actuarial Analyst",
-    "Approver",
-    "Auditor",
-    "Customer",
-)
+# Public role catalogue consumed by the existing user-management endpoint.
+ROLES = PREDEFINED_ROLES
 
 def normalize_email(email: str) -> str:
     return email.strip().lower()
 
 def hash_password(password: str) -> str:
-    if len(password) < 12 or not re.search(r"[A-Za-z]", password) or not re.search(r"\d", password):
+    if len(password) < 12 or not re.search(r"[A-Za-z]", password) or not re.search(r"\\d", password):
         raise HTTPException(status_code=422, detail="Password must be at least 12 characters and include letters and numbers.")
     return password_hash.hash(password)
 
@@ -40,9 +31,11 @@ def verify_password(password: str, stored_hash: str) -> bool:
 
 def create_access_token(user: dict) -> str:
     now = datetime.now(timezone.utc)
+    roles = get_user_roles(user)
     payload = {
         "sub": user["email"],
-        "role": user["role"],
+        "role": normalize_role(user.get("role")) or (roles[0] if roles else None),
+        "roles": roles,
         "iat": now,
         "exp": now + timedelta(minutes=ACCESS_TOKEN_MINUTES),
     }
@@ -64,13 +57,18 @@ def get_current_user(credentials: HTTPAuthorizationCredentials | None = Depends(
         user = get_database()["users"].find_one({"email": email, "is_active": True}, {"_id": 0, "password_hash": 0})
         if not user:
             raise unauthorized
+        # Backward-compatible normalization: legacy single-role users keep working.
+        roles = get_user_roles(user)
+        if roles:
+            user["roles"] = roles
+            user["role"] = roles[0]
         return user
     except (jwt.PyJWTError, PyMongoError, ValueError):
         raise unauthorized
 
 def require_roles(*allowed_roles: str):
     def dependency(user: dict = Depends(get_current_user)):
-        if user.get("role") not in allowed_roles:
+        if not user_has_any_role(user, allowed_roles):
             raise HTTPException(status_code=403, detail="Your account does not have permission for this action.")
         return user
     return dependency
