@@ -13,3 +13,4 @@ python-multipart>=0.0.9,<1.0.0
 Babel>=2.15,<3.0
 pycountry>=24.6
 google-auth>=2.35,<3.0
+pypdf>=5.0,<7.0
