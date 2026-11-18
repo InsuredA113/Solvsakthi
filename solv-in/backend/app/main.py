@@ -367,6 +367,8 @@ def dashboard_analytics(
         else:
             date_query["$lt"] = f"{year + 1:04d}-01-01T00:00:00"
         query_parts.append({"created_at": date_query})
+    elif month is not None:
+        query_parts.append({"created_at": {"$regex": f"^[0-9]{{4}}-{month:02d}-"}})
     try:
         claims = list(get_database()["claims"].find({"$and": query_parts}, {"_id": 0}).sort("created_at", 1).limit(50000))
         by_month = {}
