@@ -156,19 +156,20 @@
             </div>
             <div class="table-scroll claim-comparison-table-wrap" *ngIf="selectedComparisonRows().length">
               <table class="claim-comparison-table field-comparison-table">
-                <thead><tr><th>Field</th><th>Initial Claim Review</th><th>Adjuster Report</th><th>Estimate Reports</th><th>Status</th></tr></thead>
+                <thead><tr><th>Field</th><th>Initial Claim Review</th><th>Adjuster Report</th><th>Estimate Reports</th><th>Policy / Coverage</th><th>Status</th></tr></thead>
                 <tbody>
                   <tr *ngFor="let row of selectedComparisonRows(); trackBy: trackByClaimField">
                     <td><strong>{{ row.label }}</strong></td>
                     <td>{{ row.initial }}</td>
                     <td>{{ row.adjuster }}</td>
                     <td>{{ row.estimate }}</td>
+                    <td>{{ row.policy }}</td>
                     <td><span class="comparison-state" [class.recorded]="row.status === 'Match'" [class.mismatch]="row.status === 'Mismatch'" [class.pending]="row.status === 'Not Available'">{{ row.status }}</span></td>
                   </tr>
                 </tbody>
               </table>
             </div>
-            <p class="empty comparison-empty" *ngIf="!selectedComparisonRows().length">No claim fields are configured in this section yet.</p>
+            <p class="empty comparison-empty" *ngIf="!selectedComparisonRows().length">Comparison fields are enabled for this section. Values will appear when claim, report or policy records contain them.</p>
             <div class="claim-discrepancy-note"><span class="claim-discrepancy-icon">!</span><span><strong>Status logic:</strong> Match or Mismatch is shown only when at least two report sources contain a value for the same field. Missing report data is shown as Not Available; it is not treated as a mismatch.</span></div>
 
             <section class="comparison-indicators" aria-label="Comparison indicators">
