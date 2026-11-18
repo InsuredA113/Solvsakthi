@@ -78,6 +78,7 @@ export class AppComponent implements OnInit {
   claimDetailSearch = '';
   claimComparisonTab: 'initial' | 'adjuster' | 'estimates' = 'initial';
   expandedClaimSections: string[] = ['initial-review'];
+  expandedComparisonSections: string[] = [];
   expandedClaimSubsections: string[] = ['initial-review:claim-status'];
   loadingClaimDetails = false;
   claimEditMode = false;
@@ -861,6 +862,19 @@ export class AppComponent implements OnInit {
         status
       };
     });
+  }
+
+  comparisonRowsForSection(section: {subsections: Array<{fieldKeys: string[]}>}): ReturnType<AppComponent['claimReportComparisonRows']> {
+    const keys = new Set(section.subsections.flatMap(subsection => subsection.fieldKeys));
+    return this.claimReportComparisonRows().filter(row => keys.has(row.key));
+  }
+
+  isComparisonSectionExpanded(id: string): boolean { return this.expandedComparisonSections.includes(id); }
+
+  toggleComparisonSection(id: string): void {
+    this.expandedComparisonSections = this.isComparisonSectionExpanded(id)
+      ? this.expandedComparisonSections.filter(value => value !== id)
+      : [...this.expandedComparisonSections, id];
   }
 
   trackByClaimField(_index: number, field: {key: string}): string {
