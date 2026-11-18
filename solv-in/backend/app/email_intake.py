@@ -10,6 +10,9 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 from pypdf import PdfReader
+from google import genai
+from google.genai import types
+from .config import GEMINI_API_KEY, GEMINI_MODEL
 
 
 class EmailIntakeCreate(BaseModel):
@@ -83,6 +86,35 @@ def extract_pdf_text(content: bytes, max_pages: int = 40, max_chars: int = 30000
             if total >= max_chars:
                 break
         return "\n".join(chunks)[:max_chars]
+    except Exception:
+        return ""
+
+def ocr_pdf_text(content: bytes, max_pages: int = 10, max_chars: int = 20000) -> str:
+    """OCR scanned PDF pages with Gemini Vision; returns only visibly printed text."""
+    if not GEMINI_API_KEY or not content or not content.startswith(b"%PDF-") or len(content) > 15 * 1024 * 1024:
+        return ""
+    try:
+        import fitz
+        document = fitz.open(stream=content, filetype="pdf")
+        client = genai.Client(api_key=GEMINI_API_KEY)
+        extracted = []
+        for page_number in range(min(len(document), max_pages)):
+            page = document.load_page(page_number)
+            pixmap = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5), alpha=False)
+            response = client.models.generate_content(
+                model=GEMINI_MODEL,
+                contents=[
+                    types.Part.from_bytes(data=pixmap.tobytes("png"), mime_type="image/png"),
+                    "Transcribe all legible text on this document page exactly as shown. Preserve labels, values, dates, addresses and amounts. Do not infer, correct, summarize, or add information. If no readable text exists, return an empty string.",
+                ],
+            )
+            page_text = (getattr(response, "text", None) or "").strip()
+            if page_text:
+                extracted.append("[OCR PAGE " + str(page_number + 1) + "]\\n" + page_text)
+            if sum(len(item) for item in extracted) >= max_chars:
+                break
+        document.close()
+        return "\\n\\n".join(extracted)[:max_chars]
     except Exception:
         return ""
 
