@@ -66,3 +66,22 @@
 @media(prefers-reduced-motion:reduce){.claim-chevron,.claim-accordion-content{transition:none;animation:none}}
 
 .dashboard-filters{margin-bottom:14px}.dashboard-filter-grid{display:grid;grid-template-columns:repeat(3,minmax(150px,1fr));gap:12px}.dashboard-filter-grid label{display:grid;gap:6px;color:#52647d;font-size:11px;font-weight:600}.dashboard-filter-grid select{width:100%;min-width:0;border:1px solid #dce5ef;border-radius:7px;padding:10px 11px;background:#fff;color:#253b59;font:12px Inter}.dashboard-reset{align-self:end;min-height:37px}.dashboard-metrics{margin-top:14px}.dashboard-adjusters{margin-top:14px}.dashboard-adjusters .panel-heading{align-items:flex-start}@media(max-width:850px){.dashboard-filter-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:520px){.dashboard-filter-grid{grid-template-columns:1fr}.dashboard-reset{width:100%}}
+
+
+/* Settings workspace */
+.settings-layout{display:grid;grid-template-columns:230px minmax(0,1fr);gap:16px;align-items:start}
+.settings-menu{padding:14px;display:flex;flex-direction:column;gap:6px}
+.settings-menu .eyebrow{margin:4px 8px 10px}
+.settings-menu button{border:0;background:transparent;text-align:left;padding:11px 12px;border-radius:9px;color:inherit;cursor:pointer;font:inherit}
+.settings-menu button.active{background:#edf4ff;color:#1857a6;font-weight:650}
+.settings-menu button:disabled{opacity:.42;cursor:not-allowed}
+.settings-content{min-width:0}
+.settings-info{display:flex;flex-direction:column;gap:8px;padding:18px;border:1px solid #e4eaf1;border-radius:12px;background:#fafcff}
+.settings-info span,.settings-info small{color:#64748b}
+.integration-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.integration-card{border:1px solid #e4eaf1;border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:9px;min-width:0}
+.integration-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.integration-card p{margin:0;color:#64748b}
+.integration-card small{color:#64748b;line-height:1.5}
+.integration-card .secondary-action{align-self:flex-start;margin-top:4px}
+@media(max-width:900px){.settings-layout{grid-template-columns:1fr}.settings-menu{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.integration-grid{grid-template-columns:1fr}}
