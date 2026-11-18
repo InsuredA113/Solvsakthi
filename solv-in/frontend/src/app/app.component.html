@@ -39,11 +39,11 @@
           </div>
         </section>
         <section class="metrics dashboard-metrics" *ngIf="dashboardAnalytics">
-          <article class="metric"><span class="metric-icon blue">▤</span><div><small>Total claims</small><strong>{{ dashboardAnalytics.summary.total_claims | number }}</strong><em>Matching records</em></div></article>
-          <article class="metric"><span class="metric-icon teal">⌕</span><div><small>Open claims</small><strong>{{ dashboardAnalytics.summary.open_claims | number }}</strong><em>Not yet closed</em></div></article>
-          <article class="metric"><span class="metric-icon purple">◷</span><div><small>Pending approval</small><strong>{{ dashboardAnalytics.summary.pending_claims | number }}</strong><em>Awaiting approval</em></div></article>
-          <article class="metric"><span class="metric-icon green">✓</span><div><small>Closed claims</small><strong>{{ dashboardAnalytics.summary.closed_claims | number }}</strong><em>Completed claims</em></div></article>
-          <article class="metric"><span class="metric-icon orange">!</span><div><small>Overdue claims</small><strong>{{ dashboardAnalytics.summary.overdue_claims | number }}</strong><em>Open over 30 days</em></div></article>
+          <button class="metric metric-clickable" type="button" (click)="openDashboardClaimsFilter('all')" aria-label="View all claims"><span class="metric-icon blue">▤</span><div><small>Total claims</small><strong>{{ dashboardAnalytics.summary.total_claims | number }}</strong><em>Click to view all claims</em></div></button>
+          <button class="metric metric-clickable" type="button" (click)="openDashboardClaimsFilter('open')" aria-label="View open claims"><span class="metric-icon teal">⌕</span><div><small>Open claims</small><strong>{{ dashboardAnalytics.summary.open_claims | number }}</strong><em>Click to view open claims</em></div></button>
+          <button class="metric metric-clickable" type="button" (click)="openDashboardClaimsFilter('pending')" aria-label="View claims pending approval"><span class="metric-icon purple">◷</span><div><small>Pending approval</small><strong>{{ dashboardAnalytics.summary.pending_claims | number }}</strong><em>Click to view pending claims</em></div></button>
+          <button class="metric metric-clickable" type="button" (click)="openDashboardClaimsFilter('closed')" aria-label="View closed claims"><span class="metric-icon green">✓</span><div><small>Closed claims</small><strong>{{ dashboardAnalytics.summary.closed_claims | number }}</strong><em>Click to view closed claims</em></div></button>
+          <button class="metric metric-clickable" type="button" (click)="openDashboardClaimsFilter('overdue')" aria-label="View overdue claims"><span class="metric-icon orange">!</span><div><small>Overdue claims</small><strong>{{ dashboardAnalytics.summary.overdue_claims | number }}</strong><em>Click to view overdue claims</em></div></button>
         </section>
         <section class="bottom-grid" *ngIf="dashboardAnalytics">
           <article class="panel claims-panel"><div class="panel-heading"><h2>Claims by month</h2><span class="subtle">Based on claim creation date</span></div>
@@ -89,6 +89,7 @@
       </ng-container>
 
       <ng-container *ngIf="activePage === 'Claims'">
+        <div class="dashboard-quick-filter" *ngIf="dashboardClaimsQuickFilter !== 'all'"><span>Dashboard filter: <strong>{{ dashboardClaimsQuickFilter === 'open' ? 'Open claims' : dashboardClaimsQuickFilter === 'pending' ? 'Pending approval' : dashboardClaimsQuickFilter === 'closed' ? 'Closed claims' : 'Overdue claims' }}</strong></span><button type="button" class="text-button" (click)="openDashboardClaimsFilter('all')">Clear filter</button></div>
         <section class="panel filters">
           <input aria-label="Search claims" placeholder="Search claim ID, insured or policy…" [(ngModel)]="searchTerm" (keyup.enter)="loadClaims()">
           <select aria-label="Filter by loss cause" [(ngModel)]="lossCauseFilter" (change)="loadClaims()"><option value="">All recorded loss causes</option><option *ngFor="let cause of lossCauseOptions" [value]="cause">{{ cause }}</option></select>
@@ -96,15 +97,15 @@
           <button class="secondary-action" (click)="loadClaims()">Search</button>
         </section>
         <section class="panel claims-panel">
-          <div class="panel-heading"><div><h2>Claims register</h2><span class="subtle">{{ claims.length }} records shown</span></div><button class="primary-action" type="button" (click)="selectPage('New FNOL')">＋ New FNOL</button></div>
+          <div class="panel-heading"><div><h2>Claims register</h2><span class="subtle">{{ filteredClaims().length }} records shown</span></div><button class="primary-action" type="button" (click)="selectPage('New FNOL')">＋ New FNOL</button></div>
           <p class="muted" *ngIf="loadingClaims">Loading claims…</p>
           <div class="table-scroll" *ngIf="!loadingClaims"><table><thead><tr><th>Claim ID</th><th>Insured Name</th><th>Policy Number</th><th>Created Date</th><th>Incident Date</th><th>Loss Cause</th><th>Assigned Adjuster</th><th>Status</th><th>Mode of Upload</th><th>Actions</th></tr></thead>
-            <tbody><tr *ngFor="let claim of claims">
+            <tbody><tr *ngFor="let claim of filteredClaims()">
               <td><button class="text-button" type="button" (click)="openClaimDetails(claim)" [attr.aria-label]="'Open claim ' + claim.claim_id">{{ claim.claim_id }}</button></td><td>{{ claim.customer_name || "Not Found" }}</td><td>{{ claim.policy_number || "Not Found" }}</td><td>{{ claim.created_at ? (claim.created_at | date:"mediumDate") : "Not Found" }}</td><td>{{ claim.incident_date || "Not Found" }}</td><td>{{ claim.loss_cause || "Not Found" }}</td>
               <td><select *ngIf="canAssignClaims()" class="status-select" [ngModel]="claim.assigned_adjuster_email || ''" (ngModelChange)="assignAdjuster(claim, $event)" [attr.aria-label]="'Assign adjuster for ' + claim.claim_id"><option value="">Unassigned</option><option *ngFor="let adjuster of adjusters" [value]="adjuster.email" [disabled]="(claim.claim_type === 'Property' && adjuster.role !== 'Property Adjuster') || (claim.claim_type === 'Casualty' && adjuster.role !== 'Casualty Adjuster')">{{ adjuster.full_name }} · {{ adjuster.role }}</option></select><span *ngIf="!canAssignClaims()">{{ claim.assigned_adjuster_name || 'Unassigned' }}</span></td>
               <td><select class="status-select" [ngModel]="claim.status" (ngModelChange)="changeStatus(claim, $event)" [attr.aria-label]="'Update status for ' + claim.claim_id"><option *ngFor="let status of statuses" [value]="status">{{ status }}</option></select></td><td><span class="source-mode" [title]="createdByTooltip(claim)">{{ claim.source_mode === "email" || claim.source === "Email FNOL" ? "✉" : "⇧" }}</span></td>
               <td><div class="claim-row-actions"><button class="text-button" type="button" *ngIf="canEditClaims()" (click)="openClaimForEdit(claim)">Edit</button><button class="text-button danger-text" type="button" *ngIf="canDeleteClaims()" (click)="deleteClaimFromRegister(claim)">Delete</button></div></td>
-            </tr><tr *ngIf="claims.length === 0"><td colspan="10" class="empty">No claims match your search. Create a new FNOL to get started.</td></tr></tbody>
+            </tr><tr *ngIf="filteredClaims().length === 0"><td colspan="10" class="empty">No claims match this filter. Clear the dashboard filter or adjust your search.</td></tr></tbody>
           </table></div>
         </section>
       </ng-container>
