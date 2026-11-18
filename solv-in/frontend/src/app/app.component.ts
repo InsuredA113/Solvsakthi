@@ -51,6 +51,13 @@ export class AppComponent implements OnInit {
   loginBusy = false;
   activePage = 'Dashboard';
   settingsSection = 'Company Profile';
+  selectedAIProvider = '';
+  readonly aiProviderSetup: Record<string, {purpose: string; environmentKey: string; setup: string; note: string}> = {
+    'ChatGPT': { purpose: 'Claim summarisation, structured reasoning and document assistance.', environmentKey: 'OPENAI_API_KEY', setup: 'Add OPENAI_API_KEY to the solv-in backend service environment in Render, then redeploy the backend.', note: 'Use a restricted project key and configure usage limits at the provider.' },
+    'Claude': { purpose: 'Long-document analysis, policy wording review and report drafting.', environmentKey: 'ANTHROPIC_API_KEY', setup: 'Add ANTHROPIC_API_KEY to the solv-in backend service environment in Render, then redeploy the backend.', note: 'Use a dedicated key with appropriate spending limits.' },
+    'Gemini': { purpose: 'Existing image damage analysis and document extraction.', environmentKey: 'GEMINI_API_KEY', setup: 'Gemini is already used by the backend. Check the existing GEMINI_API_KEY in Render if the feature is unavailable.', note: 'Do not paste or expose the key in the browser.' },
+    'GitHub Copilot': { purpose: 'Developer productivity, code assistance and software testing.', environmentKey: '', setup: 'Copilot is managed through GitHub user or organisation licensing and IDE sign-in. It is not a claims-processing model endpoint.', note: 'Manage seats and access in GitHub; no Solv-In API key is required.' }
+  };
   apiStatus = 'Checking API…';
   loadingClaims = false;
   savingClaim = false;
@@ -1102,6 +1109,10 @@ export class AppComponent implements OnInit {
   }
 
 
+
+  openAIProviderSetup(provider: string): void { this.selectedAIProvider = provider; this.errorMessage = ''; this.successMessage = ''; }
+
+  closeAIProviderSetup(): void { this.selectedAIProvider = ''; }
 
   canManageEmailConnectors(): boolean {
     return ['Super Administrator', 'Insurance Company Administrator'].includes(this.currentUser?.role || '');
