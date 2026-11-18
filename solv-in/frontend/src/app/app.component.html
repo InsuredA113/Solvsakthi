@@ -151,34 +151,24 @@
           </section>
           <section class="claim-comparison-panel" *ngIf="selectedClaim">
             <div class="claim-comparison-heading">
-              <div><span class="claim-detail-kicker">CLAIM REVIEW WORKSPACE</span><h3>Report comparison</h3><p>Choose a section to view its field-by-field comparison.</p></div>
-              <span class="claim-comparison-count">{{ claimReportComparisonRows().length }} fields</span>
+              <div><span class="claim-detail-kicker">CLAIM REVIEW WORKSPACE</span><h3>Report comparison</h3><p>{{ selectedComparisonSectionTitle() }} · Field-by-field comparison</p></div>
+              <span class="claim-comparison-count">{{ selectedComparisonRows().length }} fields</span>
             </div>
-            <div class="claim-accordion-list comparison-accordion-list">
-              <section class="claim-accordion-section" *ngFor="let section of claimDetailSections(); trackBy: trackByClaimSection">
-                <button class="claim-accordion-heading" type="button" (click)="toggleComparisonSection(section.id)" [attr.aria-expanded]="isComparisonSectionExpanded(section.id)">
-                  <span class="claim-accordion-leading"><span class="claim-section-number">{{ section.number }}</span><span class="claim-section-title-wrap"><strong>{{ section.title }}</strong><small>{{ section.description }}</small></span></span>
-                  <span class="claim-section-meta"><span class="claim-section-progress">{{ comparisonRowsForSection(section).length }} fields</span><span class="claim-chevron" [class.rotated]="isComparisonSectionExpanded(section.id)">⌄</span></span>
-                </button>
-                <div class="claim-accordion-content" *ngIf="isComparisonSectionExpanded(section.id)">
-                  <div class="table-scroll claim-comparison-table-wrap" *ngIf="comparisonRowsForSection(section).length">
-                    <table class="claim-comparison-table field-comparison-table">
-                      <thead><tr><th>Field</th><th>Initial Claim Review</th><th>Adjuster Report</th><th>Estimate Reports</th><th>Status</th></tr></thead>
-                      <tbody>
-                        <tr *ngFor="let row of comparisonRowsForSection(section); trackBy: trackByClaimField">
-                          <td><strong>{{ row.label }}</strong></td>
-                          <td>{{ row.initial }}</td>
-                          <td>{{ row.adjuster }}</td>
-                          <td>{{ row.estimate }}</td>
-                          <td><span class="comparison-state" [class.recorded]="row.status === 'Match'" [class.mismatch]="row.status === 'Mismatch'" [class.pending]="row.status === 'Not Available'">{{ row.status }}</span></td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                  <p class="empty comparison-empty" *ngIf="!comparisonRowsForSection(section).length">No claim fields are configured in this section yet.</p>
-                </div>
-              </section>
+            <div class="table-scroll claim-comparison-table-wrap" *ngIf="selectedComparisonRows().length">
+              <table class="claim-comparison-table field-comparison-table">
+                <thead><tr><th>Field</th><th>Initial Claim Review</th><th>Adjuster Report</th><th>Estimate Reports</th><th>Status</th></tr></thead>
+                <tbody>
+                  <tr *ngFor="let row of selectedComparisonRows(); trackBy: trackByClaimField">
+                    <td><strong>{{ row.label }}</strong></td>
+                    <td>{{ row.initial }}</td>
+                    <td>{{ row.adjuster }}</td>
+                    <td>{{ row.estimate }}</td>
+                    <td><span class="comparison-state" [class.recorded]="row.status === 'Match'" [class.mismatch]="row.status === 'Mismatch'" [class.pending]="row.status === 'Not Available'">{{ row.status }}</span></td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
+            <p class="empty comparison-empty" *ngIf="!selectedComparisonRows().length">No claim fields are configured in this section yet.</p>
             <div class="claim-discrepancy-note"><span class="claim-discrepancy-icon">!</span><span><strong>Status logic:</strong> Match or Mismatch is shown only when at least two report sources contain a value for the same field. Missing report data is shown as Not Available; it is not treated as a mismatch.</span></div>
           </section>
 
