@@ -27,17 +27,47 @@
       <div class="alert success" *ngIf="successMessage">{{ successMessage }}</div>
 
       <ng-container *ngIf="activePage === 'Dashboard'">
-        <div class="damage-disclaimer" *ngIf="unclassifiedLegacyCasualtyClaims > 0">{{ unclassifiedLegacyCasualtyClaims }} legacy Casualty claim(s) are excluded from the dashboard until verified as commercial or otherwise classified.</div>
-        <section class="metrics">
-          <article class="metric"><span class="metric-icon blue">▤</span><div><small>Total claims</small><strong>{{ totalClaims | number }}</strong><em>Live MongoDB records</em></div></article>
-          <article class="metric"><span class="metric-icon teal">＋</span><div><small>New FNOL</small><strong>{{ newClaims | number }}</strong><em>Received claims</em></div></article>
-          <article class="metric"><span class="metric-icon orange">⌕</span><div><small>In progress</small><strong>{{ investigatingClaims | number }}</strong><em>Review, investigation, assessment</em></div></article>
-          <article class="metric"><span class="metric-icon purple">◷</span><div><small>Pending approval</small><strong>{{ pendingClaims | number }}</strong><em>Requires authorised review</em></div></article>
-          <article class="metric"><span class="metric-icon green">✓</span><div><small>Closed</small><strong>{{ closedClaims | number }}</strong><em>Completed workflow</em></div></article>
+        <section class="panel dashboard-filters">
+          <div class="panel-heading"><div><h2>Claims overview</h2><p class="muted">Live claim records by creation date, workflow status and assigned adjuster.</p></div><span class="subtle" *ngIf="dashboardBusy">Refreshing…</span></div>
+          <div class="dashboard-filter-grid">
+            <label>Year<select [(ngModel)]="dashboardYear" (change)="loadDashboardAnalytics()"><option value="">All years</option><option *ngFor="let year of (dashboardAnalytics?.available_years || [])" [value]="year">{{ year }}</option></select></label>
+            <label>Month<select [(ngModel)]="dashboardMonth" (change)="loadDashboardAnalytics()"><option value="">All months</option><option *ngFor="let month of dashboardMonths" [value]="month.value">{{ month.label }}</option></select></label>
+            <label>Claim status<select [(ngModel)]="dashboardStatus" (change)="loadDashboardAnalytics()"><option value="">All statuses</option><option *ngFor="let status of statuses" [value]="status">{{ status }}</option></select></label>
+            <label>Claim type<select [(ngModel)]="dashboardClaimType" (change)="loadDashboardAnalytics()"><option value="All">All claim types</option><option value="Property">Property</option><option value="Casualty">Commercial Casualty</option></select></label>
+            <label>Adjuster<select [(ngModel)]="dashboardAdjuster" (change)="loadDashboardAnalytics()"><option value="">All adjusters</option><option *ngFor="let adjuster of adjusters" [value]="adjuster.email">{{ adjuster.full_name }} · {{ adjuster.role }}</option></select></label>
+            <button class="secondary-action dashboard-reset" type="button" (click)="dashboardYear=''; dashboardMonth=''; dashboardStatus=''; dashboardClaimType='All'; dashboardAdjuster=''; loadDashboardAnalytics()">Reset filters</button>
+          </div>
+        </section>
+        <section class="metrics dashboard-metrics" *ngIf="dashboardAnalytics">
+          <article class="metric"><span class="metric-icon blue">▤</span><div><small>Total claims</small><strong>{{ dashboardAnalytics.summary.total_claims | number }}</strong><em>Matching records</em></div></article>
+          <article class="metric"><span class="metric-icon teal">⌕</span><div><small>Open claims</small><strong>{{ dashboardAnalytics.summary.open_claims | number }}</strong><em>Not yet closed</em></div></article>
+          <article class="metric"><span class="metric-icon purple">◷</span><div><small>Pending approval</small><strong>{{ dashboardAnalytics.summary.pending_claims | number }}</strong><em>Awaiting approval</em></div></article>
+          <article class="metric"><span class="metric-icon green">✓</span><div><small>Closed claims</small><strong>{{ dashboardAnalytics.summary.closed_claims | number }}</strong><em>Completed claims</em></div></article>
+          <article class="metric"><span class="metric-icon orange">!</span><div><small>Overdue claims</small><strong>{{ dashboardAnalytics.summary.overdue_claims | number }}</strong><em>Open over 30 days</em></div></article>
+        </section>
+        <section class="bottom-grid" *ngIf="dashboardAnalytics">
+          <article class="panel claims-panel"><div class="panel-heading"><h2>Claims by month</h2><span class="subtle">Based on claim creation date</span></div>
+            <div class="table-scroll"><table><thead><tr><th>Month</th><th>Total claims</th></tr></thead><tbody>
+              <tr *ngFor="let row of dashboardAnalytics.by_month"><td>{{ row.month }}</td><td>{{ row.claim_count | number }}</td></tr>
+              <tr *ngIf="dashboardAnalytics.by_month.length === 0"><td colspan="2" class="empty">No claims for this period.</td></tr>
+            </tbody></table></div>
+          </article>
+          <article class="panel claims-panel"><div class="panel-heading"><h2>Claims by status</h2></div>
+            <div class="table-scroll"><table><thead><tr><th>Status</th><th>Claims</th></tr></thead><tbody>
+              <tr *ngFor="let row of dashboardAnalytics.by_status"><td>{{ row.status }}</td><td>{{ row.claim_count | number }}</td></tr>
+              <tr *ngIf="dashboardAnalytics.by_status.length === 0"><td colspan="2" class="empty">No matching claims.</td></tr>
+            </tbody></table></div>
+          </article>
+        </section>
+        <section class="panel claims-panel dashboard-adjusters" *ngIf="dashboardAnalytics">
+          <div class="panel-heading"><div><h2>Adjuster workload &amp; performance</h2><p class="muted">Average handling time uses closed claims with recorded closure dates. Overdue means open for more than 30 calendar days.</p></div></div>
+          <div class="table-scroll"><table><thead><tr><th>Adjuster</th><th>Role</th><th>Assigned</th><th>Open</th><th>Pending</th><th>Closed</th><th>Overdue</th><th>Avg. handling days</th></tr></thead><tbody>
+            <tr *ngFor="let row of dashboardAnalytics.by_adjuster"><td>{{ row.adjuster_name }}</td><td>{{ row.adjuster_role || '—' }}</td><td>{{ row.assigned | number }}</td><td>{{ row.open | number }}</td><td>{{ row.pending | number }}</td><td>{{ row.closed | number }}</td><td>{{ row.overdue | number }}</td><td>{{ row.average_handling_days === null ? '—' : row.average_handling_days }}</td></tr>
+            <tr *ngIf="dashboardAnalytics.by_adjuster.length === 0"><td colspan="8" class="empty">No adjuster workload records for these filters.</td></tr>
+          </tbody></table></div>
         </section>
         <section class="bottom-grid">
-          <article class="panel claims-panel">
-            <div class="panel-heading"><h2>Recent claims</h2><button class="text-button" (click)="selectPage('Claims')">View all →</button></div>
+          <article class="panel claims-panel"><div class="panel-heading"><h2>Recent claims</h2><button class="text-button" (click)="selectPage('Claims')">View all →</button></div>
             <div class="table-scroll"><table><thead><tr><th>Claim ID</th><th>Insured Name</th><th>Type</th><th>Status</th></tr></thead>
               <tbody><tr *ngFor="let claim of claims.slice(0,5)"><td>{{ claim.claim_id }}</td><td>{{ claim.customer_name || "Not Found" }}</td><td>{{ claim.claim_type === "Casualty" ? "Commercial Casualty" : claim.claim_type }}</td><td><span class="status">{{ claim.status }}</span></td></tr>
                 <tr *ngIf="claims.length === 0"><td colspan="4" class="empty">No saved claims yet. Create your first FNOL.</td></tr></tbody>
