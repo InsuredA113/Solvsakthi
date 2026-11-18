@@ -271,3 +271,18 @@
   .sidebar-foot{display:none}
   .shell.sidebar-collapsed .sidebar{width:58px}
 }
+
+
+/* Claims Details — consolidated report comparison table */
+.shell.claim-detail-mode .claim-comparison-table{min-width:940px;white-space:normal;table-layout:auto}
+.shell.claim-detail-mode .claim-comparison-table th{font-size:10px;letter-spacing:.02em;color:#71839a;background:#f5f8fc}
+.shell.claim-detail-mode .claim-comparison-table td{font-size:10px;line-height:1.55;color:#425873;vertical-align:top;white-space:normal}
+.shell.claim-detail-mode .claim-comparison-table td:first-child{min-width:145px}
+.shell.claim-detail-mode .claim-comparison-table td:first-child strong,.shell.claim-detail-mode .claim-comparison-table td:first-child small{display:block}
+.shell.claim-detail-mode .claim-comparison-table td:first-child strong{color:#203b5c;font-size:11px}
+.shell.claim-detail-mode .claim-comparison-table td:first-child small{margin-top:4px;color:#8a98aa;font-size:9px}
+.shell.claim-detail-mode .claim-comparison-table td:nth-child(4){min-width:260px;max-width:440px}
+.shell.claim-detail-mode .claim-comparison-table td:last-child{min-width:120px}
+.shell.claim-detail-mode .claim-comparison-table .comparison-state{white-space:normal;line-height:1.35}
+.shell.claim-detail-mode .claim-comparison-table-wrap{border:1px solid #e8eef5;border-radius:9px}
+@media(max-width:760px){.shell.claim-detail-mode .claim-comparison-table{min-width:860px}.shell.claim-detail-mode .claim-comparison-panel{padding:16px}}
