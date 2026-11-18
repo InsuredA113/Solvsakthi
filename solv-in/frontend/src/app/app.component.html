@@ -6,14 +6,21 @@
       <ng-container *ngFor="let item of navigation"><button *ngIf="(item !== 'Users' || isAdmin()) && (item !== 'AI Damage Analysis' || canAnalyseDamage()) && (item !== 'Tax Rules' || canManageTaxRules()) && (item !== 'Repair Rates' || canManageTaxRules()) && (item !== 'Policy Coverage' || canViewPolicyCoverage())" (click)="selectPage(item)" [class.active]="activePage === item">
         <span class="nav-icon">{{ item === 'Dashboard' ? '⌂' : item === 'Claims' ? '▤' : item === 'New FNOL' ? '+' : item === 'Email FNOL' ? '✉' : item === 'AI Damage Analysis' ? '◈' : item === 'Tax Rules' ? '⌁' : item === 'Repair Rates' ? '⌖' : item === 'Policy Coverage' ? '▣' : item === 'Reports' ? '▥' : item === 'Users' ? '♙' : '⚙' }}</span>{{ item }}
       </button></ng-container>
+      <button *ngIf="activePage === 'Claim Details'" type="button" (click)="selectPage('Reports')" [class.active]="activePage === 'Reports'"><span class="nav-icon">▥</span>Reports</button>
     </nav>
-    <div class="sidebar-foot">P&C Claims Intelligence<br><span>Development preview</span></div>
+    <div class="sidebar-foot">P&C Claims Intelligence<br><span>Property &amp; Casualty</span></div>
   </aside>
 
   <main class="main">
     <header class="topbar">
-      <div class="topbar-title">Claims intelligence workspace</div>
-      <div class="profile"><span class="avatar">{{ currentUser?.full_name?.slice(0, 1) }}</span><span><b>{{ currentUser?.full_name }}</b><small>{{ currentUser?.role }}</small></span><button class="logout-button" (click)="logout()">Sign out</button></div>
+      <div class="topbar-title" *ngIf="activePage !== 'Claim Details'">Claims intelligence workspace</div>
+      <div class="claim-topbar-tools" *ngIf="activePage === 'Claim Details'">
+        <label class="claim-global-search"><span aria-hidden="true">⌕</span><input [(ngModel)]="searchTerm" (keyup.enter)="selectPage('Claims'); loadClaims()" placeholder="Search claims, policies…" aria-label="Search claims and policies"></label>
+        <button class="claim-notification-button" type="button" aria-label="Notifications" title="Notifications" (click)="successMessage = 'No new notifications.'; errorMessage = ''">♧</button>
+        <span class="claim-topbar-divider"></span>
+        <div class="profile"><span class="avatar">{{ currentUser?.full_name?.slice(0, 1) }}</span><span><b>{{ currentUser?.full_name }}</b><small>{{ currentUser?.role }}</small></span><button class="logout-button" (click)="logout()">Sign out</button></div>
+      </div>
+      <div class="profile" *ngIf="activePage !== 'Claim Details'"><span class="avatar">{{ currentUser?.full_name?.slice(0, 1) }}</span><span><b>{{ currentUser?.full_name }}</b><small>{{ currentUser?.role }}</small></span><button class="logout-button" (click)="logout()">Sign out</button></div>
     </header>
 
     <section class="content">
@@ -121,17 +128,60 @@
             </div>
           </div>
           <p class="muted" *ngIf="loadingClaimDetails">Loading claim details…</p>
-          <div *ngIf="selectedClaim" class="claim-overview">
-            <div class="claim-overview-identity">
-              <span class="claim-overview-label">CLAIM REFERENCE</span>
-              <strong>{{ selectedClaim.claim_id }}</strong>
-              <span class="claim-overview-insured">{{ selectedClaim.customer_name || 'Insured name not recorded' }}</span>
+          <div *ngIf="selectedClaim" class="claim-detail-hero">
+            <div class="claim-detail-hero-main">
+              <div class="claim-detail-kicker">PROPERTY &amp; CASUALTY CLAIM</div>
+              <div class="claim-detail-title-row"><h2>{{ selectedClaim.claim_id }}</h2><span class="claim-status-pill">{{ selectedClaim.status || 'Status not recorded' }}</span></div>
+              <p>{{ selectedClaim.customer_name || 'Insured name not recorded' }} <span class="claim-hero-separator">•</span> {{ selectedClaim.claim_type === 'Casualty' ? 'Commercial Casualty' : 'Property' }}</p>
             </div>
-            <div class="claim-overview-stat"><small>Claim status</small><strong>{{ selectedClaim.status || 'Not Found' }}</strong></div>
-            <div class="claim-overview-stat"><small>Loss cause</small><strong>{{ selectedClaim.loss_cause || 'Not Found' }}</strong></div>
-            <div class="claim-overview-stat"><small>Incident date</small><strong>{{ selectedClaim.incident_date || 'Not Found' }}</strong></div>
-            <div class="claim-overview-stat"><small>Recorded fields</small><strong>{{ claimOverallProgress().complete }} / {{ claimOverallProgress().total }}</strong></div>
+            <div class="claim-detail-hero-meta">
+              <div><span>Reported date</span><strong>{{ selectedClaim.created_at ? (selectedClaim.created_at | date:'mediumDate') : 'Not recorded' }}</strong></div>
+              <div><span>Date of loss</span><strong>{{ selectedClaim.incident_date || 'Not recorded' }}</strong></div>
+              <div><span>Loss cause</span><strong>{{ selectedClaim.loss_cause || 'Not recorded' }}</strong></div>
+              <div><span>Assigned adjuster</span><strong>{{ selectedClaim.assigned_adjuster_name || 'Unassigned' }}</strong></div>
+              <div><span>Data completeness</span><strong>{{ claimOverallProgress().complete }} / {{ claimOverallProgress().total }} fields</strong></div>
+            </div>
           </div>
+
+          <section class="claim-comparison-panel" *ngIf="selectedClaim">
+            <div class="claim-comparison-heading">
+              <div><span class="claim-detail-kicker">CLAIM REVIEW WORKSPACE</span><h3>Report comparison</h3><p>Review information across intake, adjuster findings and financial estimates.</p></div>
+              <span class="claim-comparison-count">{{ financialEstimates.length }} estimate report(s)</span>
+            </div>
+            <div class="claim-comparison-tabs" role="tablist" aria-label="Claim report comparison">
+              <button type="button" role="tab" [attr.aria-selected]="claimComparisonTab === 'initial'" [class.active]="claimComparisonTab === 'initial'" (click)="claimComparisonTab = 'initial'"><span>01</span>Initial Claim Review</button>
+              <button type="button" role="tab" [attr.aria-selected]="claimComparisonTab === 'adjuster'" [class.active]="claimComparisonTab === 'adjuster'" (click)="claimComparisonTab = 'adjuster'"><span>02</span>Adjuster Report</button>
+              <button type="button" role="tab" [attr.aria-selected]="claimComparisonTab === 'estimates'" [class.active]="claimComparisonTab === 'estimates'" (click)="claimComparisonTab = 'estimates'"><span>03</span>Estimate Reports</button>
+            </div>
+            <div class="claim-comparison-content" *ngIf="claimComparisonTab === 'initial'">
+              <div class="claim-comparison-summary"><span class="comparison-state recorded">Source record</span><span>Values below are taken from the saved claim record.</span></div>
+              <div class="claim-comparison-grid">
+                <div><small>Insured / claimant</small><strong>{{ selectedClaim.customer_name || 'Not recorded' }}</strong></div>
+                <div><small>Policy number</small><strong>{{ selectedClaim.policy_number || 'Not recorded' }}</strong></div>
+                <div><small>Claim type</small><strong>{{ selectedClaim.claim_type === 'Casualty' ? 'Commercial Casualty' : selectedClaim.claim_type }}</strong></div>
+                <div><small>Loss cause</small><strong>{{ selectedClaim.loss_cause || 'Not recorded' }}</strong></div>
+                <div><small>Date of loss</small><strong>{{ selectedClaim.incident_date || 'Not recorded' }}</strong></div>
+                <div><small>Reported amount</small><strong>{{ selectedClaim.estimated_loss !== null && selectedClaim.estimated_loss !== undefined ? (formatAmount(+selectedClaim.estimated_loss, selectedClaim.currency)) : 'Not recorded' }}</strong></div>
+              </div>
+            </div>
+            <div class="claim-comparison-content" *ngIf="claimComparisonTab === 'adjuster'">
+              <div class="claim-comparison-alert"><strong>Adjuster report not linked</strong><span>No adjuster report record is currently available for this claim. The comparison remains incomplete; no match or discrepancy has been inferred.</span></div>
+              <div class="claim-comparison-grid">
+                <div><small>Assigned adjuster</small><strong>{{ selectedClaim.assigned_adjuster_name || 'Unassigned' }}</strong></div>
+                <div><small>Adjuster role</small><strong>{{ selectedClaim.assigned_adjuster_role || 'Not recorded' }}</strong></div>
+                <div><small>Report status</small><strong>Not available</strong></div>
+              </div>
+            </div>
+            <div class="claim-comparison-content" *ngIf="claimComparisonTab === 'estimates'">
+              <div class="claim-comparison-alert" *ngIf="financialEstimates.length === 0"><strong>No estimate reports linked</strong><span>Financial estimates will appear here after they are created in the Financial Estimate workflow. Calculation logic and approvals remain in that module.</span></div>
+              <div class="table-scroll" *ngIf="financialEstimates.length > 0">
+                <table><thead><tr><th>Estimate ID</th><th>Created</th><th>Currency</th><th>Preliminary net estimate</th><th>Review status</th></tr></thead>
+                  <tbody><tr *ngFor="let estimate of financialEstimates"><td>{{ estimate.estimate_id }}</td><td>{{ estimate.created_at | date:'mediumDate' }}</td><td>{{ estimate.currency }}</td><td>{{ estimate.preliminary_net_estimate }}</td><td><span class="comparison-state" [class.recorded]="estimate.review_status === 'Approved'" [class.pending]="estimate.review_status !== 'Approved'">{{ estimate.review_status || estimate.status || 'Pending review' }}</span></td></tr></tbody>
+                </table>
+              </div>
+            </div>
+            <div class="claim-discrepancy-note"><span class="claim-discrepancy-icon">!</span><span><strong>Review integrity:</strong> missing source reports are marked as unavailable. Solv-In does not label records as matching or conflicting until comparable, verified source values exist.</span></div>
+          </section>
 
           <div class="claim-accordion-toolbar" *ngIf="selectedClaim">
             <label class="claim-detail-search">
