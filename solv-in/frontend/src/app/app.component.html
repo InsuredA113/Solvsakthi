@@ -848,7 +848,7 @@
             </ng-container>
 
             <section class="panel form-panel" *ngIf="settingsSection === 'Integrations' && canManageEmailConnectors()">
-              <div class="panel-heading"><div><h2>Integrations</h2><p class="muted">Manage connections used by Solv-In. A provider is shown as connected only after its live status is verified.</p></div></div>
+              <div class="panel-heading"><div><h2>Integrations</h2><p class="muted">View current Solv-In integrations and providers available for future consideration. Future providers are informational only; no connection is configured here.</p></div></div>
               <div class="integration-grid">
                 <article class="integration-card">
                   <div class="integration-head"><b>Gmail / Google Workspace</b><span class="status">{{ emailConnectorStatus?.gmail?.configured ? (emailConnectorStatus?.gmail?.watch_active ? 'Watch active' : 'Credentials configured') : 'Not configured' }}</span></div>
@@ -860,13 +860,13 @@
                   <p>Mailbox intake through Microsoft Graph.</p><small>{{ emailConnectorStatus?.microsoft365?.subscription_expiration ? 'Subscription expires: ' + (emailConnectorStatus?.microsoft365?.subscription_expiration | date:'medium') : 'Requires backend application credentials and Graph subscription.' }}</small>
                   <button class="secondary-action" type="button" (click)="loadEmailConnectorStatus()">Refresh status</button>
                 </article>
-                <article class="integration-card"><div class="integration-head"><b>Gemini AI</b><span class="status">Existing feature · verify configuration</span></div><p>Preliminary image-damage analysis and document extraction.</p><small>Uses the backend GEMINI_API_KEY configuration. No key is displayed in the browser.</small></article>
-                <article class="integration-card"><div class="integration-head"><b>Google Drive / OneDrive / Amazon S3</b><span class="status">Planned</span></div><p>External document storage connectors.</p><small>Not connected. Requires secure backend implementation.</small></article>
-                <article class="integration-card"><div class="integration-head"><b>Xactimate / Symbility</b><span class="status">Planned</span></div><p>Repair-estimation platform connectivity.</p><small>Not connected. API access and licensing must be validated.</small></article>
-                <article class="integration-card"><div class="integration-head"><b>DocuSign</b><span class="status">Planned</span></div><p>Electronic signatures and document workflows.</p><small>Not connected. Provider credentials and workflow permissions required.</small></article>
-                <article class="integration-card"><div class="integration-head"><b>Microsoft Entra ID / Okta</b><span class="status">Planned</span></div><p>Enterprise identity and single sign-on.</p><small>Not connected. Requires an authentication design and tenant configuration.</small></article>
+                <article class="integration-card"><div class="integration-head"><b>Gemini AI</b><span class="status">Existing integration</span></div><p>Preliminary image-damage analysis and document extraction.</p><small>Uses the backend GEMINI_API_KEY configuration. No key is displayed in the browser.</small></article>
+                <article class="integration-card"><div class="integration-head"><b>Google Drive / OneDrive / Amazon S3</b><span class="status">Available for future integration</span></div><p>External document storage connectors.</p><small>Information only. Your team can choose to integrate a provider in a future phase.</small></article>
+                <article class="integration-card"><div class="integration-head"><b>Xactimate / Symbility</b><span class="status">Available for future integration</span></div><p>Repair-estimation platform connectivity.</p><small>Information only. API access and licensing can be reviewed if your team chooses to integrate later.</small></article>
+                <article class="integration-card"><div class="integration-head"><b>DocuSign</b><span class="status">Available for future integration</span></div><p>Electronic signatures and document workflows.</p><small>Information only. No connection or setup is required now.</small></article>
+                <article class="integration-card"><div class="integration-head"><b>Microsoft Entra ID / Okta</b><span class="status">Available for future integration</span></div><p>Enterprise identity and single sign-on.</p><small>Information only. Your team can evaluate this when future SSO integration is needed.</small></article>
               </div>
-              <p class="damage-disclaimer">Security: integration secrets must be stored in backend environment variables or a secrets manager. Never enter API keys or client secrets into this Angular page.</p>
+              <p class="damage-disclaimer">Future integrations are listed for planning only. No setup or connection is required for these providers at this stage.</p>
             </section>
 
             <section class="panel form-panel" *ngIf="settingsSection === 'Email Configuration' && canManageEmailConnectors()">
