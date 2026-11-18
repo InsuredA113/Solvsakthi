@@ -371,6 +371,8 @@ def dashboard_analytics(
         claims = list(get_database()["claims"].find({"$and": query_parts}, {"_id": 0}).sort("created_at", 1).limit(50000))
         by_month = {}
         by_status = {}
+        by_month_status = {}
+        available_years = set()
         adjusters = {}
         overdue_count = 0
         handling_days = []
@@ -385,9 +387,13 @@ def dashboard_analytics(
                 except ValueError:
                     pass
             month_key = created_dt.strftime("%Y-%m") if created_dt else "Unknown"
+            if created_dt:
+                available_years.add(created_dt.year)
             by_month[month_key] = by_month.get(month_key, 0) + 1
             claim_status = claim.get("status") or "Unspecified"
             by_status[claim_status] = by_status.get(claim_status, 0) + 1
+            by_month_status.setdefault(month_key, {})
+            by_month_status[month_key][claim_status] = by_month_status[month_key].get(claim_status, 0) + 1
             email = claim.get("assigned_adjuster_email")
             key = email or "__unassigned__"
             row = adjusters.setdefault(key, {
@@ -438,8 +444,10 @@ def dashboard_analytics(
                 "average_handling_days": round(sum(handling_days) / len(handling_days), 1) if handling_days else None
             },
             "by_month": [{"month": k, "claim_count": v} for k, v in sorted(by_month.items())],
+            "by_month_status": [{"month": k, "statuses": v} for k, v in sorted(by_month_status.items())],
             "by_status": [{"status": k, "claim_count": v} for k, v in sorted(by_status.items())],
-            "by_adjuster": adjuster_rows
+            "by_adjuster": adjuster_rows,
+            "available_years": sorted(available_years, reverse=True)
         }
     except PyMongoError as exc:
         raise HTTPException(status_code=503, detail="Unable to build dashboard analytics.") from exc
