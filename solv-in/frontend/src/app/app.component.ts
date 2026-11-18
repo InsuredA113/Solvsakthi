@@ -339,8 +339,9 @@ export class AppComponent implements OnInit {
   }
 
   loadCoverageAssessments(): void {
-    const id = this.coverageClaimId.trim();
-    if (!id) return;
+    const id = this.selectedClaim?.claim_id || this.coverageClaimId.trim();
+    if (!id) { this.coverageAssessments = []; return; }
+    this.coverageClaimId = id;
     this.http.get<{items: any[]; count: number}>(`${environment.apiBaseUrl}/claims/${encodeURIComponent(id)}/coverage-assessments`, { headers: this.authHeaders() }).subscribe({
       next: result => this.coverageAssessments = result.items,
       error: error => this.handleApiError(error)
@@ -680,7 +681,7 @@ export class AppComponent implements OnInit {
     this.expandedClaimSubsections = ['initial-review:claim-status'];
     this.activePage = 'Claim Details';
     this.http.get<Claim>(`${environment.apiBaseUrl}/claims/${encodeURIComponent(claim.claim_id)}`, { headers: this.authHeaders() }).subscribe({
-      next: result => { this.selectedClaim = result; this.loadingClaimDetails = false; this.loadClaimDocuments(); this.loadFinancialEstimates(); this.loadAdjusterReports(); this.loadComparisonComments(); if (editAfterOpen) this.startClaimEdit(); },
+      next: result => { this.selectedClaim = result; this.loadingClaimDetails = false; this.loadClaimDocuments(); this.loadFinancialEstimates(); this.loadAdjusterReports(); this.loadCoverageAssessments(); this.loadComparisonComments(); if (editAfterOpen) this.startClaimEdit(); },
       error: error => { this.loadingClaimDetails = false; this.handleApiError(error); }
     });
   }
@@ -940,6 +941,33 @@ export class AppComponent implements OnInit {
         {id:'estimate-report-content',title:'Estimate reports',fieldKeys:[],configured:false,note:'Estimate reports remain in the existing Financial Estimate workflow. This section will link verified report records when available.'}
       ]}
     ];
+  }
+
+  subsectionConnectionLabel(sectionId: string, subsection: {fieldKeys: string[]; configured?: boolean}): string {
+    if (sectionId === 'adjuster-report') {
+      return this.adjusterReportsBusy ? 'Loading adjuster reports…' : this.adjusterReports.length
+        ? `Connected · ${this.adjusterReports.length} report(s) linked` : 'No adjuster report linked to this claim';
+    }
+    if (sectionId === 'estimate-reports') {
+      return this.estimateBusy ? 'Loading estimate reports…' : this.financialEstimates.length
+        ? `Connected · ${this.financialEstimates.length} estimate(s) linked` : 'No financial estimate saved for this claim';
+    }
+    if (sectionId === 'policy-coverage-details' && subsection.fieldKeys.length === 0) {
+      const snapshot = this.coverageAssessments[0]?.policy_snapshot;
+      if (snapshot?.effective_from || snapshot?.effective_to) return 'Connected · Policy period available in coverage record';
+      if (this.coverageAssessments.length) return 'Coverage record found · Policy period not recorded';
+      return 'No linked coverage assessment yet';
+    }
+    if (sectionId === 'coverage-deductible') {
+      const snapshot = this.coverageAssessments[0]?.policy_snapshot;
+      return snapshot ? 'Connected · Coverage assessment and policy snapshot available' : 'No linked coverage assessment yet';
+    }
+    if (subsection.fieldKeys.length) {
+      const fields = this.claimDetailFields().filter(field => subsection.fieldKeys.includes(field.key));
+      const populated = fields.filter(field => !!field.value.trim()).length;
+      return populated ? `Connected · ${populated} of ${fields.length} fields populated` : 'Connected · No values recorded yet';
+    }
+    return 'Not yet connected to claim data';
   }
 
   claimFieldsFor(keys: string[]): Array<{key: string; label: string; value: string; type: string; required: boolean; options?: string[]}> {
@@ -1496,8 +1524,9 @@ export class AppComponent implements OnInit {
   }
 
   loadFinancialEstimates(): void {
-    const id = this.estimateClaimId.trim();
-    if (!id) { this.errorMessage = 'Enter a Claim ID to load financial estimates.'; return; }
+    const id = this.selectedClaim?.claim_id || this.estimateClaimId.trim();
+    if (!id) { this.financialEstimates = []; return; }
+    this.estimateClaimId = id;
     this.http.get<{items: FinancialEstimate[]; count: number}>(`${environment.apiBaseUrl}/claims/${encodeURIComponent(id)}/financial-estimates`, { headers: this.authHeaders() }).subscribe({
       next: result => this.financialEstimates = result.items,
       error: error => { this.financialEstimates = []; this.handleApiError(error); }
