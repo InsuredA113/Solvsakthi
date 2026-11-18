@@ -20,6 +20,7 @@ from .database import get_database, database_is_available
 from .models import ClaimCreate, ClaimStatusUpdate
 from .claims_analytics import build_claims_analytics, is_in_scope_claim, safe_csv_cell
 from .user_models import LoginRequest, UserCreate
+from .rbac import get_effective_permissions
 from .repair_rate_models import RepairRateCreate, RepairRateStatusUpdate
 from .email_intake import EmailIntakeCreate, EmailIntakeReview, extract_email_intake
 from .email_connector_routes import router as email_connector_router
@@ -111,6 +112,11 @@ def login(payload: LoginRequest):
 @app.get("/api/auth/me")
 def who_am_i(user: dict = Depends(get_current_user)):
     return user
+
+@app.get("/api/auth/permissions")
+def current_user_permissions(user: dict = Depends(get_current_user)):
+    """Return the permission union for the signed-in user's assigned roles."""
+    return {"roles": user.get("roles", [user.get("role")]), "permissions": sorted(get_effective_permissions(user))}
 
 @app.get("/api/users/roles")
 def list_roles(user: dict = Depends(require_roles(*ADMIN_ROLES))):
