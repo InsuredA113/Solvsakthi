@@ -82,40 +82,75 @@
             </div>
           </div>
           <p class="muted" *ngIf="loadingClaimDetails">Loading claim details…</p>
-          <div *ngIf="selectedClaim" class="claim-field-grid">
-            <article class="claim-field-card protected-field">
-              <div class="claim-field-heading"><small>Claim ID</small><span class="protected-label">Protected</span></div>
+          <div *ngIf="selectedClaim" class="claim-overview">
+            <div class="claim-overview-identity">
+              <span class="claim-overview-label">CLAIM REFERENCE</span>
               <strong>{{ selectedClaim.claim_id }}</strong>
-            </article>
-            <article class="claim-field-card" *ngFor="let field of claimDetailFields(); trackBy: trackByClaimField">
-              <div class="claim-field-heading"><small>{{ field.label }}</small><span class="required-label" *ngIf="field.required">Required</span></div>
-              <ng-container *ngIf="editingClaimField !== field.key">
-                <p class="claim-field-value" [class.long-value]="field.type === 'textarea'">{{ field.key === 'estimated_loss' ? (field.value ? formatAmount(+field.value, selectedClaim.currency) : 'Not Found') : (field.value || 'Not Found') }}</p>
-                <div class="claim-field-actions" *ngIf="canEditClaims()">
-                  <button class="text-button" type="button" (click)="startFieldEdit(field)">Edit</button>
-                  <button class="text-button danger-text" type="button" (click)="clearClaimField(field)" [disabled]="field.required" [title]="field.required ? 'Required field cannot be cleared' : 'Clear only this field'">Delete</button>
-                </div>
-              </ng-container>
-              <div class="claim-field-editor" *ngIf="editingClaimField === field.key">
-                <select *ngIf="field.options?.length" [(ngModel)]="claimFieldDraft" [name]="'field_'+field.key" [disabled]="claimFieldBusy">
-                  <option *ngFor="let option of field.options" [value]="option">{{ option }}</option>
-                </select>
-                <textarea *ngIf="field.type === 'textarea'" [(ngModel)]="claimFieldDraft" [name]="'field_'+field.key" rows="3" [disabled]="claimFieldBusy"></textarea>
-                <input *ngIf="!field.options?.length && field.type !== 'textarea'" [type]="field.type" [(ngModel)]="claimFieldDraft" [name]="'field_'+field.key" [required]="field.required" [disabled]="claimFieldBusy">
-                <div class="claim-field-actions">
-                  <button class="text-button" type="button" (click)="saveClaimField(field)" [disabled]="claimFieldBusy">{{ claimFieldBusy ? 'Saving…' : 'Save' }}</button>
-                  <button class="text-button muted-action" type="button" (click)="cancelFieldEdit()" [disabled]="claimFieldBusy">Cancel</button>
-                </div>
+              <span class="claim-overview-insured">{{ selectedClaim.customer_name || 'Insured name not recorded' }}</span>
+            </div>
+            <div class="claim-overview-stat"><small>Claim status</small><strong>{{ selectedClaim.status || 'Not Found' }}</strong></div>
+            <div class="claim-overview-stat"><small>Loss cause</small><strong>{{ selectedClaim.loss_cause || 'Not Found' }}</strong></div>
+            <div class="claim-overview-stat"><small>Incident date</small><strong>{{ selectedClaim.incident_date || 'Not Found' }}</strong></div>
+            <div class="claim-overview-stat"><small>Recorded fields</small><strong>{{ claimOverallProgress().complete }} / {{ claimOverallProgress().total }}</strong></div>
+          </div>
+
+          <div class="claim-accordion-toolbar" *ngIf="selectedClaim">
+            <label class="claim-detail-search">
+              <span aria-hidden="true">⌕</span>
+              <input type="search" [(ngModel)]="claimDetailSearch" (ngModelChange)="onClaimDetailSearchChange()" placeholder="Search claim fields…" aria-label="Search all claim detail fields">
+            </label>
+            <div class="claim-accordion-tools">
+              <span class="claim-search-hint" *ngIf="claimDetailSearch">Matching fields expand automatically</span>
+              <button class="text-button" type="button" (click)="expandAllClaimSections()">Expand all</button>
+              <button class="text-button" type="button" (click)="collapseAllClaimSections()">Collapse all</button>
+            </div>
+          </div>
+
+          <div *ngIf="selectedClaim" class="claim-accordion-list">
+            <section class="claim-accordion-section" *ngFor="let section of claimDetailSections(); trackBy: trackByClaimSection">
+              <button class="claim-accordion-heading" type="button" (click)="toggleClaimSection(section.id)" [attr.aria-expanded]="isClaimSectionExpanded(section.id)">
+                <span class="claim-accordion-leading"><span class="claim-section-number">{{ section.number }}</span><span class="claim-section-title-wrap"><strong>{{ section.title }}</strong><small>{{ section.description }}</small></span></span>
+                <span class="claim-section-meta"><span class="claim-section-progress">{{ sectionProgress(section).complete }}/{{ sectionProgress(section).total }} complete</span><span class="claim-section-pending" *ngIf="sectionProgress(section).pending">{{ sectionProgress(section).pending }} pending</span><span class="claim-chevron" [class.rotated]="isClaimSectionExpanded(section.id)">⌄</span></span>
+              </button>
+              <div class="claim-accordion-content" *ngIf="isClaimSectionExpanded(section.id)">
+                <ng-container *ngFor="let subsection of section.subsections; trackBy: trackByClaimSubsection">
+                  <div class="claim-subsection" *ngIf="subsection.configured === false && !claimDetailSearch">
+                    <button class="claim-subsection-heading placeholder-subsection" type="button" (click)="toggleClaimSubsection(section.id + ':' + subsection.id)" [attr.aria-expanded]="isClaimSubsectionExpanded(section.id + ':' + subsection.id)">
+                      <span><strong>{{ subsection.title }}</strong><small>Not yet connected to claim data</small></span><span class="claim-chevron" [class.rotated]="isClaimSubsectionExpanded(section.id + ':' + subsection.id)">⌄</span>
+                    </button>
+                    <div class="claim-placeholder-note" *ngIf="isClaimSubsectionExpanded(section.id + ':' + subsection.id)">{{ subsection.note || 'This subsection will be enabled when its verified fields and API data are available. No placeholder values are saved.' }}</div>
+                  </div>
+                  <div class="claim-subsection" *ngIf="subsection.configured !== false && claimFieldsFor(subsection.fieldKeys).length">
+                    <button class="claim-subsection-heading" type="button" (click)="toggleClaimSubsection(section.id + ':' + subsection.id)" [attr.aria-expanded]="isClaimSubsectionExpanded(section.id + ':' + subsection.id)">
+                      <span><strong>{{ subsection.title }}</strong><small>{{ claimFieldsFor(subsection.fieldKeys).length }} matching field(s)</small></span><span class="claim-chevron" [class.rotated]="isClaimSubsectionExpanded(section.id + ':' + subsection.id)">⌄</span>
+                    </button>
+                    <div class="claim-subsection-body" *ngIf="isClaimSubsectionExpanded(section.id + ':' + subsection.id)">
+                      <article class="claim-field-card" *ngFor="let field of claimFieldsFor(subsection.fieldKeys); trackBy: trackByClaimField">
+                        <div class="claim-field-heading"><small>{{ field.label }}</small><span class="required-label" *ngIf="field.required">Required</span></div>
+                        <ng-container *ngIf="editingClaimField !== field.key">
+                          <p class="claim-field-value" [class.long-value]="field.type === 'textarea'">{{ field.key === 'estimated_loss' ? (field.value ? formatAmount(+field.value, selectedClaim.currency) : 'Not Found') : (field.value || 'Not Found') }}</p>
+                          <div class="claim-field-actions" *ngIf="canEditClaims()">
+                            <button class="text-button" type="button" (click)="startFieldEdit(field)">Edit</button>
+                            <button class="text-button danger-text" type="button" (click)="clearClaimField(field)" [disabled]="field.required" [title]="field.required ? 'Required field cannot be cleared' : 'Clear only this field'">Delete</button>
+                          </div>
+                        </ng-container>
+                        <div class="claim-field-editor" *ngIf="editingClaimField === field.key">
+                          <select *ngIf="field.options?.length" [(ngModel)]="claimFieldDraft" [name]="'field_'+field.key" [disabled]="claimFieldBusy"><option *ngFor="let option of field.options" [value]="option">{{ option }}</option></select>
+                          <textarea *ngIf="field.type === 'textarea'" [(ngModel)]="claimFieldDraft" [name]="'field_'+field.key" rows="3" [disabled]="claimFieldBusy"></textarea>
+                          <input *ngIf="!field.options?.length && field.type !== 'textarea'" [type]="field.type" [(ngModel)]="claimFieldDraft" [name]="'field_'+field.key" [required]="field.required" [disabled]="claimFieldBusy">
+                          <div class="claim-field-actions"><button class="text-button" type="button" (click)="saveClaimField(field)" [disabled]="claimFieldBusy">{{ claimFieldBusy ? 'Saving…' : 'Save' }}</button><button class="text-button muted-action" type="button" (click)="cancelFieldEdit()" [disabled]="claimFieldBusy">Cancel</button></div>
+                        </div>
+                      </article>
+                    </div>
+                  </div>
+                </ng-container>
               </div>
-            </article>
-            <article class="claim-field-card">
-              <div class="claim-field-heading"><small>Created date</small><span class="protected-label">Protected</span></div>
-              <p class="claim-field-value">{{ selectedClaim.created_at ? (selectedClaim.created_at | date:'medium') : 'Not Found' }}</p>
-            </article>
-            <article class="claim-field-card">
-              <div class="claim-field-heading"><small>Created by</small><span class="protected-label">Protected</span></div>
-              <p class="claim-field-value">{{ selectedClaim.created_by_name || selectedClaim.created_by_email || selectedClaim.created_by || 'Not Found' }}</p>
-            </article>
+            </section>
+          </div>
+
+          <div *ngIf="selectedClaim" class="claim-audit-meta">
+            <span><b>Created date:</b> {{ selectedClaim.created_at ? (selectedClaim.created_at | date:'medium') : 'Not Found' }}</span>
+            <span><b>Created by:</b> {{ selectedClaim.created_by_name || selectedClaim.created_by_email || selectedClaim.created_by || 'Not Found' }}</span>
           </div>
           <section class="panel form-panel claim-edit-panel" *ngIf="selectedClaim && claimEditMode">
             <div class="panel-heading"><div><h2>Edit claim information</h2><p class="muted">Update the claim's recorded details. Claim ID, original creation time and source attribution remain protected.</p></div></div>
