@@ -4,7 +4,7 @@ import { HttpClient, HttpClientModule, HttpHeaders, HttpParams } from '@angular/
 import { FormsModule } from '@angular/forms';
 import { environment } from '../environments/environment';
 
-interface User { full_name: string; email: string; role: string; is_active?: boolean; }
+interface User { full_name: string; email: string; role: string; roles?: string[]; is_active?: boolean; }
 interface Adjuster { full_name: string; email: string; role: 'Property Adjuster' | 'Casualty Adjuster'; }
 interface Claim {
   claim_id: string; customer_name?: string | null; loss_cause?: string | null; email?: string | null; phone?: string | null;
@@ -149,7 +149,7 @@ export class AppComponent implements OnInit {
   selectedRepairRateId = '';
   repairRatesLookupBusy = false;
   estimateDraft: any = this.emptyEstimateDraft();
-  newUser = { full_name: '', email: '', password: '', role: 'Claims Manager' };
+  newUser = { full_name: '', email: '', password: '', roles: ['Claims Manager'] as string[] };
   totalClaims = 0;
   newClaims = 0;
   investigatingClaims = 0;
@@ -1804,6 +1804,12 @@ export class AppComponent implements OnInit {
     });
   }
 
+  toggleNewUserRole(role: string, checked: boolean): void {
+    const selected = new Set(this.newUser.roles);
+    if (checked) selected.add(role); else selected.delete(role);
+    this.newUser.roles = Array.from(selected);
+  }
+
   createUser(): void {
     this.errorMessage = '';
     this.successMessage = '';
@@ -1812,7 +1818,7 @@ export class AppComponent implements OnInit {
       next: user => {
         this.userBusy = false;
         this.successMessage = `User ${user.email} created successfully.`;
-        this.newUser = { full_name: '', email: '', password: '', role: 'Claims Manager' };
+        this.newUser = { full_name: '', email: '', password: '', roles: ['Claims Manager'] };
         this.loadUsers();
       },
       error: error => { this.userBusy = false; this.handleApiError(error); }
