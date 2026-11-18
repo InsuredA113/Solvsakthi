@@ -67,6 +67,7 @@ export class AppComponent implements OnInit {
   lossCauseFilter = '';
   lossCauseOptions: string[] = [];
   statusFilter = '';
+  dashboardClaimsQuickFilter: 'all' | 'open' | 'pending' | 'closed' | 'overdue' = 'all';
   claims: Claim[] = [];
   selectedClaim: Claim | null = null;
   claimDetailSearch = '';
@@ -613,6 +614,30 @@ export class AppComponent implements OnInit {
       next: result => { this.claims = result.items; this.loadingClaims = false; this.loadLossCauseOptions(); },
       error: error => { this.loadingClaims = false; this.handleApiError(error); this.claims = []; }
     });
+  }
+
+  openDashboardClaimsFilter(filter: 'all' | 'open' | 'pending' | 'closed' | 'overdue'): void {
+    this.dashboardClaimsQuickFilter = filter;
+    this.searchTerm = '';
+    this.lossCauseFilter = '';
+    this.statusFilter = '';
+    this.activePage = 'Claims';
+    this.errorMessage = '';
+    this.successMessage = '';
+    this.loadClaims();
+  }
+
+  filteredClaims(): Claim[] {
+    switch (this.dashboardClaimsQuickFilter) {
+      case 'open': return this.claims.filter(claim => claim.status !== 'Closed');
+      case 'pending': return this.claims.filter(claim => claim.status === 'Pending Approval');
+      case 'closed': return this.claims.filter(claim => claim.status === 'Closed');
+      case 'overdue': {
+        const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+        return this.claims.filter(claim => claim.status !== 'Closed' && !!claim.created_at && new Date(claim.created_at).getTime() < cutoff);
+      }
+      default: return this.claims;
+    }
   }
 
   createdByTooltip(claim: Claim): string {
