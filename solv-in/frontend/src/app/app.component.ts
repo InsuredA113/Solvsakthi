@@ -1192,6 +1192,7 @@ export class AppComponent implements OnInit {
       next: updated => {
         this.claims = this.claims.map(item => item.claim_id === updated.claim_id ? updated : item);
         this.loadDashboard();
+        this.loadDashboardAnalytics();
       },
       error: error => this.handleApiError(error)
     });
