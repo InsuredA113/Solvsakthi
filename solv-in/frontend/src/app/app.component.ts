@@ -92,6 +92,7 @@ export class AppComponent implements OnInit {
   claimEditMode = false;
   claimEditBusy = false;
   claimDeleteBusy = false;
+  exportingClaimId = '';
   editingClaimField: string | null = null;
   claimFieldDraft = '';
   claimFieldBusy = false;
@@ -1222,6 +1223,33 @@ export class AppComponent implements OnInit {
         URL.revokeObjectURL(url);
       },
       error: error => this.handleApiError(error)
+    });
+  }
+
+  exportClaim(claimId: string, format: string): void {
+    if (!claimId || !['pdf', 'xlsx', 'csv', 'zip'].includes(format) || this.exportingClaimId) return;
+    this.exportingClaimId = claimId;
+    this.errorMessage = '';
+    this.successMessage = '';
+    this.http.get(`${environment.apiBaseUrl}/claims/${encodeURIComponent(claimId)}/export`, {
+      params: new HttpParams().set('format', format),
+      headers: this.authHeaders(),
+      responseType: 'blob'
+    }).subscribe({
+      next: blob => {
+        this.exportingClaimId = '';
+        const url = URL.createObjectURL(blob);
+        const anchor = window.document.createElement('a');
+        anchor.href = url;
+        anchor.download = `${claimId}-export.${format === 'xlsx' ? 'xlsx' : format}`;
+        anchor.click();
+        window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+        this.successMessage = `Export for ${claimId} downloaded as ${format.toUpperCase()}.`;
+      },
+      error: error => {
+        this.exportingClaimId = '';
+        this.errorMessage = error.error?.detail || `Unable to export ${claimId}. Please try again.`;
+      }
     });
   }
 
