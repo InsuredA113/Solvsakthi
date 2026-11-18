@@ -811,27 +811,77 @@
         </section>
       </ng-container>
       <ng-container *ngIf="activePage === 'Settings'">
-        <section class="panel placeholder"><div class="placeholder-icon">⚙</div><h2>Workspace settings</h2><p>Authentication, role permissions and insurer-level tenant configuration will be implemented before production use.</p></section>
-      </ng-container>
+        <section class="settings-layout">
+          <aside class="panel settings-menu">
+            <p class="eyebrow">WORKSPACE CONFIGURATION</p>
+            <button type="button" *ngFor="let section of ['Company Profile','User Management','Integrations','Email Configuration','AI Configuration','Currency & Regional Settings','Notifications','Security & Audit']"
+              [class.active]="settingsSection === section" (click)="settingsSection = section; section === 'User Management' && isAdmin() ? loadUsers() : null; section === 'Email Configuration' && canManageEmailConnectors() ? loadEmailConnectorStatus() : null"
+              [disabled]="section === 'User Management' && !isAdmin() || ['Integrations','Email Configuration','AI Configuration','Currency & Regional Settings','Notifications','Security & Audit'].includes(section) && !canManageEmailConnectors()">
+              {{ section }}
+            </button>
+          </aside>
+          <div class="settings-content">
+            <section class="panel form-panel" *ngIf="settingsSection === 'Company Profile'">
+              <div class="panel-heading"><div><h2>Company Profile</h2><p class="muted">Workspace identity and insurer-level details.</p></div></div>
+              <div class="settings-info"><b>Solv-In workspace</b><span>Property &amp; Casualty claims operations</span><small>Company profile editing and insurer-specific tenant configuration will be enabled in a later phase.</small></div>
+            </section>
 
-      <ng-container *ngIf="activePage === 'Users' && isAdmin()">
-        <section class="panel form-panel">
-          <div class="panel-heading"><div><h2>Create a workspace user</h2><p class="muted">Only authorised administrators can add users and assign roles.</p></div></div>
-          <form (ngSubmit)="createUser()">
-            <div class="form-grid">
-              <label>Full name *<input name="new_full_name" [(ngModel)]="newUser.full_name" required minlength="2" maxlength="120" placeholder="Full name"></label>
-              <label>Email address *<input type="email" name="new_email" [(ngModel)]="newUser.email" required placeholder="user@company.com"></label>
-              <label>Temporary password *<input type="password" name="new_password" [(ngModel)]="newUser.password" required minlength="12" placeholder="At least 12 characters with letters and numbers"></label>
-              <label>Role *<select name="new_role" [(ngModel)]="newUser.role"><option *ngFor="let role of roles" [value]="role">{{ role }}</option></select></label>
-            </div>
-            <div class="form-actions"><span class="muted">Password reset workflow is planned for a later phase.</span><button class="primary-action" type="submit" [disabled]="userBusy">{{ userBusy ? 'Creating…' : 'Create user' }}</button></div>
-          </form>
-        </section>
-        <section class="panel claims-panel" style="margin-top:14px">
-          <div class="panel-heading"><h2>Workspace users</h2><span class="subtle">{{ users.length }} accounts</span></div>
-          <div class="table-scroll"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Account status</th></tr></thead>
-            <tbody><tr *ngFor="let account of users"><td>{{ account.full_name }}</td><td>{{ account.email }}</td><td>{{ account.role }}</td><td><span class="status">{{ account.is_active ? 'Active' : 'Inactive' }}</span></td></tr>
-              <tr *ngIf="users.length === 0"><td colspan="4" class="empty">No user accounts found.</td></tr></tbody></table></div>
+            <ng-container *ngIf="settingsSection === 'User Management' && isAdmin()">
+              <section class="panel form-panel">
+                <div class="panel-heading"><div><h2>User Management</h2><p class="muted">Create workspace users and assign approved roles. Existing accounts and permissions are preserved.</p></div></div>
+                <form (ngSubmit)="createUser()">
+                  <div class="form-grid">
+                    <label>Full name *<input name="new_full_name" [(ngModel)]="newUser.full_name" required minlength="2" maxlength="120" placeholder="Full name"></label>
+                    <label>Email address *<input type="email" name="new_email" [(ngModel)]="newUser.email" required placeholder="user@company.com"></label>
+                    <label>Temporary password *<input type="password" name="new_password" [(ngModel)]="newUser.password" required minlength="12" placeholder="At least 12 characters with letters and numbers"></label>
+                    <label>Role *<select name="new_role" [(ngModel)]="newUser.role"><option *ngFor="let role of roles" [value]="role">{{ role }}</option></select></label>
+                  </div>
+                  <div class="form-actions"><span class="muted">User provisioning remains restricted to the Super Administrator.</span><button class="primary-action" type="submit" [disabled]="userBusy">{{ userBusy ? 'Creating…' : 'Create user' }}</button></div>
+                </form>
+              </section>
+              <section class="panel claims-panel" style="margin-top:14px">
+                <div class="panel-heading"><h2>Workspace users</h2><span class="subtle">{{ users.length }} accounts</span></div>
+                <div class="table-scroll"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Account status</th></tr></thead>
+                  <tbody><tr *ngFor="let account of users"><td>{{ account.full_name }}</td><td>{{ account.email }}</td><td>{{ account.role }}</td><td><span class="status">{{ account.is_active ? 'Active' : 'Inactive' }}</span></td></tr>
+                    <tr *ngIf="users.length === 0"><td colspan="4" class="empty">No user accounts found.</td></tr></tbody></table></div>
+              </section>
+            </ng-container>
+
+            <section class="panel form-panel" *ngIf="settingsSection === 'Integrations' && canManageEmailConnectors()">
+              <div class="panel-heading"><div><h2>Integrations</h2><p class="muted">Manage connections used by Solv-In. A provider is shown as connected only after its live status is verified.</p></div></div>
+              <div class="integration-grid">
+                <article class="integration-card">
+                  <div class="integration-head"><b>Gmail / Google Workspace</b><span class="status">{{ emailConnectorStatus?.gmail?.configured ? (emailConnectorStatus?.gmail?.watch_active ? 'Watch active' : 'Credentials configured') : 'Not configured' }}</span></div>
+                  <p>Email intake and claim-document processing.</p><small>{{ emailConnectorStatus?.gmail?.watch_expiration ? 'Watch expires: ' + (emailConnectorStatus?.gmail?.watch_expiration | date:'medium') : 'Requires backend OAuth credentials and Pub/Sub setup.' }}</small>
+                  <button class="secondary-action" type="button" (click)="loadEmailConnectorStatus()">Refresh status</button>
+                </article>
+                <article class="integration-card">
+                  <div class="integration-head"><b>Microsoft 365 / Outlook</b><span class="status">{{ emailConnectorStatus?.microsoft365?.configured ? (emailConnectorStatus?.microsoft365?.subscription_active ? 'Subscription active' : 'Credentials configured') : 'Not configured' }}</span></div>
+                  <p>Mailbox intake through Microsoft Graph.</p><small>{{ emailConnectorStatus?.microsoft365?.subscription_expiration ? 'Subscription expires: ' + (emailConnectorStatus?.microsoft365?.subscription_expiration | date:'medium') : 'Requires backend application credentials and Graph subscription.' }}</small>
+                  <button class="secondary-action" type="button" (click)="loadEmailConnectorStatus()">Refresh status</button>
+                </article>
+                <article class="integration-card"><div class="integration-head"><b>Gemini AI</b><span class="status">Existing feature · verify configuration</span></div><p>Preliminary image-damage analysis and document extraction.</p><small>Uses the backend GEMINI_API_KEY configuration. No key is displayed in the browser.</small></article>
+                <article class="integration-card"><div class="integration-head"><b>Google Drive / OneDrive / Amazon S3</b><span class="status">Planned</span></div><p>External document storage connectors.</p><small>Not connected. Requires secure backend implementation.</small></article>
+                <article class="integration-card"><div class="integration-head"><b>Xactimate / Symbility</b><span class="status">Planned</span></div><p>Repair-estimation platform connectivity.</p><small>Not connected. API access and licensing must be validated.</small></article>
+                <article class="integration-card"><div class="integration-head"><b>DocuSign</b><span class="status">Planned</span></div><p>Electronic signatures and document workflows.</p><small>Not connected. Provider credentials and workflow permissions required.</small></article>
+                <article class="integration-card"><div class="integration-head"><b>Microsoft Entra ID / Okta</b><span class="status">Planned</span></div><p>Enterprise identity and single sign-on.</p><small>Not connected. Requires an authentication design and tenant configuration.</small></article>
+              </div>
+              <p class="damage-disclaimer">Security: integration secrets must be stored in backend environment variables or a secrets manager. Never enter API keys or client secrets into this Angular page.</p>
+            </section>
+
+            <section class="panel form-panel" *ngIf="settingsSection === 'Email Configuration' && canManageEmailConnectors()">
+              <div class="panel-heading"><div><h2>Email Configuration</h2><p class="muted">Current mailbox connection status and subscription controls.</p></div><button class="secondary-action" type="button" (click)="loadEmailConnectorStatus()">Refresh status</button></div>
+              <div class="bottom-grid" *ngIf="emailConnectorStatus">
+                <article class="panel activity-panel"><h3>Gmail / Google Workspace</h3><p class="status">{{ emailConnectorStatus.gmail.configured ? 'Credentials configured' : 'Credentials missing' }}</p><p class="muted">{{ emailConnectorStatus.gmail.watch_active ? 'Watch active until ' + (emailConnectorStatus.gmail.watch_expiration | date:'medium') : 'Gmail watch not started' }}</p><button class="primary-action" *ngIf="canManageEmailConnectors()" [disabled]="emailConnectorBusy || !emailConnectorStatus.gmail.configured" (click)="startGmailConnector()">Start / renew Gmail watch</button></article>
+                <article class="panel activity-panel"><h3>Microsoft 365 / Outlook</h3><p class="status">{{ emailConnectorStatus.microsoft365.configured ? 'Credentials configured' : 'Credentials missing' }}</p><p class="muted">{{ emailConnectorStatus.microsoft365.subscription_active ? 'Subscription expires ' + (emailConnectorStatus.microsoft365.subscription_expiration | date:'medium') : 'Graph subscription not created' }}</p><button class="primary-action" *ngIf="canManageEmailConnectors()" [disabled]="emailConnectorBusy || !emailConnectorStatus.microsoft365.configured" (click)="startMicrosoftConnector()">Create / renew Microsoft subscription</button></article>
+              </div>
+              <p class="damage-disclaimer">Provider credentials and webhook settings belong in the backend environment, not in the browser.</p>
+            </section>
+
+            <section class="panel placeholder" *ngIf="['AI Configuration','Currency & Regional Settings','Notifications','Security & Audit'].includes(settingsSection)">
+              <div class="placeholder-icon">⚙</div><h2>{{ settingsSection }}</h2><p>This settings area is reserved for its secure configuration workflow. Existing application behaviour is unchanged until the corresponding backend controls are implemented.</p>
+            </section>
+          </div>
         </section>
       </ng-container>
 
