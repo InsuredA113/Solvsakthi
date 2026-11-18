@@ -16,7 +16,7 @@ import httpx
 
 from .auth import require_roles
 from .database import database_is_available, get_database
-from .email_intake import EmailIntakeCreate, extract_email_intake
+from .email_intake import EmailIntakeCreate, extract_email_intake, extract_pdf_text
 from .email_connectors import (
     setting, gmail_configured, microsoft_configured, gmail_access_token,
     gmail_api, gmail_pubsub_identity, parse_gmail_notification, gmail_headers,
@@ -189,11 +189,25 @@ def _save_email(provider: str, provider_message_id: str, sender_email: str,
         return {"duplicate": True, "intake_id": existing["intake_id"], "claim_id": existing.get("claim_id")}
     if not sender_email:
         return {"ignored": True, "reason": "missing_sender_address"}
+    pdf_text_parts = []
+    pdf_processing = []
+    for attachment in attachments or []:
+        if (attachment.get("content_type") or "").lower() == "application/pdf":
+            extracted = extract_pdf_text(attachment.get("content") or b"")
+            filename = (attachment.get("filename") or "attachment.pdf")[:180]
+            pdf_processing.append({
+                "filename": filename,
+                "text_extracted": bool(extracted),
+                "status": "Text extracted" if extracted else "No selectable text; manual review or OCR required",
+            })
+            if extracted:
+                pdf_text_parts.append("\n[PDF ATTACHMENT: " + filename + "]\n" + extracted)
+    intake_text = (body_text or "(No readable message body)") + "".join(pdf_text_parts)
     try:
         payload = EmailIntakeCreate(
             provider=provider, provider_message_id=provider_message_id,
             sender_email=sender_email, subject=subject or "",
-            body_text=body_text or "(No readable message body)",
+            body_text=intake_text[:30000],
             received_at=received_at,
         )
     except ValidationError:
@@ -205,7 +219,9 @@ def _save_email(provider: str, provider_message_id: str, sender_email: str,
         "intake_id": intake_id, "provider": provider,
         "provider_message_id": provider_message_id,
         "sender_email": str(payload.sender_email), "subject": payload.subject,
-        "body_text": payload.body_text, "received_at": received,
+        "body_text": body_text or "(No readable message body)",
+        "document_extracted_text": "".join(pdf_text_parts)[:30000],
+        "pdf_processing": pdf_processing, "received_at": received,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "created_by": provider + "_connector", **parsed,
         "review_status": parsed["intake_status"], "review_history": [],
