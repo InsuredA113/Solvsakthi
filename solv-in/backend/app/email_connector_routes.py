@@ -16,7 +16,7 @@ import httpx
 
 from .auth import require_roles
 from .database import database_is_available, get_database
-from .email_intake import EmailIntakeCreate, extract_email_intake, extract_pdf_text
+from .email_intake import EmailIntakeCreate, extract_email_intake, extract_pdf_text, ocr_pdf_text
 from .email_connectors import (
     setting, gmail_configured, microsoft_configured, gmail_access_token,
     gmail_api, gmail_pubsub_identity, parse_gmail_notification, gmail_headers,
@@ -193,12 +193,19 @@ def _save_email(provider: str, provider_message_id: str, sender_email: str,
     pdf_processing = []
     for attachment in attachments or []:
         if (attachment.get("content_type") or "").lower() == "application/pdf":
-            extracted = extract_pdf_text(attachment.get("content") or b"")
+            pdf_content = attachment.get("content") or b""
+            extracted = extract_pdf_text(pdf_content)
+            extraction_method = "selectable_text" if extracted.strip() else "none"
+            if not extracted.strip():
+                extracted = ocr_pdf_text(pdf_content)
+                if extracted.strip():
+                    extraction_method = "gemini_vision_ocr"
             filename = (attachment.get("filename") or "attachment.pdf")[:180]
             pdf_processing.append({
                 "filename": filename,
-                "text_extracted": bool(extracted),
-                "status": "Text extracted" if extracted else "No selectable text; manual review or OCR required",
+                "text_extracted": bool(extracted.strip()),
+                "method": extraction_method,
+                "status": ("Selectable text extracted" if extraction_method == "selectable_text" else "OCR text extracted" if extraction_method == "gemini_vision_ocr" else "Text unavailable; manual review required"),
             })
             if extracted:
                 pdf_text_parts.append("\n[PDF ATTACHMENT: " + filename + "]\n" + extracted)
