@@ -94,3 +94,88 @@
 .metric-clickable:focus-visible{outline:3px solid #78b8f2;outline-offset:3px}
 .dashboard-quick-filter{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 14px;margin-bottom:12px;border:1px solid #cfe1f5;border-radius:9px;background:#f4f9ff;color:#52647d;font-size:12px}
 @media(prefers-reduced-motion:reduce){.metric-clickable{transition:none}.metric-clickable:hover{transform:none}}
+
+
+/* Premium P&C Claims Details workspace — intentionally scoped to this screen. */
+.shell.claim-detail-mode{min-height:100vh;background:#f3f6fb;color:#182b46}
+.shell.claim-detail-mode .sidebar{display:flex;width:252px;min-width:252px;background:#101f38;color:#e8f0fb;padding:24px 17px 18px;box-shadow:5px 0 22px #10213b12}
+.shell.claim-detail-mode .brand{padding:0 9px 30px;border-bottom:1px solid #ffffff18;margin-bottom:22px}
+.shell.claim-detail-mode .brand-logo{width:43px;height:43px;flex-basis:43px;background:#fff;border-radius:11px}
+.shell.claim-detail-mode .brand strong{font-size:18px;letter-spacing:.2px;color:#fff}
+.shell.claim-detail-mode .brand small{color:#91a6c2;font-size:10px;letter-spacing:.35px}
+.shell.claim-detail-mode .sidebar nav{display:grid;gap:6px}
+.shell.claim-detail-mode .sidebar nav button{display:flex;align-items:center;gap:13px;padding:12px 13px;border-radius:9px;color:#a9bad0;font-size:12px;transition:background .16s ease,color .16s ease}
+.shell.claim-detail-mode .sidebar nav button:hover{background:#ffffff0d;color:#fff}
+.shell.claim-detail-mode .sidebar nav button.active{background:#1e3c64;color:#fff;box-shadow:inset 3px 0 #61a9f5}
+.shell.claim-detail-mode .nav-icon{width:20px;color:inherit;font-size:17px;text-align:center}
+.shell.claim-detail-mode .sidebar-foot{margin-top:auto;border-top:1px solid #ffffff18;padding:16px 10px 0;color:#b7c7dc;font-size:11px}
+.shell.claim-detail-mode .sidebar-foot span{color:#7f95b2}
+.shell.claim-detail-mode .main{min-width:0;flex:1;background:#f3f6fb}
+.shell.claim-detail-mode .topbar{height:72px;padding:0 34px;background:#fff;border-bottom:1px solid #e7edf5}
+.claim-topbar-tools{display:flex;align-items:center;gap:17px;width:100%;justify-content:flex-end}
+.claim-global-search{display:flex;align-items:center;gap:9px;width:min(360px,42vw);padding:0 13px;border:1px solid #e1e8f1;border-radius:9px;background:#f8fafd;color:#8292a7}
+.claim-global-search input{width:100%;min-width:0;border:0;outline:0;background:transparent;padding:10px 0;font:12px Inter;color:#243a59}
+.claim-notification-button{width:37px;height:37px;border:1px solid #e2e9f2;border-radius:9px;background:#fff;color:#526b89;font-size:17px;cursor:pointer}
+.claim-notification-button:hover{background:#f3f7fc;border-color:#c9d9eb}
+.claim-topbar-divider{height:31px;width:1px;background:#e7edf4}
+.shell.claim-detail-mode .content{max-width:1680px;padding:28px 34px 42px}
+.shell.claim-detail-mode .welcome{display:none}
+.shell.claim-detail-mode .panel.claims-panel{padding:0;border:0;background:transparent;box-shadow:none}
+.shell.claim-detail-mode .panel-heading{margin-bottom:18px}
+.shell.claim-detail-mode .panel-heading h2{font-size:14px;color:#526985}
+.shell.claim-detail-mode .claim-detail-actions{gap:9px}
+.shell.claim-detail-mode .claim-detail-actions .secondary-action,.shell.claim-detail-mode .claim-detail-actions .danger-action{padding:9px 13px;font-size:11px}
+.claim-detail-hero{display:grid;grid-template-columns:minmax(240px,1.05fr) minmax(0,2fr);gap:24px;align-items:center;padding:24px 26px;margin:8px 0 18px;border:1px solid #e3eaf3;border-radius:14px;background:#fff;box-shadow:0 5px 20px #172f4b08}
+.claim-detail-hero-main{min-width:0}
+.claim-detail-kicker{display:block;color:#3d83c9;font-size:9px;letter-spacing:1.25px;font-weight:800}
+.claim-detail-title-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:8px 0}
+.claim-detail-title-row h2{margin:0;color:#142c4b;font-size:25px;letter-spacing:-.6px}
+.claim-status-pill{display:inline-flex;align-items:center;padding:5px 10px;border-radius:20px;background:#eaf3ff;color:#2368ae;font-size:10px;font-weight:700}
+.claim-detail-hero-main p{margin:0;color:#73849a;font-size:12px}
+.claim-hero-separator{padding:0 5px;color:#b1bdca}
+.claim-detail-hero-meta{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:13px}
+.claim-detail-hero-meta>div{min-width:0;padding-left:14px;border-left:1px solid #e8edf4}
+.claim-detail-hero-meta span,.claim-detail-hero-meta strong{display:block}
+.claim-detail-hero-meta span{color:#8493a6;font-size:9px;margin-bottom:7px}
+.claim-detail-hero-meta strong{color:#2a405d;font-size:11px;line-height:1.45;overflow-wrap:anywhere}
+.claim-comparison-panel{margin:0 0 19px;padding:20px 22px;border:1px solid #e2eaf3;border-radius:13px;background:#fff;box-shadow:0 4px 16px #172f4b07}
+.claim-comparison-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:15px}
+.claim-comparison-heading h3{margin:5px 0 4px;color:#1b3554;font-size:16px}
+.claim-comparison-heading p{margin:0;color:#8492a5;font-size:10px}
+.claim-comparison-count{padding:6px 10px;border-radius:20px;background:#f0f5fb;color:#55708e;font-size:10px;white-space:nowrap}
+.claim-comparison-tabs{display:flex;gap:6px;padding:5px;border-radius:10px;background:#f3f6fa;overflow-x:auto}
+.claim-comparison-tabs button{display:flex;align-items:center;gap:8px;white-space:nowrap;padding:10px 13px;border:0;border-radius:7px;background:transparent;color:#72839a;font:600 11px Inter;cursor:pointer;transition:background .15s ease,color .15s ease,box-shadow .15s ease}
+.claim-comparison-tabs button span{font-size:9px;color:#91a0b2}
+.claim-comparison-tabs button.active{background:#fff;color:#1e5e9d;box-shadow:0 2px 7px #19385a12}
+.claim-comparison-tabs button.active span{color:#3b83c8}
+.claim-comparison-content{padding:16px 2px 4px;min-height:112px}
+.claim-comparison-summary{display:flex;align-items:center;gap:10px;margin-bottom:13px;color:#71839a;font-size:10px}
+.comparison-state{display:inline-flex;padding:4px 8px;border-radius:20px;background:#eef2f6;color:#6f7f92;font-size:9px;font-weight:700}
+.comparison-state.recorded{background:#e8f5ee;color:#278152}
+.comparison-state.pending{background:#fff5e5;color:#9a6a19}
+.claim-comparison-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.claim-comparison-grid>div{padding:12px 13px;border:1px solid #e8edf4;border-radius:8px;background:#fbfcfe;min-width:0}
+.claim-comparison-grid small,.claim-comparison-grid strong{display:block}
+.claim-comparison-grid small{color:#8997a9;font-size:9px;margin-bottom:6px}
+.claim-comparison-grid strong{color:#2b405c;font-size:11px;overflow-wrap:anywhere}
+.claim-comparison-alert{display:flex;gap:11px;align-items:flex-start;padding:12px 14px;margin-bottom:12px;border:1px solid #f0e2c4;border-radius:9px;background:#fffbf2;color:#8c6b2c}
+.claim-comparison-alert strong{display:block;min-width:160px;font-size:10px}
+.claim-comparison-alert span{font-size:10px;line-height:1.55}
+.claim-discrepancy-note{display:flex;align-items:flex-start;gap:10px;padding:11px 13px;margin-top:13px;border:1px solid #e4ebf4;border-radius:8px;background:#f7f9fc;color:#718198;font-size:9px;line-height:1.6}
+.claim-discrepancy-note strong{color:#425a77}
+.claim-discrepancy-icon{display:grid;place-items:center;width:18px;height:18px;flex:0 0 18px;border-radius:50%;background:#e6eef8;color:#4779ad;font-weight:800}
+.shell.claim-detail-mode .claim-overview{display:none}
+.shell.claim-detail-mode .claim-accordion-toolbar{margin:15px 0 11px}
+.shell.claim-detail-mode .claim-accordion-section{border-color:#e3eaf2;border-radius:10px;box-shadow:0 2px 7px #19385a06}
+.shell.claim-detail-mode .claim-accordion-heading{padding:13px 16px}
+.shell.claim-detail-mode .claim-section-number{width:30px;height:30px;border-radius:8px}
+.shell.claim-detail-mode .claim-section-title-wrap strong{font-size:12px}
+.shell.claim-detail-mode .claim-section-title-wrap small{font-size:9px}
+.shell.claim-detail-mode .claim-subsection{border-color:#e9eef5}
+.shell.claim-detail-mode .claim-field-card{border-color:#e7edf4;border-radius:8px}
+.shell.claim-detail-mode .claim-field-value{font-size:12px}
+.shell.claim-detail-mode .claim-audit-meta{padding-top:8px}
+@media(max-width:1200px){.claim-detail-hero{grid-template-columns:1fr}.claim-detail-hero-meta{grid-template-columns:repeat(3,minmax(0,1fr))}.claim-detail-hero-meta>div:nth-child(4){border-left:0;padding-left:0}}
+@media(max-width:800px){.shell.claim-detail-mode .sidebar{width:74px;min-width:74px;padding:18px 8px}.shell.claim-detail-mode .brand{justify-content:center;padding:0 0 20px}.shell.claim-detail-mode .brand>div:last-child,.shell.claim-detail-mode .sidebar nav button:not(.active){display:none}.shell.claim-detail-mode .sidebar nav button{justify-content:center;padding:12px 8px;font-size:0}.shell.claim-detail-mode .nav-icon{font-size:17px}.shell.claim-detail-mode .sidebar-foot{display:none}.shell.claim-detail-mode .content{padding:20px 16px 30px}.shell.claim-detail-mode .topbar{padding:0 16px}.claim-topbar-tools{gap:9px}.claim-global-search{width:min(250px,38vw)}.claim-detail-hero-meta{grid-template-columns:repeat(2,minmax(0,1fr))}.claim-detail-hero-meta>div{padding-left:10px}.claim-comparison-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:560px){.shell.claim-detail-mode .sidebar{width:58px;min-width:58px}.shell.claim-detail-mode .brand-logo{width:36px;height:36px;flex-basis:36px}.shell.claim-detail-mode .content{padding:15px 10px 24px}.shell.claim-detail-mode .topbar{height:62px;padding:0 10px}.claim-topbar-tools .profile>span:not(.avatar),.claim-topbar-tools .profile .logout-button,.claim-topbar-divider{display:none}.claim-global-search{width:min(220px,48vw)}.claim-detail-hero{padding:17px}.claim-detail-title-row h2{font-size:21px}.claim-detail-hero-meta{gap:10px}.claim-comparison-panel{padding:15px 12px}.claim-comparison-heading{align-items:flex-start}.claim-comparison-tabs button{padding:9px;font-size:10px}.claim-comparison-grid{grid-template-columns:1fr}.claim-comparison-alert{display:block}.claim-comparison-alert strong{margin-bottom:5px}.claim-accordion-tools{gap:8px}}
+@media(prefers-reduced-motion:reduce){.shell.claim-detail-mode .sidebar nav button,.claim-comparison-tabs button,.claim-notification-button{transition:none}}
