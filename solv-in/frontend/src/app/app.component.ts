@@ -150,7 +150,7 @@ export class AppComponent implements OnInit {
   analyticsCountry = '';
   analyticsCurrency = '';
   analyticsPortfolio = 'All';
-  readonly navigation = ['Dashboard', 'Claims', 'AI Damage Analysis', 'Policy Coverage', 'Financial Estimate', 'Repair Rates', 'Users', 'Settings'];
+  readonly navigation = ['Dashboard', 'Claims', 'AI Damage Analysis', 'Policy Coverage', 'Financial Estimate', 'Users', 'Settings'];
   readonly statuses = ['FNOL Received', 'Under Review', 'Investigation', 'Assessment', 'Pending Approval', 'Approved', 'Closed'];
   draft: ClaimDraft = this.emptyDraft();
 
