@@ -151,40 +151,42 @@
           </section>
           <section class="claim-comparison-panel" *ngIf="selectedClaim">
             <div class="claim-comparison-heading">
-              <div><span class="claim-detail-kicker">CLAIM REVIEW WORKSPACE</span><h3>Report comparison</h3><p>Review information across intake, adjuster findings and financial estimates.</p></div>
-              <span class="claim-comparison-count">{{ financialEstimates.length }} estimate report(s)</span>
+              <div><span class="claim-detail-kicker">CLAIM REVIEW WORKSPACE</span><h3>Report comparison</h3><p>All available claim reports are listed together for a quick review.</p></div>
+              <span class="claim-comparison-count">{{ 2 + financialEstimates.length }} report row(s)</span>
             </div>
-            <div class="claim-comparison-tabs" role="tablist" aria-label="Claim report comparison">
-              <button type="button" role="tab" [attr.aria-selected]="claimComparisonTab === 'initial'" [class.active]="claimComparisonTab === 'initial'" (click)="claimComparisonTab = 'initial'"><span>01</span>Initial Claim Review</button>
-              <button type="button" role="tab" [attr.aria-selected]="claimComparisonTab === 'adjuster'" [class.active]="claimComparisonTab === 'adjuster'" (click)="claimComparisonTab = 'adjuster'"><span>02</span>Adjuster Report</button>
-              <button type="button" role="tab" [attr.aria-selected]="claimComparisonTab === 'estimates'" [class.active]="claimComparisonTab === 'estimates'" (click)="claimComparisonTab = 'estimates'"><span>03</span>Estimate Reports</button>
-            </div>
-            <div class="claim-comparison-content" *ngIf="claimComparisonTab === 'initial'">
-              <div class="claim-comparison-summary"><span class="comparison-state recorded">Source record</span><span>Values below are taken from the saved claim record.</span></div>
-              <div class="claim-comparison-grid">
-                <div><small>Insured / claimant</small><strong>{{ selectedClaim.customer_name || 'Not recorded' }}</strong></div>
-                <div><small>Policy number</small><strong>{{ selectedClaim.policy_number || 'Not recorded' }}</strong></div>
-                <div><small>Claim type</small><strong>{{ selectedClaim.claim_type === 'Casualty' ? 'Commercial Casualty' : selectedClaim.claim_type }}</strong></div>
-                <div><small>Loss cause</small><strong>{{ selectedClaim.loss_cause || 'Not recorded' }}</strong></div>
-                <div><small>Date of loss</small><strong>{{ selectedClaim.incident_date || 'Not recorded' }}</strong></div>
-                <div><small>Reported amount</small><strong>{{ selectedClaim.estimated_loss !== null && selectedClaim.estimated_loss !== undefined ? (formatAmount(+selectedClaim.estimated_loss, selectedClaim.currency)) : 'Not recorded' }}</strong></div>
-              </div>
-            </div>
-            <div class="claim-comparison-content" *ngIf="claimComparisonTab === 'adjuster'">
-              <div class="claim-comparison-alert"><strong>Adjuster report not linked</strong><span>No adjuster report record is currently available for this claim. The comparison remains incomplete; no match or discrepancy has been inferred.</span></div>
-              <div class="claim-comparison-grid">
-                <div><small>Assigned adjuster</small><strong>{{ selectedClaim.assigned_adjuster_name || 'Unassigned' }}</strong></div>
-                <div><small>Adjuster role</small><strong>{{ selectedClaim.assigned_adjuster_role || 'Not recorded' }}</strong></div>
-                <div><small>Report status</small><strong>Not available</strong></div>
-              </div>
-            </div>
-            <div class="claim-comparison-content" *ngIf="claimComparisonTab === 'estimates'">
-              <div class="claim-comparison-alert" *ngIf="financialEstimates.length === 0"><strong>No estimate reports linked</strong><span>Financial estimates will appear here after they are created in the Financial Estimate workflow. Calculation logic and approvals remain in that module.</span></div>
-              <div class="table-scroll" *ngIf="financialEstimates.length > 0">
-                <table><thead><tr><th>Estimate ID</th><th>Created</th><th>Currency</th><th>Preliminary net estimate</th><th>Review status</th></tr></thead>
-                  <tbody><tr *ngFor="let estimate of financialEstimates"><td>{{ estimate.estimate_id }}</td><td>{{ estimate.created_at | date:'mediumDate' }}</td><td>{{ estimate.currency }}</td><td>{{ estimate.preliminary_net_estimate }}</td><td><span class="comparison-state" [class.recorded]="estimate.review_status === 'Approved'" [class.pending]="estimate.review_status !== 'Approved'">{{ estimate.review_status || estimate.status || 'Pending review' }}</span></td></tr></tbody>
-                </table>
-              </div>
+            <div class="table-scroll claim-comparison-table-wrap">
+              <table class="claim-comparison-table">
+                <thead><tr><th>Report</th><th>Reference</th><th>Report date</th><th>Key information</th><th>Amount</th><th>Status</th></tr></thead>
+                <tbody>
+                  <tr>
+                    <td><strong>Initial Claim</strong><small>FNOL / saved claim record</small></td>
+                    <td>{{ selectedClaim.claim_id }}</td>
+                    <td>{{ selectedClaim.created_at ? (selectedClaim.created_at | date:'mediumDate') : 'Not recorded' }}</td>
+                    <td>{{ selectedClaim.customer_name || 'Insured not recorded' }} · {{ selectedClaim.claim_type === 'Casualty' ? 'Commercial Casualty' : (selectedClaim.claim_type || 'Type not recorded') }} · Policy {{ selectedClaim.policy_number || 'Not recorded' }} · Loss: {{ selectedClaim.loss_cause || 'Not recorded' }}</td>
+                    <td>{{ selectedClaim.estimated_loss !== null && selectedClaim.estimated_loss !== undefined ? formatAmount(+selectedClaim.estimated_loss, selectedClaim.currency) : 'Not recorded' }}</td>
+                    <td><span class="comparison-state recorded">{{ selectedClaim.status || 'Status not recorded' }}</span></td>
+                  </tr>
+                  <tr>
+                    <td><strong>Adjuster Report</strong><small>Field report / findings</small></td>
+                    <td>—</td>
+                    <td>—</td>
+                    <td>{{ selectedClaim.assigned_adjuster_name || 'No adjuster assigned' }} · {{ selectedClaim.assigned_adjuster_role || 'Role not recorded' }}. No adjuster report has been linked to this claim.</td>
+                    <td>—</td>
+                    <td><span class="comparison-state pending">Not linked</span></td>
+                  </tr>
+                  <tr *ngFor="let estimate of financialEstimates">
+                    <td><strong>Financial Estimate</strong><small>Preliminary estimate</small></td>
+                    <td>{{ estimate.estimate_id }}</td>
+                    <td>{{ estimate.created_at ? (estimate.created_at | date:'mediumDate') : 'Not recorded' }}</td>
+                    <td>{{ estimate.line_items?.length || 0 }} line item(s) · Currency {{ estimate.currency || 'Not recorded' }}</td>
+                    <td>{{ estimate.preliminary_net_estimate !== null && estimate.preliminary_net_estimate !== undefined ? formatAmount(+estimate.preliminary_net_estimate, estimate.currency) : 'Not recorded' }}</td>
+                    <td><span class="comparison-state" [class.recorded]="(estimate.review_status || estimate.status) === 'Approved'" [class.pending]="(estimate.review_status || estimate.status) !== 'Approved'">{{ estimate.review_status || estimate.status || 'Pending review' }}</span></td>
+                  </tr>
+                  <tr *ngIf="financialEstimates.length === 0">
+                    <td><strong>Financial Estimate</strong><small>Preliminary estimate</small></td><td>—</td><td>—</td><td>No financial estimate is linked yet.</td><td>—</td><td><span class="comparison-state pending">Not available</span></td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
             <div class="claim-discrepancy-note"><span class="claim-discrepancy-icon">!</span><span><strong>Review integrity:</strong> missing source reports are marked as unavailable. Solv-In does not label records as matching or conflicting until comparable, verified source values exist.</span></div>
           </section>
