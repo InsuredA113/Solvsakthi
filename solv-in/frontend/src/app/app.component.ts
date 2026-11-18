@@ -848,10 +848,11 @@ export class AppComponent implements OnInit {
     return fields;
   }
 
-  claimReportComparisonRows(): Array<{key:string;label:string;initial:string;adjuster:string;estimate:string;status:'Match'|'Mismatch'|'Not Available'}> {
+  claimReportComparisonRows(): Array<{key:string;label:string;initial:string;adjuster:string;estimate:string;policy:string;status:'Match'|'Mismatch'|'Not Available'}> {
     const claim: any = this.selectedClaim || {};
     const adjusterReport: any = this.adjusterReports.length ? this.adjusterReports[0].report_fields : null;
     const estimate: any = this.financialEstimates.length ? this.financialEstimates[0] : null;
+    const policySnapshot = this.coverageAssessments[0]?.policy_snapshot || {};
     return this.claimDetailFields().map(field => {
       const initial = String((claim as any)[field.key] ?? '').trim();
       const adjuster = String(adjusterReport?.[field.key] ?? '').trim();
@@ -859,7 +860,11 @@ export class AppComponent implements OnInit {
       if (field.key === 'estimated_loss' && estimate) estimateRaw = estimate.preliminary_net_estimate;
       if (field.key === 'status' && estimate) estimateRaw = estimate.review_status || estimate.status;
       const estimateValue = String(estimateRaw ?? '').trim();
-      const values = [initial, adjuster, estimateValue].filter(value => value.length > 0);
+      const policyRaw = field.key === 'policy_number' ? (policySnapshot.policy_number || claim.policy_number)
+        : field.key === 'currency' ? policySnapshot.currency
+        : field.key === 'estimated_loss' ? undefined : undefined;
+      const policyValue = String(policyRaw ?? '').trim();
+      const values = [initial, adjuster, estimateValue, policyValue].filter(value => value.length > 0);
       const status: 'Match'|'Mismatch'|'Not Available' = values.length < 2
         ? 'Not Available'
         : values.every(value => value.toLocaleLowerCase() === values[0].toLocaleLowerCase()) ? 'Match' : 'Mismatch';
@@ -874,14 +879,62 @@ export class AppComponent implements OnInit {
         initial: display(initial, claim.currency),
         adjuster: display(adjuster, claim.currency),
         estimate: display(estimateValue, estimate?.currency),
+        policy: display(policyValue, policySnapshot.currency),
         status
       };
     });
   }
 
-  comparisonRowsForSection(section: {subsections: Array<{fieldKeys: string[]}>}): ReturnType<AppComponent['claimReportComparisonRows']> {
+  comparisonRowsForSection(section: {subsections: Array<{id?: string; title?: string; fieldKeys: string[]}>}): ReturnType<AppComponent['claimReportComparisonRows']> {
+    const baseRows = this.claimReportComparisonRows();
     const keys = new Set(section.subsections.flatMap(subsection => subsection.fieldKeys));
-    return this.claimReportComparisonRows().filter(row => keys.has(row.key));
+    const rows = baseRows.filter(row => keys.has(row.key));
+    const claim: any = this.selectedClaim || {};
+    const adjuster: any = this.adjusterReports[0]?.report_fields || {};
+    const estimate: any = this.financialEstimates[0] || {};
+    const assessment: any = this.coverageAssessments[0] || {};
+    const snapshot: any = assessment.policy_snapshot || {};
+    const definitions: Record<string, Array<{key:string;label:string;aliases:string[]}>> = {
+      'carrier-1': [{key:'carrier_1_name',label:'Carrier 1 name',aliases:['carrier_1_name','carrier_name_1','lead_carrier_name']},{key:'carrier_1_share',label:'Carrier 1 participation share',aliases:['carrier_1_share','carrier_1_percentage','carrier_share_1']}],
+      'carrier-2': [{key:'carrier_2_name',label:'Carrier 2 name',aliases:['carrier_2_name','carrier_name_2']},{key:'carrier_2_share',label:'Carrier 2 participation share',aliases:['carrier_2_share','carrier_2_percentage','carrier_share_2']}],
+      'carrier-3': [{key:'carrier_3_name',label:'Carrier 3 name',aliases:['carrier_3_name','carrier_name_3']},{key:'carrier_3_share',label:'Carrier 3 participation share',aliases:['carrier_3_share','carrier_3_percentage','carrier_share_3']}],
+      'carrier-4': [{key:'carrier_4_name',label:'Carrier 4 name',aliases:['carrier_4_name','carrier_name_4']},{key:'carrier_4_share',label:'Carrier 4 participation share',aliases:['carrier_4_share','carrier_4_percentage','carrier_share_4']}],
+      'carrier-5': [{key:'carrier_5_name',label:'Carrier 5 name',aliases:['carrier_5_name','carrier_name_5']},{key:'carrier_5_share',label:'Carrier 5 participation share',aliases:['carrier_5_share','carrier_5_percentage','carrier_share_5']}],
+      'carrier-6': [{key:'carrier_6_name',label:'Carrier 6 name',aliases:['carrier_6_name','carrier_name_6']},{key:'carrier_6_share',label:'Carrier 6 participation share',aliases:['carrier_6_share','carrier_6_percentage','carrier_share_6']}],
+      'policy-period': [{key:'effective_from',label:'Policy effective from',aliases:['effective_from','policy_effective_from']},{key:'effective_to',label:'Policy effective to',aliases:['effective_to','policy_effective_to']}],
+      'recovery-assessment': [{key:'recovery_status',label:'Recovery status',aliases:['recovery_status','recovery_assessment_status']},{key:'recovery_potential',label:'Recovery potential',aliases:['recovery_potential','recoverable_amount']},{key:'recovery_notes',label:'Recovery notes',aliases:['recovery_notes','recovery_assessment_notes']}],
+      'subrogation': [{key:'subrogation_status',label:'Subrogation status',aliases:['subrogation_status']},{key:'subrogation_potential',label:'Subrogation potential',aliases:['subrogation_potential','subrogation_amount']},{key:'responsible_party',label:'Potential responsible party',aliases:['responsible_party','at_fault_party','third_party_name']}],
+      'salvage': [{key:'salvage_status',label:'Salvage status',aliases:['salvage_status']},{key:'salvage_value',label:'Estimated salvage value',aliases:['salvage_value','salvage_amount']},{key:'salvage_notes',label:'Salvage notes',aliases:['salvage_notes']}],
+      'deductibles': [{key:'deductible',label:'Policy deductible',aliases:['deductible','policy_deductible']},{key:'deductible_type',label:'Deductible type',aliases:['deductible_type']},{key:'deductible_basis',label:'Deductible basis',aliases:['deductible_basis']}],
+      'mortgage-details': [{key:'mortgagee_name',label:'Mortgagee name',aliases:['mortgagee_name','mortgage_holder']},{key:'mortgagee_clause',label:'Mortgagee clause',aliases:['mortgagee_clause']},{key:'loan_number',label:'Loan / reference number',aliases:['loan_number','mortgage_loan_number']}],
+      'coverage-review': [{key:'coverage_status',label:'Coverage assessment status',aliases:['coverage_status','status','decision']},{key:'coverage_decision',label:'Coverage decision',aliases:['coverage_decision','decision','recommendation']},{key:'loss_category',label:'Assessed loss category',aliases:['loss_category']},{key:'covered_loss_categories',label:'Covered loss categories',aliases:['covered_loss_categories']},{key:'excluded_loss_categories',label:'Excluded loss categories',aliases:['excluded_loss_categories']},{key:'per_occurrence_limit',label:'Per-occurrence coverage limit',aliases:['per_occurrence_limit']},{key:'aggregate_limit',label:'Aggregate coverage limit',aliases:['aggregate_limit']},{key:'deductible',label:'Applicable deductible',aliases:['deductible']}],
+      'building-information': [{key:'building_year_built',label:'Building year built',aliases:['building_year_built','year_built']},{key:'construction_type',label:'Construction type',aliases:['construction_type','building_construction']},{key:'building_area',label:'Building area',aliases:['building_area','square_footage','area_sq_ft']}],
+      'roof-information': [{key:'roof_type',label:'Roof type',aliases:['roof_type']},{key:'roof_age',label:'Roof age',aliases:['roof_age']},{key:'roof_condition',label:'Roof condition',aliases:['roof_condition']}],
+      'property-coverage': [{key:'property_coverage_type',label:'Property coverage type',aliases:['property_coverage_type','coverage_type']},{key:'property_coverage_limit',label:'Property coverage limit',aliases:['property_coverage_limit','coverage_limit','per_occurrence_limit']},{key:'insured_value',label:'Insured value',aliases:['insured_value','building_insured_value']}],
+      'endorsements': [{key:'endorsements',label:'Policy endorsements',aliases:['endorsements']},{key:'policy_wording_reference',label:'Policy wording reference',aliases:['policy_wording_reference']}]
+    };
+    const read = (source: any, aliases: string[]): string => {
+      for (const alias of aliases) {
+        const value = source?.[alias];
+        if (value !== undefined && value !== null && value !== '') return Array.isArray(value) ? value.join(', ') : String(value);
+      }
+      return '';
+    };
+    for (const subsection of section.subsections) {
+      if (subsection.fieldKeys.length) continue;
+      const defs = definitions[subsection.id || ''] || (subsection.id ? [{key:subsection.id,label:subsection.title || subsection.id,aliases:[subsection.id]}] : []);
+      for (const def of defs) {
+        const initial = read(claim, def.aliases) || (['coverage-review','policy-period','deductibles','endorsements','property-coverage'].includes(subsection.id || '') ? read(assessment, def.aliases) : '');
+        const adjusterValue = read(adjuster, def.aliases);
+        const estimateValue = read(estimate, def.aliases);
+        const policyValue = read(snapshot, def.aliases);
+        const sourceValues = [initial, adjusterValue, estimateValue, policyValue].filter(Boolean);
+        const status: 'Match'|'Mismatch'|'Not Available' = sourceValues.length < 2 ? 'Not Available'
+          : sourceValues.every(value => value.toLowerCase() === sourceValues[0].toLowerCase()) ? 'Match' : 'Mismatch';
+        rows.push({key:def.key,label:def.label,initial:initial || 'Not Available',adjuster:adjusterValue || 'Not Available',estimate:estimateValue || 'Not Available',policy:policyValue || 'Not Available',status});
+      }
+    }
+    return rows;
   }
 
   selectedComparisonSectionTitle(): string {
