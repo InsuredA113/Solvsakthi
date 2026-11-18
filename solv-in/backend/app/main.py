@@ -23,6 +23,7 @@ from .user_models import LoginRequest, UserCreate
 from .repair_rate_models import RepairRateCreate, RepairRateStatusUpdate
 from .email_intake import EmailIntakeCreate, EmailIntakeReview, extract_email_intake
 from .email_connector_routes import router as email_connector_router
+from .adjuster_report_routes import router as adjuster_report_router
 
 app = FastAPI(
     title="Solv-In API",
@@ -30,6 +31,7 @@ app = FastAPI(
     version="0.3.0"
 )
 app.include_router(email_connector_router)
+app.include_router(adjuster_report_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
