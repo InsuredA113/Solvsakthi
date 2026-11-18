@@ -79,7 +79,7 @@ export class AppComponent implements OnInit {
   claimDetailSearch = '';
   claimComparisonTab: 'initial' | 'adjuster' | 'estimates' = 'initial';
   expandedClaimSections: string[] = ['initial-review'];
-  expandedComparisonSections: string[] = [];\n  selectedComparisonSectionId = 'initial-review';
+  selectedComparisonSectionId = 'initial-review';
   expandedClaimSubsections: string[] = ['initial-review:claim-status'];
   loadingClaimDetails = false;
   claimEditMode = false;
@@ -880,14 +880,6 @@ export class AppComponent implements OnInit {
   selectedComparisonRows(): ReturnType<AppComponent['claimReportComparisonRows']> {
     const section = this.claimDetailSections().find(item => item.id === this.selectedComparisonSectionId);
     return section ? this.comparisonRowsForSection(section) : [];
-  }
-
-  isComparisonSectionExpanded(id: string): boolean { return this.expandedComparisonSections.includes(id); }
-
-  toggleComparisonSection(id: string): void {
-    this.expandedComparisonSections = this.isComparisonSectionExpanded(id)
-      ? this.expandedComparisonSections.filter(value => value !== id)
-      : [...this.expandedComparisonSections, id];
   }
 
   trackByClaimField(_index: number, field: {key: string}): string {
