@@ -17,6 +17,7 @@ interface Claim {
   assigned_adjuster_email?: string | null; assigned_adjuster_name?: string | null; assigned_adjuster_role?: string | null; closed_at?: string | null;
   auto_intake_status?: string; missing_fields?: string[]; suggested_information?: Record<string, string>;
 }
+interface ComparisonComment { comment_id: string; claim_id: string; comment: string; field_key?: string | null; field_label?: string | null; created_at: string; created_by: string; created_by_role: string; }
 interface AdjusterReport { report_id: string; claim_id: string; report_title: string; report_reference?: string | null; report_date?: string | null; findings?: string | null; report_fields: Record<string, string | number | boolean | null>; created_at: string; created_by: string; }
 interface ClaimDocument { file_id: string; claim_id: string; filename: string; content_type: string; size: number; uploaded_at?: string; uploaded_by?: string; }
 interface DamageAssessment {
@@ -80,6 +81,11 @@ export class AppComponent implements OnInit {
   claimComparisonTab: 'initial' | 'adjuster' | 'estimates' = 'initial';
   expandedClaimSections: string[] = ['initial-review'];
   selectedComparisonSectionId = 'initial-review';
+  comparisonComments: ComparisonComment[] = [];
+  comparisonCommentsLoading = false;
+  comparisonCommentBusy = false;
+  comparisonCommentDraft = '';
+  comparisonCommentFieldKey = '';
   expandedClaimSubsections: string[] = ['initial-review:claim-status'];
   loadingClaimDetails = false;
   claimEditMode = false;
@@ -670,7 +676,7 @@ export class AppComponent implements OnInit {
     this.expandedClaimSubsections = ['initial-review:claim-status'];
     this.activePage = 'Claim Details';
     this.http.get<Claim>(`${environment.apiBaseUrl}/claims/${encodeURIComponent(claim.claim_id)}`, { headers: this.authHeaders() }).subscribe({
-      next: result => { this.selectedClaim = result; this.loadingClaimDetails = false; this.loadClaimDocuments(); this.loadFinancialEstimates(); this.loadAdjusterReports(); if (editAfterOpen) this.startClaimEdit(); },
+      next: result => { this.selectedClaim = result; this.loadingClaimDetails = false; this.loadClaimDocuments(); this.loadFinancialEstimates(); this.loadAdjusterReports(); this.loadComparisonComments(); if (editAfterOpen) this.startClaimEdit(); },
       error: error => { this.loadingClaimDetails = false; this.handleApiError(error); }
     });
   }
@@ -1439,6 +1445,49 @@ export class AppComponent implements OnInit {
     this.http.get<{items: AdjusterReport[]; count: number}>(`${environment.apiBaseUrl}/claims/${encodeURIComponent(id)}/adjuster-reports`, { headers: this.authHeaders() }).subscribe({
       next: result => { this.adjusterReports = result.items || []; this.adjusterReportsBusy = false; },
       error: error => { this.adjusterReports = []; this.adjusterReportsBusy = false; this.handleApiError(error); }
+    });
+  }
+
+  comparisonIndicatorCount(status: 'Match' | 'Mismatch' | 'Not Available'): number {
+    return this.selectedComparisonRows().filter(row => row.status === status).length;
+  }
+
+  comparisonMatchRate(): number {
+    const matched = this.comparisonIndicatorCount('Match');
+    const mismatched = this.comparisonIndicatorCount('Mismatch');
+    const compared = matched + mismatched;
+    return compared ? Math.round((matched / compared) * 100) : 0;
+  }
+
+  canAddComparisonComment(): boolean {
+    return ['Super Administrator', 'Insurance Company Administrator', 'Claims Manager', 'Property Adjuster', 'Casualty Adjuster', 'Surveyor', 'Actuarial Analyst', 'Approver'].includes(this.currentUser?.role || '');
+  }
+
+  loadComparisonComments(): void {
+    const id = this.selectedClaim?.claim_id;
+    if (!id) { this.comparisonComments = []; return; }
+    this.comparisonCommentsLoading = true;
+    this.http.get<{items: ComparisonComment[]; count: number}>(`${environment.apiBaseUrl}/claims/${encodeURIComponent(id)}/comparison-comments`, { headers: this.authHeaders() }).subscribe({
+      next: result => { this.comparisonComments = result.items || []; this.comparisonCommentsLoading = false; },
+      error: error => { this.comparisonComments = []; this.comparisonCommentsLoading = false; this.handleApiError(error); }
+    });
+  }
+
+  addComparisonComment(): void {
+    const claimId = this.selectedClaim?.claim_id;
+    const comment = this.comparisonCommentDraft.trim();
+    if (!claimId || comment.length < 2 || !this.canAddComparisonComment() || this.comparisonCommentBusy) return;
+    const field = this.selectedComparisonRows().find(row => row.key === this.comparisonCommentFieldKey);
+    const body = { comment, field_key: field?.key || null, field_label: field?.label || 'Overall comparison' };
+    this.comparisonCommentBusy = true;
+    this.http.post<ComparisonComment>(`${environment.apiBaseUrl}/claims/${encodeURIComponent(claimId)}/comparison-comments`, body, { headers: this.authHeaders() }).subscribe({
+      next: saved => {
+        this.comparisonComments = [saved, ...this.comparisonComments];
+        this.comparisonCommentDraft = '';
+        this.comparisonCommentBusy = false;
+        this.successMessage = 'Comparison comment saved.';
+      },
+      error: error => { this.comparisonCommentBusy = false; this.handleApiError(error); }
     });
   }
 
