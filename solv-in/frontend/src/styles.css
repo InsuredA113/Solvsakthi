@@ -246,3 +246,28 @@
  .shell.claim-detail-mode .claim-comparison-grid{grid-template-columns:1fr}
  .shell.claim-detail-mode .claim-accordion-tools{justify-content:flex-start}
 }
+
+
+/* Main navigation collapse / expand */
+.sidebar{position:relative;transition:width .22s ease,padding .22s ease}
+.sidebar-toggle{margin-left:auto;width:28px;height:28px;flex:0 0 28px;border:1px solid #ffffff35;border-radius:7px;background:#ffffff12;color:#fff;font-size:20px;line-height:1;cursor:pointer;display:grid;place-items:center}
+.sidebar-toggle:hover{background:#ffffff25}
+.shell.sidebar-collapsed .sidebar{width:76px;padding-left:10px;padding-right:10px}
+.shell.sidebar-collapsed .brand{padding-left:7px;padding-right:0;gap:0;justify-content:center;flex-wrap:wrap}
+.shell.sidebar-collapsed .brand-copy{display:none}
+.shell.sidebar-collapsed .sidebar-toggle{margin:10px auto 0}
+.shell.sidebar-collapsed .sidebar nav button{display:flex;align-items:center;justify-content:center;gap:0;padding:13px 8px;font-size:0;white-space:nowrap}
+.shell.sidebar-collapsed .sidebar nav button .nav-icon{width:auto;font-size:19px}
+.shell.sidebar-collapsed .sidebar-foot{display:none}
+.shell.sidebar-collapsed .sidebar nav button{position:relative}
+.shell.sidebar-collapsed .sidebar nav button:hover::after{content:attr(aria-label);display:none}
+@media(max-width:700px){
+  .sidebar{width:76px}
+  .sidebar .brand-copy{display:none}
+  .sidebar .brand{padding-left:7px;padding-right:0;gap:0;justify-content:center;flex-wrap:wrap}
+  .sidebar .sidebar-toggle{margin:10px auto 0}
+  .sidebar nav button{display:flex;align-items:center;justify-content:center;padding:13px 8px;font-size:0;white-space:nowrap}
+  .sidebar nav button .nav-icon{width:auto;font-size:19px}
+  .sidebar-foot{display:none}
+  .shell.sidebar-collapsed .sidebar{width:58px}
+}
