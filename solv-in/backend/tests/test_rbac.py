@@ -2,6 +2,7 @@ import unittest
 
 from fastapi import HTTPException
 from app.auth import require_permissions
+from app.organisations import organisation_filter, scoped_claim_filter
 from app.rbac import (
     PREDEFINED_ROLES,
     get_effective_permissions,
@@ -75,6 +76,36 @@ class RoleCompatibilityTests(unittest.TestCase):
     def test_permission_dependency_rejects_unknown_permission_keys(self):
         with self.assertRaises(ValueError):
             require_permissions("system.takeover")
+
+
+class OrganisationScopeTests(unittest.TestCase):
+    def test_regular_user_is_scoped_to_exact_organisation(self):
+        user = {"email": "adjuster@example.test", "organisation_id": "org-a"}
+        self.assertEqual(organisation_filter(user), {"organisation_id": "org-a"})
+
+    def test_only_explicit_global_admin_bypasses_organisation_filter(self):
+        self.assertEqual(
+            organisation_filter({"role": "Super Administrator"}),
+            {"organisation_id": None},
+        )
+        self.assertEqual(
+            organisation_filter({"is_global_admin": True}),
+            {},
+        )
+
+    def test_unassigned_non_global_user_is_denied(self):
+        with self.assertRaises(HTTPException) as error:
+            organisation_filter({"roles": ["Claims Manager"]})
+        self.assertEqual(error.exception.status_code, 403)
+
+    def test_claim_filter_always_includes_tenant_boundary(self):
+        self.assertEqual(
+            scoped_claim_filter("CLM-2026-000001", {"organisation_id": "org-a"}),
+            {"$and": [
+                {"claim_id": "CLM-2026-000001"},
+                {"organisation_id": "org-a"},
+            ]},
+        )
 
 
 if __name__ == "__main__":
