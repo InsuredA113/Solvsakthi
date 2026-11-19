@@ -833,7 +833,6 @@ def create_claim(payload: ClaimCreate, user: dict = Depends(require_permissions(
             "created_at": now,
             "updated_at": now,
             "created_by": user["email"],
-            "organisation_id": user.get("organisation_id"),
             "created_by_name": user.get("full_name") or user["email"],
             "created_by_email": user["email"],
             "source": "Manual FNOL",
@@ -1099,7 +1098,7 @@ async def upload_claim_document(
         file_id = bucket.upload_from_stream(
             filename, io.BytesIO(content),
             metadata={
-                "claim_id": claim_id, "content_type": content_type,
+                "claim_id": claim_id, "organisation_id": claim.get("organisation_id"), "content_type": content_type,
                 "size": len(content), "uploaded_at": now, "uploaded_by": user["email"]
             }
         )
@@ -1255,6 +1254,7 @@ Keep findings concise and distinguish observation from hypothesis.
     result["possible_cause"] = str(result.get("possible_cause") or "Undetermined")[:500]
     record = {
         "claim_id": claim_id,
+        "organisation_id": (claim.get("organisation_id") if claim else resolve_write_organisation_id(get_database(), user)),
         "file_name": (image.filename or "uploaded-image")[:255],
         "mime_type": content_type,
         "damage_category": result["damage_category"],
@@ -1436,7 +1436,8 @@ def create_financial_estimate(
         rules = list(db["tax_rules"].find({
             "country_code": payload.country_code,
             "currency": payload.currency,
-            "status": "Active"
+            "status": "Active",
+            "organisation_id": claim.get("organisation_id")
         }))
         selected_rules, ambiguous_tax_names = select_applicable_tax_rules(
             rules, country_code=payload.country_code, currency=payload.currency,
@@ -1502,7 +1503,7 @@ def create_financial_estimate(
     )
     now = datetime.now(timezone.utc).isoformat()
     record = {
-        **result, "claim_id": claim_id, "claim_type": claim.get("claim_type"),
+        **result, "claim_id": claim_id, "organisation_id": claim.get("organisation_id"), "claim_type": claim.get("claim_type"),
         "source_damage_assessment": ({
             "assessment_id": str(source_damage_assessment["_id"]),
             "status": source_damage_assessment.get("status"),
@@ -1675,7 +1676,7 @@ def create_coverage_assessment(
             "policy_wording_reference": policy.get("policy_wording_reference")
         }
     record = {
-        **result, "claim_id": claim_id, "policy_number": claim.get("policy_number"),
+        **result, "claim_id": claim_id, "organisation_id": claim.get("organisation_id"), "policy_number": claim.get("policy_number"),
         "policy_snapshot": policy_snapshot, "loss_category": payload.loss_category,
         "claimed_amount": str(payload.claimed_amount) if payload.claimed_amount is not None else None,
         "notes": payload.notes, "created_at": now, "created_by": user["email"],
