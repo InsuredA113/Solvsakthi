@@ -1,0 +1,124 @@
+# Solv-In RBAC Security Review and Organisation-Scoping Plan
+
+Review target: `feature/solvin-rbac-foundation` (PR #7), based on the current repository state reviewed on 2026-11-19.
+
+## Executive assessment
+
+The RBAC branch establishes a useful permission catalogue, multiple predefined roles per user, custom roles, legacy-role normalization, API permission dependencies, and Angular permission-aware navigation. The current CI result is positive for Python compilation/tests and Angular production build.
+
+**The branch is not production-ready for multi-organisation access.** Permission checks answer whether a user may perform an action, but most database queries do not yet answer which organisation's records that user may access. A user with a valid permission can therefore potentially read or modify another organisation's claims or related records if they know an identifier.
+
+Keep PR #7 as draft and do not merge or deploy until the critical controls below are implemented and tested.
+
+## Findings from code review
+
+### Critical: no persisted organisation boundary
+
+- Current user records and claim creation do not persist a canonical `organisation_id`.
+- Claims and related records are generally queried by `claim_id`, policy number, or collection-wide filters.
+- User listing, custom-role listing, role assignment, and role audit queries are global.
+- Email intake and automatically created provisional claims do not carry an organisation boundary.
+- The application has no central helper that scopes a request to an organisation and no consistent claim-visibility check.
+
+### Critical: claim-level visibility is not enforced
+
+- Claim details, documents, financial estimates, damage assessments, coverage assessments, adjuster reports, comparison comments, and exports rely on a permission check plus a claim identifier.
+- Adjuster assignment is stored on the claim, but access to claims is not consistently restricted to the assigned adjuster.
+- Customer / Policyholder has `own_claims.*` permission identifiers, but there is no verified claim-owner identity relationship and no endpoint enforcement for that ownership.
+- A permission check alone is insufficient to prevent IDOR (insecure direct object reference) access.
+
+### High: administrative data needs tenant boundaries
+
+- Custom roles are stored in a global collection with a globally unique `name_key`; custom role permissions are copied into user documents.
+- User role updates locate a target user globally by email.
+- Role audit history is global.
+- Company administrators must be limited to their own organisation and to permissions within their own grant ceiling. Super Administrator remains the only global administrative role.
+
+### High: non-claim business data also needs scope
+
+Policies, tax rules, repair rates, email connector state/intake, analytics, and other configuration data need an explicit classification:
+- organisation-owned data (must include `organisation_id`),
+- globally shared reference data (read-only or governed by Super Administrator),
+- user-owned or claim-owned data (must inherit the parent scope).
+
+Do not assume every collection should be tenant-owned; define this per collection before changing queries.
+
+### Positive compatibility checks
+
+- The current `auth.py` branch retains the existing `pwdlib.PasswordHash.recommended()` password hashing and verification implementation.
+- The current `user_models.py` change is additive to the existing login and user-create models; it retains the original fields while adding multi-role support and legacy role labels.
+- The existing legacy `role` field is still supported while `roles` is introduced.
+- The initial bootstrap Super Administrator seed currently creates a user without an organisation identifier; this must be addressed in the tenant migration design.
+
+## Target access model
+
+### Organisation model
+
+Create an `organisations` collection. Each organisation should have:
+- immutable `organisation_id` (UUID or generated opaque ID),
+- display name and stable key,
+- active/suspended status,
+- created/updated timestamps and actor audit fields,
+- optional organisation profile/configuration fields.
+
+Do not use a user-supplied organisation name as an authorization key.
+
+### User model
+
+Every non-global user should carry:
+- `organisation_id`,
+- `roles` (multiple predefined roles),
+- `custom_role_ids` (references to organisation-scoped custom roles),
+- legacy `role` during migration,
+- active/deactivated state and timestamps.
+
+Super Administrator is global and may access organisations through explicit administrative workflows. Do not make every ordinary user global by leaving `organisation_id` empty.
+
+### Claim model
+
+Every claim should carry:
+- `organisation_id`,
+- `created_by` and a normalized `claimant_email`/verified owner identity where appropriate,
+- `assigned_adjuster_email` and assignment history,
+- optional explicit claim participants/claim-level grants for surveyors or external reviewers.
+
+All claim-linked records (documents, damage assessments, financial estimates, coverage assessments, adjuster reports, comments, exports, email intake links) must inherit and validate the same organisation and parent claim scope.
+
+### Authorization decision order
+
+1. Authenticate the user and reload current active account state from MongoDB.
+2. Resolve global Super Administrator status explicitly.
+3. For non-global users, require a valid active `organisation_id`.
+4. Check organisation membership and account status.
+5. Check the required permission.
+6. For claim operations, load the claim using both `claim_id` and the authorised organisation scope.
+7. Apply role-specific claim visibility:
+   - Company Administrator / Claims Manager: claims in their organisation, subject to permission.
+   - Property / Casualty Adjuster: claims assigned to them, unless separately granted broader organisation visibility.
+   - Surveyor / external reviewer: only explicitly assigned/participating claims.
+   - Customer / Policyholder: only claims linked to their verified identity.
+   - Auditor / Actuarial / Finance / Reinsurance / Compliance: organisation-scoped records according to their permissions and approved business rules.
+8. Record sensitive access and mutation events where audit requirements apply.
+
+A global Super Administrator bypass must be explicit and narrowly implemented; do not implement it as a generic empty-filter fallback.
+
+## Implementation sequence
+
+1. **Complete review and inventory**: map every API route and MongoDB collection to organisation-owned, claim-owned, global-reference, or system data.
+2. **Define migration and bootstrap**: create organisations; assign existing users and claims to a documented default organisation; preserve passwords and account state; do not guess tenant membership.
+3. **Add shared scope helpers**: organisation resolution, claim access, ownership/assignment checks, and safe 404 behavior for out-of-scope records.
+4. **Scope all endpoints and related collections**: including email intake, GridFS metadata, exports, analytics, policies, tax rules, repair rates, custom roles, user management, and audit logs.
+5. **Update Angular**: show organisation context and only permitted records/actions; treat the frontend as usability, never as the security boundary.
+6. **Test**: two-organisation isolation, cross-tenant ID guessing, assigned/unassigned adjuster, surveyor grant, customer ownership, deactivated user, role escalation, custom-role ceiling, global administrator workflows, and legacy migration.
+7. **Migration dry run and operational review**: backup, dry-run report, rollback plan, production migration approval.
+8. **Final gate**: security review, CI, PR review, explicit user approval, then merge and deploy.
+
+## Non-negotiable release gates
+
+- No cross-organisation read, write, export, document download, or analytics leakage.
+- No claim access based only on possession of a Claim ID.
+- No user can grant permissions or roles above their authority.
+- No account without a valid organisation can access tenant data (except explicitly authorised global administration).
+- Role changes and deactivation take effect on the next request; stale JWT role claims must not be trusted as the source of current permissions.
+- Migration is reversible and preserves existing password hashes.
+- Production remains unchanged until explicit approval.
