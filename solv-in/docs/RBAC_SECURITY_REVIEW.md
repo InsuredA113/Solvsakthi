@@ -1,6 +1,19 @@
 # Solv-In RBAC Security Review and Organisation-Scoping Plan
 
-Review target: `feature/solvin-rbac-foundation` (PR #7), based on the current repository state reviewed on 2026-11-19.
+Review target: `feature/solvin-rbac-foundation` (PR #7), based on the repository state reviewed on 2026-11-19.
+
+## Approved starting decision — 2026-11-19
+
+The user confirmed that Solv-In currently has no business/customer/claim data and approved **Option 1: create a default organisation**.
+
+- Initial organisation display name: `Solv-In Default Organisation`.
+- Create one organisation record in MongoDB Atlas with an immutable opaque `organisation_id`, stable key `solv-in-default`, active status, and creation/update audit metadata.
+- Associate ordinary users created for the initial Solv-In workspace with this organisation.
+- Associate all newly created claims and claim-linked records with the organisation of the authenticated non-global user.
+- Keep Super Administrator as an explicitly global role. Global access must be explicit and must not be inferred from a missing `organisation_id`.
+- Future insurance companies must receive separate organisation records and isolated users, claims, roles, configuration, and audit records.
+- Since the user reports no existing business data, the initial rollout should create the default organisation before creating ordinary users or claims. Do not fabricate user, policy, or claim records.
+- This decision does **not** authorize merging PR #7, changing production data, or deploying. Implement and test on the feature branch first.
 
 ## Executive assessment
 
@@ -105,7 +118,7 @@ A global Super Administrator bypass must be explicit and narrowly implemented; d
 ## Implementation sequence
 
 1. **Complete review and inventory**: map every API route and MongoDB collection to organisation-owned, claim-owned, global-reference, or system data.
-2. **Define migration and bootstrap**: create organisations; assign existing users and claims to a documented default organisation; preserve passwords and account state; do not guess tenant membership.
+2. **Default organisation bootstrap**: create or safely retrieve `Solv-In Default Organisation` before seeding ordinary users; use a unique stable key and immutable ID.
 3. **Add shared scope helpers**: organisation resolution, claim access, ownership/assignment checks, and safe 404 behavior for out-of-scope records.
 4. **Scope all endpoints and related collections**: including email intake, GridFS metadata, exports, analytics, policies, tax rules, repair rates, custom roles, user management, and audit logs.
 5. **Update Angular**: show organisation context and only permitted records/actions; treat the frontend as usability, never as the security boundary.
