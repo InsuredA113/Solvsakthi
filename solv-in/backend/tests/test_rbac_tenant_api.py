@@ -1,14 +1,64 @@
 import mongomock
-import mongomock.gridfs
+import io
+from datetime import datetime, timezone
 from bson import ObjectId
-from gridfs import GridFSBucket
+from gridfs.errors import NoFile
 import pytest
 from fastapi.testclient import TestClient
 
 from app import main, adjuster_report_routes, comparison_comment_routes, claim_export_routes, email_connector_routes
 from app.auth import get_current_user
 
-mongomock.gridfs.enable_gridfs_integration()
+
+
+class _FakeGridOut:
+    def __init__(self, row):
+        self.metadata = row.get("metadata") or {}
+        self.filename = row.get("filename") or "evidence"
+        self.length = row.get("length", 0)
+        self._content = row.get("test_content", b"")
+
+    def read(self):
+        return self._content
+
+
+class _FakeGridCursor(list):
+    def sort(self, key, direction=1):
+        super().sort(key=lambda row: row.get(key), reverse=(direction == -1))
+        return self
+
+    def limit(self, count):
+        return _FakeGridCursor(self[:count])
+
+
+class FakeGridFSBucket:
+    """Small GridFSBucket test double; production continues to use MongoDB GridFS."""
+    def __init__(self, db, bucket_name="fs"):
+        self.files = db[f"{bucket_name}.files"]
+
+    def upload_from_stream(self, filename, source, metadata=None):
+        file_id = ObjectId()
+        content = source.read() if hasattr(source, "read") else source
+        self.files.insert_one({
+            "_id": file_id, "filename": filename, "length": len(content),
+            "metadata": metadata or {}, "uploadDate": datetime.now(timezone.utc),
+            "test_content": content,
+        })
+        return file_id
+
+    def find(self, query=None):
+        return _FakeGridCursor(list(self.files.find(query or {})))
+
+    def open_download_stream(self, file_id):
+        row = self.files.find_one({"_id": file_id})
+        if not row:
+            raise NoFile(f"No file found with id {file_id}")
+        return _FakeGridOut(row)
+
+    def delete(self, file_id):
+        result = self.files.delete_one({"_id": file_id})
+        if result.deleted_count == 0:
+            raise NoFile(f"No file found with id {file_id}")
 
 
 @pytest.fixture
@@ -58,6 +108,8 @@ def tenant_api(monkeypatch):
     ):
         monkeypatch.setattr(module, "get_database", lambda: db)
         monkeypatch.setattr(module, "database_is_available", lambda: True)
+    for module in (main, claim_export_routes, email_connector_routes):
+        monkeypatch.setattr(module, "GridFSBucket", FakeGridFSBucket)
     client = TestClient(main.app)
 
     def sign_in_as(user):
@@ -215,7 +267,7 @@ def company_admin(email="admin-a@example.test", organisation_id="org-a"):
 
 def test_evidence_list_download_and_delete_validate_claim_and_organisation(tenant_api):
     client, db, sign_in_as = tenant_api
-    bucket = GridFSBucket(db, bucket_name="claim_documents")
+    bucket = FakeGridFSBucket(db, bucket_name="claim_documents")
     own_id = bucket.upload_from_stream(
         "own.pdf", b"%PDF-1.4 own evidence",
         metadata={"claim_id": "CLM-A-000001", "organisation_id": "org-a", "content_type": "application/pdf"},
