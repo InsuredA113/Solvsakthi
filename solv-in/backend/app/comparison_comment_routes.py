@@ -73,8 +73,10 @@ def list_comparison_comments(
     db, claim = _get_scoped_claim(claim_id, user)
     try:
         rows = list(
-            db["comparison_comments"].find({"claim_id": claim_id})
-            .sort("created_at", DESCENDING).limit(200)
+            db["comparison_comments"].find({
+                "claim_id": claim_id,
+                "organisation_id": claim.get("organisation_id"),
+            }).sort("created_at", DESCENDING).limit(200)
         )
         return {"items": [_serialise_comment(row) for row in rows], "count": len(rows)}
     except PyMongoError as exc:
@@ -87,7 +89,7 @@ def create_comparison_comment(
     payload: ComparisonCommentCreate,
     user: dict = Depends(require_permissions("reports.comment"))
 ):
-    db = _get_scoped_claim(claim_id)
+    db, claim = _get_scoped_claim(claim_id, user)
     record = {
         "claim_id": claim_id,
         "organisation_id": claim.get("organisation_id"),
