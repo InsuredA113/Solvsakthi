@@ -18,6 +18,9 @@ def seed_initial_admin():
         "email": email,
         "password_hash": hash_password(INITIAL_ADMIN_PASSWORD),
         "role": "Super Administrator",
+        "roles": ["Super Administrator"],
+        "is_global_admin": True,
+        "organisation_id": None,
         "is_active": True,
         "created_at": datetime.now(timezone.utc).isoformat(),
     })
