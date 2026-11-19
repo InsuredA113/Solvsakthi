@@ -3,7 +3,7 @@ from bson import ObjectId
 import pytest
 from fastapi.testclient import TestClient
 
-from app import main
+from app import main, adjuster_report_routes, comparison_comment_routes, claim_export_routes, email_connector_routes
 from app.auth import get_current_user
 
 
@@ -48,8 +48,12 @@ def tenant_api(monkeypatch):
             "organisation_id": "org-b", "is_active": True,
         },
     ])
-    monkeypatch.setattr(main, "get_database", lambda: db)
-    monkeypatch.setattr(main, "database_is_available", lambda: True)
+    for module in (
+        main, adjuster_report_routes, comparison_comment_routes,
+        claim_export_routes, email_connector_routes,
+    ):
+        monkeypatch.setattr(module, "get_database", lambda: db)
+        monkeypatch.setattr(module, "database_is_available", lambda: True)
     client = TestClient(main.app)
 
     def sign_in_as(user):
