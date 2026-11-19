@@ -12,7 +12,7 @@ from pymongo import DESCENDING, ReturnDocument
 from pymongo.errors import PyMongoError
 from .auth import (
     ROLES, create_access_token, get_current_user, hash_password,
-    normalize_email, require_roles, verify_password
+    normalize_email, require_permissions, require_roles, verify_password
 )
 from .bootstrap import seed_initial_admin
 from .config import CORS_ORIGINS, ACCESS_TOKEN_MINUTES
@@ -420,7 +420,7 @@ def claims_analytics(
     country_code: str | None = Query(default=None, min_length=2, max_length=2),
     currency: str | None = Query(default=None, min_length=3, max_length=3),
     portfolio: str = Query(default="All", pattern="^(All|Property|Commercial Casualty)$"),
-    user: dict = Depends(require_roles(*READ_ROLES))
+    user: dict = Depends(require_permissions("reports.view"))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
@@ -434,7 +434,7 @@ def export_claims_analytics_csv(
     country_code: str | None = Query(default=None, min_length=2, max_length=2),
     currency: str | None = Query(default=None, min_length=3, max_length=3),
     portfolio: str = Query(default="All", pattern="^(All|Property|Commercial Casualty)$"),
-    user: dict = Depends(require_roles(*READ_ROLES))
+    user: dict = Depends(require_permissions("reports.export"))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
@@ -470,7 +470,7 @@ def export_claims_analytics_csv(
 
 
 @app.get("/api/adjusters")
-def list_adjusters(user: dict = Depends(require_roles(*READ_ROLES))):
+def list_adjusters(user: dict = Depends(require_permissions("claims.assign"))):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     try:
@@ -487,7 +487,7 @@ def list_adjusters(user: dict = Depends(require_roles(*READ_ROLES))):
 def assign_claim_adjuster(
     claim_id: str,
     payload: AdjusterAssignment,
-    user: dict = Depends(require_roles("Super Administrator", "Insurance Company Administrator", "Claims Manager"))
+    user: dict = Depends(require_permissions("claims.assign"))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
@@ -530,7 +530,7 @@ def dashboard_analytics(
     status: str | None = Query(default=None, max_length=40),
     claim_type: str = Query(default="All", pattern="^(All|Property|Casualty)$"),
     adjuster_email: str | None = Query(default=None, max_length=254),
-    user: dict = Depends(require_roles(*READ_ROLES))
+    user: dict = Depends(require_permissions("analytics.view"))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
@@ -655,7 +655,7 @@ def dashboard_analytics(
 
 
 @app.get("/api/dashboard/summary")
-def dashboard_summary(user: dict = Depends(require_roles(*READ_ROLES))):
+def dashboard_summary(user: dict = Depends(require_permissions("dashboard.view"))):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     try:
@@ -690,7 +690,7 @@ def list_claims(
     status: str | None = Query(default=None, max_length=40),
     loss_cause: str | None = Query(default=None, max_length=120),
     limit: int = Query(default=100, ge=1, le=250),
-    user: dict = Depends(require_roles(*READ_ROLES))
+    user: dict = Depends(require_permissions("claims.view"))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
@@ -720,7 +720,7 @@ def list_claims(
 
 @app.get("/api/claims/loss-causes")
 def list_recorded_loss_causes(
-    user: dict = Depends(require_roles(*READ_ROLES))
+    user: dict = Depends(require_permissions("claims.view"))
 ):
     """Return only non-empty loss causes already recorded on in-scope claims."""
     if not database_is_available():
@@ -747,7 +747,7 @@ def list_recorded_loss_causes(
 @app.get("/api/claims/{claim_id}")
 def get_claim_details(
     claim_id: str,
-    user: dict = Depends(require_roles(*READ_ROLES))
+    user: dict = Depends(require_permissions("claims.view"))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
@@ -761,7 +761,7 @@ def get_claim_details(
 
 
 @app.post("/api/claims", status_code=201)
-def create_claim(payload: ClaimCreate, user: dict = Depends(require_roles(*CREATE_CLAIM_ROLES))):
+def create_claim(payload: ClaimCreate, user: dict = Depends(require_permissions("claims.create"))):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable. No claim was saved.")
     try:
@@ -807,7 +807,7 @@ EDITABLE_CLAIM_FIELDS = {
 def edit_claim(
     claim_id: str,
     payload: dict = Body(...),
-    user: dict = Depends(require_roles(*CLAIM_EDIT_ROLES))
+    user: dict = Depends(require_permissions("claims.edit"))
 ):
     """Edit claim intake/business fields while preserving claim identity and audit metadata."""
     if not database_is_available():
@@ -864,7 +864,7 @@ def update_claim_field(
     claim_id: str,
     field_name: str,
     payload: dict = Body(...),
-    user: dict = Depends(require_roles(*CLAIM_EDIT_ROLES))
+    user: dict = Depends(require_permissions("claims.edit"))
 ):
     """Update or clear one claim field without changing any other field."""
     if not database_is_available():
@@ -950,7 +950,7 @@ def update_claim_field(
 @app.delete("/api/claims/{claim_id}")
 def delete_claim(
     claim_id: str,
-    user: dict = Depends(require_roles(*CLAIM_DELETE_ROLES))
+    user: dict = Depends(require_permissions("claims.delete"))
 ):
     """Permanently delete a claim and its claim-linked evidence and derived assessments."""
     if not database_is_available():
@@ -975,7 +975,7 @@ def delete_claim(
 def update_claim_status(
     claim_id: str,
     payload: ClaimStatusUpdate,
-    user: dict = Depends(require_roles(*STATUS_ROLES))
+    user: dict = Depends(require_permissions("claims.edit"))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
@@ -1013,7 +1013,7 @@ MAX_CLAIM_DOCUMENT_BYTES = 15 * 1024 * 1024
 async def upload_claim_document(
     claim_id: str,
     file: UploadFile = File(...),
-    user: dict = Depends(require_roles(*CREATE_CLAIM_ROLES))
+    user: dict = Depends(require_permissions("evidence.upload"))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
@@ -1061,7 +1061,7 @@ async def upload_claim_document(
 @app.get("/api/claims/{claim_id}/documents")
 def list_claim_documents(
     claim_id: str,
-    user: dict = Depends(require_roles(*READ_ROLES))
+    user: dict = Depends(require_permissions("evidence.view"))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
@@ -1081,7 +1081,7 @@ def list_claim_documents(
 def download_claim_document(
     claim_id: str,
     file_id: str,
-    user: dict = Depends(require_roles(*READ_ROLES))
+    user: dict = Depends(require_permissions("evidence.view"))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
@@ -1125,7 +1125,7 @@ MAX_DAMAGE_IMAGE_BYTES = 10 * 1024 * 1024
 async def analyse_damage_image(
     image: UploadFile = File(...),
     claim_id: str | None = Form(default=None, max_length=40),
-    user: dict = Depends(require_roles(*DAMAGE_ANALYSIS_ROLES))
+    user: dict = Depends(require_permissions("damage.analyse"))
 ):
     if not GEMINI_API_KEY:
         raise HTTPException(status_code=503, detail="AI damage analysis is not configured. Add GEMINI_API_KEY to backend/.env.")
@@ -1228,7 +1228,7 @@ Keep findings concise and distinguish observation from hypothesis.
 @app.get("/api/claims/{claim_id}/damage-assessments")
 def list_damage_assessments(
     claim_id: str,
-    user: dict = Depends(require_roles(*READ_ROLES))
+    user: dict = Depends(require_permissions("damage.view"))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
@@ -1242,7 +1242,7 @@ def list_damage_assessments(
     return {"items": rows, "count": len(rows)}
 
 @app.patch("/api/damage-assessments/{assessment_id}/review")
-def review_damage_assessment(assessment_id: str, payload: DamageReviewUpdate, user: dict = Depends(require_roles(*DAMAGE_REVIEW_ROLES))):
+def review_damage_assessment(assessment_id: str, payload: DamageReviewUpdate, user: dict = Depends(require_permissions("damage.review"))):
     allowed_statuses = {"Reviewed", "More Evidence Required", "Approved", "Rejected"}
     if payload.status not in allowed_statuses:
         raise HTTPException(status_code=422, detail="Choose a valid assessment review status.")
@@ -1289,7 +1289,7 @@ FINANCIAL_ESTIMATE_ROLES = (
 def create_financial_estimate(
     claim_id: str,
     payload: FinancialEstimateRequest,
-    user: dict = Depends(require_roles(*FINANCIAL_ESTIMATE_ROLES))
+    user: dict = Depends(require_permissions("finance.edit"))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable. The estimate was not saved.")
@@ -1473,7 +1473,7 @@ def create_financial_estimate(
 @app.get("/api/claims/{claim_id}/financial-estimates")
 def list_financial_estimates(
     claim_id: str,
-    user: dict = Depends(require_roles(*READ_ROLES))
+    user: dict = Depends(require_permissions("finance.view"))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
@@ -1490,10 +1490,7 @@ def review_financial_estimate(
     claim_id: str,
     estimate_id: str,
     payload: FinancialEstimateReviewUpdate,
-    user: dict = Depends(require_roles(
-        "Super Administrator", "Insurance Company Administrator", "Claims Manager",
-        "Property Adjuster", "Casualty Adjuster", "Surveyor", "Actuarial Analyst", "Approver"
-    ))
+    user: dict = Depends(require_permissions("finance.approve"))
 ):
     allowed = {"Reviewed", "More Evidence Required", "Approved", "Rejected"}
     if payload.status not in allowed:
@@ -1547,7 +1544,7 @@ POLICY_ADMIN_ROLES = ("Super Administrator", "Insurance Company Administrator")
 @app.get("/api/policies")
 def list_policies(
     policy_number: str | None = Query(default=None, max_length=80),
-    user: dict = Depends(require_roles(*POLICY_READ_ROLES))
+    user: dict = Depends(require_permissions("coverage.view"))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
@@ -1561,7 +1558,7 @@ def list_policies(
 @app.post("/api/policies", status_code=201)
 def create_policy(
     payload: PolicyCreate,
-    user: dict = Depends(require_roles(*POLICY_ADMIN_ROLES))
+    user: dict = Depends(require_permissions("coverage.review"))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
@@ -1586,7 +1583,7 @@ def create_policy(
 def create_coverage_assessment(
     claim_id: str,
     payload: CoverageAssessmentRequest,
-    user: dict = Depends(require_roles(*POLICY_READ_ROLES))
+    user: dict = Depends(require_permissions("coverage.review"))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
@@ -1636,7 +1633,7 @@ def create_coverage_assessment(
 @app.get("/api/claims/{claim_id}/coverage-assessments")
 def list_coverage_assessments(
     claim_id: str,
-    user: dict = Depends(require_roles(*POLICY_READ_ROLES))
+    user: dict = Depends(require_permissions("coverage.view"))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
@@ -1662,7 +1659,7 @@ TAX_RULE_ADMIN_ROLES = ("Super Administrator", "Insurance Company Administrator"
 def list_tax_rules(
     country_code: str | None = Query(default=None, min_length=2, max_length=2),
     status: str | None = Query(default=None, pattern="^(Draft|Active|Inactive)$"),
-    user: dict = Depends(require_roles(*TAX_RULE_READ_ROLES))
+    user: dict = Depends(require_permissions("finance.view"))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
@@ -1677,7 +1674,7 @@ def list_tax_rules(
     return {"items": rows, "count": len(rows)}
 
 @app.post("/api/tax-rules", status_code=201)
-def create_tax_rule(payload: TaxRuleCreate, user: dict = Depends(require_roles(*TAX_RULE_ADMIN_ROLES))):
+def create_tax_rule(payload: TaxRuleCreate, user: dict = Depends(require_permissions("finance.edit"))):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     now = datetime.now(timezone.utc).isoformat()
@@ -1699,7 +1696,7 @@ def create_tax_rule(payload: TaxRuleCreate, user: dict = Depends(require_roles(*
 def change_tax_rule_status(
     rule_id: str,
     payload: TaxRuleStatusUpdate,
-    user: dict = Depends(require_roles(*TAX_RULE_ADMIN_ROLES))
+    user: dict = Depends(require_permissions("finance.approve"))
 ):
     try:
         object_id = ObjectId(rule_id)
@@ -1737,7 +1734,7 @@ def change_tax_rule_status(
 def applicable_tax_rules(
     claim_id: str,
     tax_point_date: str = Query(..., min_length=10, max_length=10),
-    user: dict = Depends(require_roles(*TAX_RULE_READ_ROLES))
+    user: dict = Depends(require_permissions("finance.view"))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
@@ -1785,7 +1782,7 @@ def list_repair_rates(
     city: str | None = Query(default=None, max_length=100),
     category: str | None = Query(default=None, max_length=80),
     status: str | None = Query(default=None, pattern="^(Draft|Active|Inactive)$"),
-    user: dict = Depends(require_roles(*REPAIR_RATE_READ_ROLES))
+    user: dict = Depends(require_permissions("finance.view"))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
@@ -1812,7 +1809,7 @@ def list_repair_rates(
 @app.post("/api/repair-rates", status_code=201)
 def create_repair_rate(
     payload: RepairRateCreate,
-    user: dict = Depends(require_roles(*REPAIR_RATE_ADMIN_ROLES))
+    user: dict = Depends(require_permissions("finance.edit"))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
@@ -1839,7 +1836,7 @@ def create_repair_rate(
 def change_repair_rate_status(
     rate_id: str,
     payload: RepairRateStatusUpdate,
-    user: dict = Depends(require_roles(*REPAIR_RATE_ADMIN_ROLES))
+    user: dict = Depends(require_permissions("finance.approve"))
 ):
     try:
         object_id = ObjectId(rate_id)
@@ -1877,7 +1874,7 @@ def change_repair_rate_status(
 def applicable_repair_rates(
     claim_id: str,
     category: str | None = Query(default=None, max_length=80),
-    user: dict = Depends(require_roles(*REPAIR_RATE_READ_ROLES))
+    user: dict = Depends(require_permissions("finance.view"))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
@@ -1932,7 +1929,7 @@ EMAIL_INTAKE_REVIEW_ROLES = (
 @app.post("/api/email-intake", status_code=201)
 def receive_email_intake(
     payload: EmailIntakeCreate,
-    user: dict = Depends(require_roles(*CREATE_CLAIM_ROLES))
+    user: dict = Depends(require_permissions("claims.create"))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable. The email was not queued.")
@@ -1985,7 +1982,7 @@ def receive_email_intake(
 def list_email_intake(
     status: str | None = Query(default=None, max_length=40),
     limit: int = Query(default=100, ge=1, le=250),
-    user: dict = Depends(require_roles(*READ_ROLES))
+    user: dict = Depends(require_permissions("claims.view"))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
@@ -2002,7 +1999,7 @@ def list_email_intake(
 @app.get("/api/email-intake/{intake_id}")
 def get_email_intake(
     intake_id: str,
-    user: dict = Depends(require_roles(*READ_ROLES))
+    user: dict = Depends(require_permissions("claims.view"))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
@@ -2016,7 +2013,7 @@ def get_email_intake(
 def review_email_intake(
     intake_id: str,
     payload: EmailIntakeReview,
-    user: dict = Depends(require_roles(*EMAIL_INTAKE_REVIEW_ROLES))
+    user: dict = Depends(require_permissions("claims.approve"))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
@@ -2057,7 +2054,7 @@ def review_email_intake(
 def create_claim_from_email_intake(
     intake_id: str,
     payload: ClaimCreate,
-    user: dict = Depends(require_roles(*CREATE_CLAIM_ROLES))
+    user: dict = Depends(require_permissions("claims.create"))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
@@ -2134,7 +2131,7 @@ from .state_tax_matrix import US_STATES
 
 @app.get("/api/tax-research/us-water-restoration")
 def get_us_water_restoration_tax_matrix(
-    user: dict = Depends(require_roles(*READ_ROLES))
+    user: dict = Depends(require_permissions("finance.view"))
 ):
     """Return 50-state official-source research status; this endpoint never supplies rates."""
     items = [dict(state) for state in US_STATES]
