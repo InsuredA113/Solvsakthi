@@ -850,6 +850,18 @@ def assign_claim_surveyor(
         raise HTTPException(status_code=503, detail="Unable to assign surveyor.") from exc
 
 
+CUSTOMER_CLAIM_VIEW_FIELDS = {
+    "claim_id", "customer_name", "claim_type", "policy_number", "incident_date",
+    "incident_description", "loss_location", "loss_cause", "status", "created_at",
+    "updated_at", "estimated_loss", "currency", "assigned_adjuster_name"
+}
+
+
+def customer_claim_view(claim: dict) -> dict:
+    """Return only policyholder-facing fields; omit internal verification/audit metadata."""
+    return {key: claim[key] for key in CUSTOMER_CLAIM_VIEW_FIELDS if key in claim}
+
+
 @app.get("/api/customer/claims")
 def list_customer_claims(user: dict = Depends(require_permissions("own_claims.view"))):
     """List only claims explicitly linked to this verified policyholder account."""
@@ -860,7 +872,8 @@ def list_customer_claims(user: dict = Depends(require_permissions("own_claims.vi
         rows = list(get_database()["claims"].find(
             query, {"_id": 0}
         ).sort("created_at", DESCENDING).limit(250))
-        return {"items": rows, "count": len(rows)}
+        safe_rows = [customer_claim_view(row) for row in rows]
+        return {"items": safe_rows, "count": len(safe_rows)}
     except PyMongoError as exc:
         raise HTTPException(status_code=503, detail="Unable to retrieve your claims.") from exc
 
@@ -876,7 +889,7 @@ def get_customer_claim(claim_id: str, user: dict = Depends(require_permissions("
         )
         if not claim:
             raise HTTPException(status_code=404, detail="Claim not found.")
-        return claim
+        return customer_claim_view(claim)
     except PyMongoError as exc:
         raise HTTPException(status_code=503, detail="Unable to retrieve this claim.") from exc
 
