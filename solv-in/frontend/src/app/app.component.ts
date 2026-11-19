@@ -1857,6 +1857,10 @@ export class AppComponent implements OnInit {
     });
   }
 
+  customRoleNames(account: User): string {
+    return (account.custom_roles || []).map((role: any) => typeof role === 'string' ? role : role.name).filter(Boolean).join(', ');
+  }
+
   startUserRoleEdit(account: User): void {
     this.selectedUserForRoles = account;
     this.roleAssignmentDraft = {
