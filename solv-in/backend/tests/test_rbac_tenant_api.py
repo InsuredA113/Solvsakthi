@@ -384,6 +384,8 @@ def test_bootstrap_preserves_existing_super_admin_deactivation_and_password(tena
     monkeypatch.setattr(bootstrap, "get_database", lambda: db)
     monkeypatch.setattr(bootstrap, "database_is_available", lambda: True)
     monkeypatch.setattr(bootstrap, "INITIAL_ADMIN_EMAIL", "root@example.com")
+    monkeypatch.setattr(bootstrap, "INITIAL_ADMIN_PASSWORD", "test-only-bootstrap-password")
+    monkeypatch.setattr(bootstrap, "ensure_user_indexes", lambda: None)
 
     bootstrap.seed_initial_admin()
 
