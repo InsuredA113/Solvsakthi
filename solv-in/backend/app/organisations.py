@@ -65,7 +65,7 @@ def organisation_filter(user: dict) -> dict:
 
 def scoped_claim_filter(claim_id: str, user: dict) -> dict:
     """Build a claim lookup that is tenant-scoped for ordinary users."""
-    return {"$and": [{"claim_id": claim_id}, organisation_filter(user)]}
+    return {"$and": [{"claim_id": claim_id}, claim_visibility_filter(user)]}
 
 
 def get_claim_for_user(db, claim_id: str, user: dict, projection=None):
