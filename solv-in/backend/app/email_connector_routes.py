@@ -16,7 +16,7 @@ import httpx
 
 from .auth import require_roles
 from .database import database_is_available, get_database
-from .organisations import resolve_write_organisation_id
+from .organisations import resolve_write_organisation_id, organisation_filter
 from .email_intake import EmailIntakeCreate, extract_email_intake, extract_pdf_text, ocr_pdf_text, extract_structured_claim_fields
 from .email_connectors import (
     setting, gmail_configured, microsoft_configured, gmail_access_token,
@@ -262,7 +262,7 @@ def _save_email(provider: str, provider_message_id: str, sender_email: str,
         collection.insert_one(record)
     except DuplicateKeyError:
         existing = collection.find_one(
-            {"provider": provider, "provider_message_id": provider_message_id},
+            {"provider": provider, "provider_message_id": provider_message_id, "organisation_id": organisation_id},
             {"_id": 0, "body_text": 0}
         )
         return {"duplicate": True, "intake_id": existing["intake_id"], "claim_id": existing.get("claim_id")}
@@ -353,8 +353,8 @@ def connector_status(user: dict = Depends(require_roles(*READ_ROLES))):
     db = get_database()
     gmail_mailbox = setting("GMAIL_MAILBOX").lower()
     ms_mailbox = setting("MS365_MAILBOX").lower()
-    gmail_state = db["email_connector_state"].find_one({"_id": "gmail:" + gmail_mailbox}, {"_id": 0}) if database_is_available() and gmail_mailbox else None
-    ms_state = db["email_connector_state"].find_one({"_id": "microsoft365:" + ms_mailbox}, {"_id": 0}) if database_is_available() and ms_mailbox else None
+    gmail_state = db["email_connector_state"].find_one({"_id": "gmail:" + gmail_mailbox, **organisation_filter(user)}, {"_id": 0}) if database_is_available() and gmail_mailbox else None
+    ms_state = db["email_connector_state"].find_one({"_id": "microsoft365:" + ms_mailbox, **organisation_filter(user)}, {"_id": 0}) if database_is_available() and ms_mailbox else None
     return {
         "gmail": {"configured": gmail_configured(), "watch_active": bool(gmail_state and gmail_state.get("watch_expiration")), "watch_expiration": gmail_state.get("watch_expiration") if gmail_state else None},
         "microsoft365": {"configured": microsoft_configured(), "subscription_active": bool(ms_state and ms_state.get("subscription_id")), "subscription_expiration": ms_state.get("subscription_expiration") if ms_state else None},
