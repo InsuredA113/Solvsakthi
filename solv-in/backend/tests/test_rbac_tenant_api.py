@@ -13,6 +13,8 @@ from app.auth import get_current_user
 
 class _FakeGridOut:
     def __init__(self, row):
+        self._id = row.get("_id")
+        self.uploadDate = row.get("uploadDate")
         self.metadata = row.get("metadata") or {}
         self.filename = row.get("filename") or "evidence"
         self.length = row.get("length", 0)
@@ -24,7 +26,7 @@ class _FakeGridOut:
 
 class _FakeGridCursor(list):
     def sort(self, key, direction=1):
-        super().sort(key=lambda row: row.get(key), reverse=(direction == -1))
+        super().sort(key=lambda row: getattr(row, key), reverse=(direction == -1))
         return self
 
     def limit(self, count):
@@ -47,7 +49,7 @@ class FakeGridFSBucket:
         return file_id
 
     def find(self, query=None):
-        return _FakeGridCursor(list(self.files.find(query or {})))
+        return _FakeGridCursor([_FakeGridOut(row) for row in self.files.find(query or {})])
 
     def open_download_stream(self, file_id):
         row = self.files.find_one({"_id": file_id})
@@ -359,7 +361,7 @@ def test_email_connector_rejects_provider_message_owned_by_another_organisation(
 
     with pytest.raises(Exception) as error:
         email_connector_routes._save_email(
-            "gmail", "provider-message-unique", "sender@example.test",
+            "gmail", "provider-message-unique", "sender@example.com",
             "Subject", "Body", None, organisation_id="org-a",
         )
 
