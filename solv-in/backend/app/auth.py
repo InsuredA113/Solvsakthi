@@ -73,6 +73,29 @@ def require_roles(*allowed_roles: str):
         return user
     return dependency
 
+def require_permissions(*required_permissions: str):
+    """Enforce permission identifiers on every protected API request."""
+    unknown = set(required_permissions) - set(__import__(".rbac", fromlist=["PERMISSIONS"]).PERMISSIONS)
+    if unknown:
+        raise ValueError(f"Unknown permission identifiers: {sorted(unknown)}")
+
+    def dependency(user: dict = Depends(get_current_user)):
+        from .rbac import get_effective_permissions
+        effective = get_effective_permissions(user)
+        missing = set(required_permissions) - effective
+        if missing:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "message": "Your account does not have permission for this action.",
+                    "required_permissions": list(required_permissions),
+                    "missing_permissions": sorted(missing),
+                },
+            )
+        return user
+    return dependency
+
+
 def ensure_user_indexes():
     if database_is_available():
         get_database()["users"].create_index("email", unique=True)
