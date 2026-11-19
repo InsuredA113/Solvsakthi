@@ -376,10 +376,14 @@ def start_gmail_watch(user: dict = Depends(require_roles(*ADMIN_ROLES))):
         })
         stage = "saving watch state to MongoDB"
         mailbox = setting("GMAIL_MAILBOX").lower()
+        organisation_id = resolve_write_organisation_id(get_database(), user)
+        existing_state = get_database()["email_connector_state"].find_one({"_id": "gmail:" + mailbox})
+        if existing_state and existing_state.get("organisation_id") != organisation_id:
+            raise HTTPException(status_code=409, detail="This Gmail mailbox is already linked to another organisation.")
         get_database()["email_connector_state"].update_one(
             {"_id": "gmail:" + mailbox},
             {"$set": {"provider": "gmail", "mailbox": mailbox,
-                      "organisation_id": resolve_write_organisation_id(get_database(), user),
+                      "organisation_id": organisation_id,
                       "last_history_id": str(result["historyId"]),
                       "watch_expiration": datetime.fromtimestamp(int(result["expiration"]) / 1000, timezone.utc).isoformat(),
                       "updated_at": datetime.now(timezone.utc).isoformat()}},
@@ -461,7 +465,10 @@ def create_microsoft_subscription(user: dict = Depends(require_roles(*ADMIN_ROLE
         subscription = microsoft_subscription_payload()
         mailbox = setting("MS365_MAILBOX").lower()
         states = get_database()["email_connector_state"]
+        organisation_id = resolve_write_organisation_id(get_database(), user)
         previous = states.find_one({"_id": "microsoft365:" + mailbox}) or {}
+        if previous and previous.get("organisation_id") != organisation_id:
+            raise HTTPException(status_code=409, detail="This Microsoft 365 mailbox is already linked to another organisation.")
         result = None
         if previous.get("subscription_id"):
             try:
@@ -475,7 +482,7 @@ def create_microsoft_subscription(user: dict = Depends(require_roles(*ADMIN_ROLE
         states.update_one(
             {"_id": "microsoft365:" + mailbox},
             {"$set": {"provider": "microsoft365", "mailbox": mailbox,
-                      "organisation_id": resolve_write_organisation_id(get_database(), user),
+                      "organisation_id": organisation_id,
                       "subscription_id": result.get("id"),
                       "subscription_expiration": result.get("expirationDateTime"),
                       "updated_at": datetime.now(timezone.utc).isoformat()}},
