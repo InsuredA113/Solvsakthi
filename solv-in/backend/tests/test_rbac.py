@@ -37,7 +37,8 @@ class RoleCompatibilityTests(unittest.TestCase):
 
     def test_super_administrator_is_predefined_once(self):
         self.assertEqual(list(PREDEFINED_ROLES).count("Super Administrator"), 1)
-        self.assertIn("Super Administrator", get_effective_permissions({"role": "Super Administrator"}))
+        self.assertIn("claims.view", get_effective_permissions({"role": "Super Administrator"}))
+        self.assertIn("roles.manage", get_effective_permissions({"role": "Super Administrator"}))
 
     def test_claims_manager_has_claim_and_financial_approval_permissions(self):
         permissions = get_effective_permissions({"roles": ["Claims Manager"]})
