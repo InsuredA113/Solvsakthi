@@ -1,5 +1,7 @@
 import unittest
 
+from fastapi import HTTPException
+from app.auth import require_permissions
 from app.rbac import (
     PREDEFINED_ROLES,
     get_effective_permissions,
@@ -57,6 +59,19 @@ class RoleCompatibilityTests(unittest.TestCase):
         ]})
         self.assertIn("claims.approve", permissions)
         self.assertNotIn("not.a.permission", permissions)
+
+    def test_permission_dependency_allows_granted_permission(self):
+        user = {"roles": ["Claims Manager"]}
+        self.assertIs(require_permissions("claims.view")(user=user), user)
+
+    def test_permission_dependency_rejects_missing_permission(self):
+        with self.assertRaises(HTTPException) as error:
+            require_permissions("claims.delete")(user={"roles": ["Auditor"]})
+        self.assertEqual(error.exception.status_code, 403)
+
+    def test_permission_dependency_rejects_unknown_permission_keys(self):
+        with self.assertRaises(ValueError):
+            require_permissions("system.takeover")
 
 
 if __name__ == "__main__":
