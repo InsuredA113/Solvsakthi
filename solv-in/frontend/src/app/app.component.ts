@@ -727,12 +727,13 @@ export class AppComponent implements OnInit {
     if (this.searchTerm.trim()) params = params.set('search', this.searchTerm.trim());
     if (this.lossCauseFilter) params = params.set('loss_cause', this.lossCauseFilter);
     if (this.statusFilter) params = params.set('status', this.statusFilter);
-    const endpoint = this.hasPermission('claims.view') ? '/claims' : '/customer/claims';
+    const customerOnly = this.activePage === 'My Claims' || !this.hasPermission('claims.view');
+    const endpoint = customerOnly ? '/customer/claims' : '/claims';
     this.http.get<{items: Claim[]; count: number}>(`${environment.apiBaseUrl}${endpoint}`, {
-      params: this.hasPermission('claims.view') ? params : new HttpParams(),
+      params: customerOnly ? new HttpParams() : params,
       headers: this.authHeaders()
     }).subscribe({
-      next: result => { this.claims = result.items; this.loadingClaims = false; if (this.hasPermission('claims.view')) this.loadLossCauseOptions(); },
+      next: result => { this.claims = result.items; this.loadingClaims = false; if (!customerOnly) this.loadLossCauseOptions(); },
       error: error => { this.loadingClaims = false; this.handleApiError(error); this.claims = []; }
     });
   }
