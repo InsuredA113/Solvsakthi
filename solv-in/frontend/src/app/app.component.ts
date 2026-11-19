@@ -16,7 +16,10 @@ interface Claim {
   currency?: string | null; status: string; created_at?: string; updated_at?: string;
   created_by?: string; created_by_name?: string; created_by_email?: string; source?: string; source_mode?: string;
   assigned_adjuster_email?: string | null; assigned_adjuster_name?: string | null; assigned_adjuster_role?: string | null;
-  assigned_surveyor_email?: string | null; assigned_surveyor_name?: string | null; closed_at?: string | null;
+  assigned_surveyor_email?: string | null; assigned_surveyor_name?: string | null;
+  customer_user_email?: string | null; customer_identity_verified?: boolean;
+  customer_identity_verification_method?: string | null; customer_identity_verification_reference?: string | null;
+  closed_at?: string | null;
   auto_intake_status?: string; missing_fields?: string[]; suggested_information?: Record<string, string>;
 }
 interface ComparisonComment { comment_id: string; claim_id: string; comment: string; field_key?: string | null; field_label?: string | null; created_at: string; created_by: string; created_by_role: string; }
