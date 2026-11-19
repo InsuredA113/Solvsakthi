@@ -21,7 +21,7 @@ from .database import get_database, database_is_available
 from .models import ClaimCreate, ClaimStatusUpdate
 from .claims_analytics import build_claims_analytics, is_in_scope_claim, safe_csv_cell
 from .user_models import LoginRequest, UserCreate
-from .rbac import get_effective_permissions, PERMISSIONS, PREDEFINED_ROLES, ROLE_PERMISSIONS, get_user_roles
+from .rbac import get_effective_permissions, PERMISSIONS, PREDEFINED_ROLES, ROLE_PERMISSIONS, get_user_roles, normalize_role
 from .repair_rate_models import RepairRateCreate, RepairRateStatusUpdate
 from .email_intake import EmailIntakeCreate, EmailIntakeReview, extract_email_intake
 from .email_connector_routes import router as email_connector_router
@@ -283,7 +283,7 @@ def delete_custom_role(role_name: str, actor: dict = Depends(require_roles(*ROLE
 def update_user_roles(email: str, payload: UserRoleUpdate, actor: dict = Depends(require_roles(*ROLE_ADMIN_ROLES))):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
-    assigned_roles = list(dict.fromkeys(payload.roles))
+    assigned_roles = list(dict.fromkeys(normalize_role(role) for role in payload.roles if role))
     unknown_roles = sorted(set(assigned_roles) - set(PREDEFINED_ROLES))
     if unknown_roles:
         raise HTTPException(status_code=422, detail={"message": "Unknown predefined roles.", "roles": unknown_roles})
@@ -361,7 +361,7 @@ def create_user(payload: UserCreate, actor: dict = Depends(require_roles(*ADMIN_
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     email = normalize_email(str(payload.email))
-    assigned_roles = list(dict.fromkeys(payload.roles or ([payload.role] if payload.role else [])))
+    assigned_roles = list(dict.fromkeys(normalize_role(role) for role in (payload.roles or ([payload.role] if payload.role else [])) if role))
     if not assigned_roles:
         raise HTTPException(status_code=422, detail="At least one role must be selected.")
     if "Super Administrator" in assigned_roles and "Super Administrator" not in get_user_roles(actor):
