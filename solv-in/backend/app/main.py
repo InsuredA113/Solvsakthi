@@ -146,8 +146,8 @@ class CustomRoleCreate(BaseModel):
 
 
 class CustomRoleUpdate(BaseModel):
-    description: str = Field(default="", max_length=300)
-    permissions: list[str] = Field(default_factory=list, max_length=100)
+    description: str | None = Field(default=None, max_length=300)
+    permissions: list[str] | None = Field(default=None, max_length=100)
 
 
 class UserRoleUpdate(BaseModel):
@@ -217,17 +217,18 @@ def update_custom_role(role_name: str, payload: CustomRoleUpdate, actor: dict = 
     role = get_database()["custom_roles"].find_one({"name_key": role_name.strip().casefold()})
     if not role:
         raise HTTPException(status_code=404, detail="Custom role not found.")
-    permissions = _validate_custom_role_permissions(payload.permissions, actor)
+    permissions = _validate_custom_role_permissions(payload.permissions if payload.permissions is not None else role.get("permissions", []), actor)
+    description = payload.description.strip() if payload.description is not None else role.get("description", "")
     now = datetime.now(timezone.utc).isoformat()
     get_database()["custom_roles"].update_one(
         {"_id": role["_id"]},
-        {"$set": {"description": payload.description.strip(), "permissions": permissions,
+        {"$set": {"description": description, "permissions": permissions,
                   "updated_at": now, "updated_by": actor.get("email")}}
     )
     # Keep embedded user snapshots synchronized so permission edits take effect immediately.
     get_database()["users"].update_many(
         {"custom_roles.name": role["name"]},
-        {"$set": {"custom_roles.$[assigned].description": payload.description.strip(),
+        {"$set": {"custom_roles.$[assigned].description": description,
                   "custom_roles.$[assigned].permissions": permissions,
                   "custom_roles.$[assigned].updated_at": now}},
         array_filters=[{"assigned.name": role["name"]}]
