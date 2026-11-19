@@ -1392,7 +1392,7 @@ def create_financial_estimate(
             rate_object_id = ObjectId(item.repair_rate_id)
         except InvalidId as exc:
             raise HTTPException(status_code=422, detail="Invalid repair catalogue rate ID.") from exc
-        rate = db["repair_rates"].find_one({"_id": rate_object_id, "status": "Active"})
+        rate = db["repair_rates"].find_one({"_id": rate_object_id, "status": "Active", "organisation_id": claim.get("organisation_id")})
         if not rate:
             raise HTTPException(status_code=409, detail="The selected repair rate is no longer active. Refresh the catalogue.")
         def location_key(value):
@@ -1603,7 +1603,9 @@ def list_policies(
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
-    query = {"policy_number": policy_number.strip()} if policy_number else {}
+    query = {"$and": [organisation_filter(user)]}
+    if policy_number:
+        query["$and"].append({"policy_number": policy_number.strip()})
     rows = list(get_database()["policies"].find(query).sort("created_at", DESCENDING).limit(250))
     for row in rows:
         row["policy_id"] = str(row.pop("_id"))
@@ -1618,10 +1620,12 @@ def create_policy(
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     collection = get_database()["policies"]
-    if collection.find_one({"policy_number": payload.policy_number}):
+    organisation_id = resolve_write_organisation_id(get_database(), user)
+    if collection.find_one({"policy_number": payload.policy_number, "organisation_id": organisation_id}):
         raise HTTPException(status_code=409, detail="A policy with this policy number already exists in the current workspace.")
     record = payload.model_dump(mode="json")
     record.update({
+        "organisation_id": organisation_id,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "created_by": user["email"]
     })
@@ -1648,7 +1652,7 @@ def create_coverage_assessment(
         raise HTTPException(status_code=404, detail="Claim not found.")
     if not is_in_scope_claim(claim):
         raise HTTPException(status_code=422, detail="Coverage screening is limited to all Property and Commercial Casualty claims.")
-    policy = db["policies"].find_one({"policy_number": claim.get("policy_number")})
+    policy = db["policies"].find_one({"policy_number": claim.get("policy_number"), "organisation_id": claim.get("organisation_id")})
     result = assess_policy(policy, claim, payload)
     now = datetime.now(timezone.utc).isoformat()
     policy_snapshot = None
@@ -1718,7 +1722,7 @@ def list_tax_rules(
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
-    query = {}
+    query = {"organisation_id": resolve_write_organisation_id(get_database(), user)}
     if country_code:
         query["country_code"] = country_code.upper()
     if status:
@@ -1735,6 +1739,7 @@ def create_tax_rule(payload: TaxRuleCreate, user: dict = Depends(require_permiss
     now = datetime.now(timezone.utc).isoformat()
     record = payload.model_dump(mode="json")
     record.update({
+        "organisation_id": resolve_write_organisation_id(get_database(), user),
         "status": "Draft", "created_at": now, "created_by": user["email"],
         "verified_by": None, "verified_at": None, "activated_at": None,
         "version": 1
@@ -1760,7 +1765,7 @@ def change_tax_rule_status(
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     collection = get_database()["tax_rules"]
-    existing = collection.find_one({"_id": object_id})
+    existing = collection.find_one({"_id": object_id, "organisation_id": resolve_write_organisation_id(get_database(), user)})
     if not existing:
         raise HTTPException(status_code=404, detail="Tax rule not found.")
     if existing.get("status") == "Active" and payload.status == "Active":
@@ -1777,7 +1782,7 @@ def change_tax_rule_status(
             "verification_note": payload.verification_note.strip()
         })
     updated = collection.find_one_and_update(
-        {"_id": object_id, "status": existing.get("status")},
+        {"_id": object_id, "organisation_id": existing.get("organisation_id"), "status": existing.get("status")},
         {"$set": changes}, return_document=ReturnDocument.AFTER, projection={"_id": 0}
     )
     if not updated:
@@ -1803,7 +1808,7 @@ def applicable_tax_rules(
     candidates = list(get_database()["tax_rules"].find({
         "country_code": (claim.get("country_code") or "").upper(),
         "currency": (claim.get("currency") or "").upper(),
-        "status": "Active"
+        "status": "Active", "organisation_id": claim.get("organisation_id")
     }))
     selected, ambiguous = select_applicable_tax_rules(
         candidates, country_code=claim.get("country_code", ""), currency=claim.get("currency", ""),
@@ -1841,7 +1846,7 @@ def list_repair_rates(
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
-    query = {}
+    query = {"organisation_id": resolve_write_organisation_id(get_database(), user)}
     if country_code:
         query["country_code"] = country_code.strip().upper()
     if state:
@@ -1874,6 +1879,7 @@ def create_repair_rate(
     record = payload.model_dump(mode="json")
     record["unit_rate"] = str(payload.unit_rate)
     record.update({
+        "organisation_id": resolve_write_organisation_id(get_database(), user),
         "status": "Draft", "version": 1, "created_at": now, "created_by": user["email"],
         "verified_by": None, "verified_at": None, "activated_at": None,
         "verification_note": None
@@ -1900,7 +1906,7 @@ def change_repair_rate_status(
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     collection = get_database()["repair_rates"]
-    existing = collection.find_one({"_id": object_id})
+    existing = collection.find_one({"_id": object_id, "organisation_id": resolve_write_organisation_id(get_database(), user)})
     if not existing:
         raise HTTPException(status_code=404, detail="Repair rate not found.")
     if existing.get("status") == "Active" and payload.status == "Active":
@@ -1915,7 +1921,7 @@ def change_repair_rate_status(
             raise HTTPException(status_code=422, detail="A named pricing source and source reference are required before activation.")
         changes.update({"verified_by": user["email"], "verified_at": now, "activated_at": now})
     updated = collection.find_one_and_update(
-        {"_id": object_id, "status": existing.get("status")},
+        {"_id": object_id, "organisation_id": existing.get("organisation_id"), "status": existing.get("status")},
         {"$set": changes}, return_document=ReturnDocument.AFTER, projection={"_id": 0}
     )
     if not updated:
@@ -1942,7 +1948,7 @@ def applicable_repair_rates(
     currency = (claim.get("currency") or "").upper()
     state = (claim.get("region") or "").strip()
     city = (claim.get("locality") or "").strip()
-    query = {"country_code": country, "currency": currency, "status": "Active"}
+    query = {"country_code": country, "currency": currency, "status": "Active", "organisation_id": claim.get("organisation_id")}
     if state:
         query["state"] = {"$regex": f"^{state}$", "$options": "i"}
     if city:
