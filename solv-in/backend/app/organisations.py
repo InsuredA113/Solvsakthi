@@ -89,3 +89,41 @@ def resolve_write_organisation_id(db, user: dict) -> str:
     if not organisation_id:
         raise HTTPException(status_code=403, detail="An active organisation is required for this operation.")
     return organisation_id
+
+
+
+def claim_visibility_filter(user: dict) -> dict:
+    """Apply organisation scope plus assignment-based visibility for adjusters."""
+    from fastapi import HTTPException
+
+    base = organisation_filter(user)
+    if user.get("is_global_admin") is True:
+        return base
+
+    roles = set(user.get("roles") or ([user.get("role")] if user.get("role") else []))
+    broad_roles = {
+        "Insurance Company Administrator", "Claims Manager", "Claims Approver",
+        "Approver", "Auditor", "Actuarial Analyst", "Finance Officer",
+        "Reinsurance Analyst", "Compliance Officer", "Underwriting Specialist",
+    }
+    if roles.intersection(broad_roles):
+        return base
+
+    email = (user.get("email") or "").strip().lower()
+    if not email:
+        raise HTTPException(status_code=403, detail="A verified account email is required for claim access.")
+
+    visibility = []
+    if roles.intersection({"Property Adjuster", "Casualty Adjuster"}):
+        visibility.append({"assigned_adjuster_email": email})
+    if roles.intersection({"Insurance Surveyor", "Surveyor"}):
+        visibility.append({"assigned_surveyor_email": email})
+    if roles.intersection({"Customer / Policyholder", "Customer"}):
+        visibility.append({"$or": [
+            {"customer_user_email": email},
+            {"email": email},
+        ]})
+
+    if not visibility:
+        return base
+    return {"$and": [base, {"$or": visibility}]}
