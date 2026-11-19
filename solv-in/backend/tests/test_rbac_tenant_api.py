@@ -1,4 +1,5 @@
 import mongomock
+from bson import ObjectId
 import pytest
 from fastapi.testclient import TestClient
 
@@ -130,3 +131,65 @@ def test_customer_sees_only_staff_verified_claims_in_own_organisation(tenant_api
     assert "customer_identity_verification_reference" not in own_detail.json()
     assert client.get("/api/customer/claims/CLM-B-000001").status_code == 404
     assert db["claims"].find_one({"claim_id": "CLM-A-000001"})["customer_identity_verification_reference"] == "VERIFY-CASE-1001"
+
+def test_adjuster_can_read_and_review_only_assigned_claim_damage_assessments(tenant_api):
+    client, db, sign_in_as = tenant_api
+    adjuster_email = "adjuster-a@example.test"
+    db["claims"].update_one(
+        {"claim_id": "CLM-A-000001"},
+        {"$set": {"assigned_adjuster_email": adjuster_email}},
+    )
+    assessment_id = ObjectId()
+    db["damage_assessments"].insert_one({
+        "_id": assessment_id,
+        "claim_id": "CLM-A-000001",
+        "organisation_id": "org-a",
+        "status": "Pending Adjuster Review",
+        "severity": "Moderate",
+        "created_at": "2026-11-19T10:00:00+00:00",
+    })
+    sign_in_as({
+        "email": adjuster_email, "full_name": "Property Adjuster",
+        "role": "Property Adjuster", "roles": ["Property Adjuster"],
+        "organisation_id": "org-a", "is_active": True,
+    })
+
+    listed = client.get("/api/claims/CLM-A-000001/damage-assessments")
+    reviewed = client.patch(
+        f"/api/damage-assessments/{assessment_id}/review",
+        json={"status": "Reviewed", "notes": "Visual observations checked."},
+    )
+
+    assert listed.status_code == 200
+    assert len(listed.json()["items"]) == 1
+    assert reviewed.status_code == 200
+    assert reviewed.json()["status"] == "Reviewed"
+
+
+def test_comparison_comment_create_and_read_are_claim_and_tenant_scoped(tenant_api):
+    client, db, sign_in_as = tenant_api
+    sign_in_as(manager())
+
+    created = client.post(
+        "/api/claims/CLM-A-000001/comparison-comments",
+        json={
+            "comment": "Please verify the estimate depreciation basis.",
+            "field_key": "estimated_loss",
+            "field_label": "Estimated Loss",
+        },
+    )
+
+    assert created.status_code == 201
+    assert created.json()["organisation_id"] == "org-a"
+    db["comparison_comments"].insert_one({
+        "claim_id": "CLM-A-000001",
+        "organisation_id": "org-b",
+        "comment": "This record belongs to another organisation.",
+        "created_at": "2026-11-19T11:00:00+00:00",
+    })
+    listed = client.get("/api/claims/CLM-A-000001/comparison-comments")
+
+    assert listed.status_code == 200
+    assert len(listed.json()["items"]) == 1
+    assert listed.json()["items"][0]["comment"] == "Please verify the estimate depreciation basis."
+
