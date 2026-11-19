@@ -125,7 +125,7 @@ def normalize_role(role: str | None) -> str | None:
 
 def get_user_roles(user: dict) -> list[str]:
     raw_roles = user.get("roles")
-    if not isinstance(raw_roles, list):
+    if not isinstance(raw_roles, list) or not raw_roles:
         raw_roles = [user.get("role")]
     normalized = []
     for role in raw_roles:
