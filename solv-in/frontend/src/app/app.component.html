@@ -913,9 +913,17 @@
               </section>
               <section class="panel claims-panel" style="margin-top:14px">
                 <div class="panel-heading"><h2>Workspace users</h2><span class="subtle">{{ users.length }} accounts</span></div>
-                <div class="table-scroll"><table><thead><tr><th>Name</th><th>Email</th><th>Assigned roles</th><th>Account status</th></tr></thead>
-                  <tbody><tr *ngFor="let account of users"><td>{{ account.full_name }}</td><td>{{ account.email }}</td><td>{{ (account.roles?.length ? account.roles : [account.role]).join(', ') }}</td><td><span class="status">{{ account.is_active ? 'Active' : 'Inactive' }}</span></td></tr>
-                    <tr *ngIf="users.length === 0"><td colspan="4" class="empty">No user accounts found.</td></tr></tbody></table></div>
+                <div class="table-scroll"><table><thead><tr><th>Name</th><th>Email</th><th>Assigned roles</th><th>Account status</th><th>Actions</th></tr></thead>
+                  <tbody><tr *ngFor="let account of users"><td>{{ account.full_name }}</td><td>{{ account.email }}</td><td>{{ (account.roles?.length ? account.roles : [account.role]).join(', ') }}<span *ngIf="account.custom_roles?.length">, {{ account.custom_roles.map ? account.custom_roles.map((role: any) => role.name).join(', ') : '' }}</span></td><td><span class="status">{{ account.is_active ? 'Active' : 'Inactive' }}</span></td><td><button type="button" class="secondary-action" (click)="startUserRoleEdit(account)">Manage roles</button></td></tr>
+                    <tr *ngIf="users.length === 0"><td colspan="5" class="empty">No user accounts found.</td></tr></tbody></table></div>
+                <section class="settings-info" *ngIf="selectedUserForRoles" style="margin-top:14px">
+                  <div class="panel-heading"><div><h3>Manage roles: {{ selectedUserForRoles.full_name }}</h3><p class="muted">{{ selectedUserForRoles.email }}</p></div></div>
+                  <h4>Predefined roles</h4>
+                  <div class="role-checkbox-grid"><label *ngFor="let role of roles" class="checkbox-label"><input type="checkbox" [checked]="roleAssignmentDraft.roles.includes(role)" (change)="toggleAssignedRole(role, $any($event.target).checked)"><span>{{ role }}</span></label></div>
+                  <h4 style="margin-top:14px">Custom roles</h4>
+                  <div class="role-checkbox-grid"><label *ngFor="let role of customRoles" class="checkbox-label"><input type="checkbox" [checked]="roleAssignmentDraft.custom_roles.includes(role.name)" (change)="toggleAssignedCustomRole(role.name, $any($event.target).checked)"><span>{{ role.name }}</span></label></div>
+                  <div class="form-actions"><button type="button" class="secondary-action" (click)="selectedUserForRoles = null">Cancel</button><button type="button" class="primary-action" [disabled]="roleAssignmentBusy" (click)="saveUserRoles()">{{ roleAssignmentBusy ? 'Saving…' : 'Save role assignments' }}</button></div>
+                </section>
               </section>
             </ng-container>
 
