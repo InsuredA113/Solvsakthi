@@ -81,6 +81,9 @@ class FinancialEstimateReviewUpdate(BaseModel):
 @app.on_event("startup")
 def startup():
     seed_initial_admin()
+    if database_is_available():
+        get_database()["custom_roles"].create_index("name_key", unique=True)
+        get_database()["role_audit_logs"].create_index("created_at")
 
 @app.get("/api/health")
 def health():
@@ -220,6 +223,14 @@ def update_custom_role(role_name: str, payload: CustomRoleUpdate, actor: dict = 
         {"_id": role["_id"]},
         {"$set": {"description": payload.description.strip(), "permissions": permissions,
                   "updated_at": now, "updated_by": actor.get("email")}}
+    )
+    # Keep embedded user snapshots synchronized so permission edits take effect immediately.
+    get_database()["users"].update_many(
+        {"custom_roles.name": role["name"]},
+        {"$set": {"custom_roles.$[assigned].description": payload.description.strip(),
+                  "custom_roles.$[assigned].permissions": permissions,
+                  "custom_roles.$[assigned].updated_at": now}},
+        array_filters=[{"assigned.name": role["name"]}]
     )
     _write_role_audit("updated", role["name"], actor, {"permissions": permissions})
     updated = get_database()["custom_roles"].find_one({"_id": role["_id"]}, {"_id": 0})
