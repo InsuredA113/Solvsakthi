@@ -5,6 +5,7 @@ from app.auth import require_permissions
 from app.organisations import organisation_filter, claim_visibility_filter, scoped_claim_filter
 from app.rbac import (
     PREDEFINED_ROLES,
+    ROLE_PERMISSIONS,
     get_effective_permissions,
     get_user_roles,
     normalize_role,
@@ -51,6 +52,15 @@ class RoleCompatibilityTests(unittest.TestCase):
         self.assertIn("claims.approve", permissions)
         self.assertIn("finance.approve", permissions)
         self.assertIn("finance.edit", permissions)
+
+    def test_company_admin_can_administer_every_non_global_predefined_role(self):
+        admin_permissions = get_effective_permissions({"roles": ["Insurance Company Administrator"]})
+        for role, permissions in ROLE_PERMISSIONS.items():
+            if role != "Super Administrator":
+                self.assertTrue(
+                    set(permissions).issubset(admin_permissions),
+                    f"Company Administrator cannot grant the full permission set for {role}",
+                )
 
     def test_adjuster_can_create_estimates_but_not_approve_financials(self):
         permissions = get_effective_permissions({"roles": ["Property Adjuster"]})
