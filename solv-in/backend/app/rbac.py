@@ -64,7 +64,7 @@ ROLE_PERMISSIONS = {
     }),
     "Claims Manager": frozenset({
         "dashboard.view", "claims.view", "claims.create", "claims.edit", "claims.assign", "claims.approve",
-        "claims.export", "evidence.view", "evidence.upload", "damage.view", "damage.review", "finance.edit", "finance.approve",
+        "claims.export", "evidence.view", "evidence.upload", "damage.view", "damage.analyse", "damage.review", "finance.edit", "finance.approve",
         "coverage.view", "coverage.review", "reports.view", "reports.compare",
         "reports.export", "reports.comment", "analytics.view",
     }),
