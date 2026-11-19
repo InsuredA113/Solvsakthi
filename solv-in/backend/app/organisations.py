@@ -71,3 +71,21 @@ def scoped_claim_filter(claim_id: str, user: dict) -> dict:
 def get_claim_for_user(db, claim_id: str, user: dict, projection=None):
     """Fetch a claim only when it belongs to the authenticated user's organisation."""
     return db["claims"].find_one(scoped_claim_filter(claim_id, user), projection)
+
+
+
+def resolve_write_organisation_id(db, user: dict) -> str:
+    """Resolve the organisation for newly created tenant-owned records."""
+    from fastapi import HTTPException
+
+    if user.get("is_global_admin") is True:
+        organisation = db["organisations"].find_one(
+            {"key": DEFAULT_ORGANISATION_KEY, "status": "active"},
+            {"_id": 0, "organisation_id": 1}
+        )
+        organisation_id = organisation.get("organisation_id") if organisation else None
+    else:
+        organisation_id = user.get("organisation_id")
+    if not organisation_id:
+        raise HTTPException(status_code=403, detail="An active organisation is required for this operation.")
+    return organisation_id
