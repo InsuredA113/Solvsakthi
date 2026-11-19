@@ -981,6 +981,8 @@ def update_claim_status(
     payload: ClaimStatusUpdate,
     user: dict = Depends(require_permissions("claims.edit"))
 ):
+    if payload.status == "Approved" and "claims.approve" not in get_effective_permissions(user):
+        raise HTTPException(status_code=403, detail="Your account needs the claims.approve permission to approve a claim.")
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     try:
@@ -1250,8 +1252,8 @@ def review_damage_assessment(assessment_id: str, payload: DamageReviewUpdate, us
     allowed_statuses = {"Reviewed", "More Evidence Required", "Approved", "Rejected"}
     if payload.status not in allowed_statuses:
         raise HTTPException(status_code=422, detail="Choose a valid assessment review status.")
-    if payload.status in {"Approved", "Rejected"} and user["role"] not in DAMAGE_APPROVAL_ROLES:
-        raise HTTPException(status_code=403, detail="Only an authorised approver can approve or reject an AI assessment.")
+    if payload.status in {"Approved", "Rejected"} and "claims.approve" not in get_effective_permissions(user):
+        raise HTTPException(status_code=403, detail="Your account needs the claims.approve permission to approve or reject an AI assessment.")
     if payload.status in {"More Evidence Required", "Rejected"} and not payload.notes.strip():
         raise HTTPException(status_code=422, detail="Reviewer notes are required for this decision.")
     try:
@@ -1501,10 +1503,6 @@ def review_financial_estimate(
         raise HTTPException(status_code=422, detail=f"Status must be one of: {', '.join(sorted(allowed))}.")
     if payload.status in {"More Evidence Required", "Rejected"} and not payload.notes.strip():
         raise HTTPException(status_code=422, detail="Reviewer notes are required for this decision.")
-    if payload.status in {"Approved", "Rejected"} and user.get("role") not in {
-        "Super Administrator", "Insurance Company Administrator", "Claims Manager", "Approver"
-    }:
-        raise HTTPException(status_code=403, detail="Your role cannot approve or reject financial estimates.")
     try:
         object_id = ObjectId(estimate_id)
     except InvalidId as exc:
@@ -1562,7 +1560,7 @@ def list_policies(
 @app.post("/api/policies", status_code=201)
 def create_policy(
     payload: PolicyCreate,
-    user: dict = Depends(require_permissions("coverage.review"))
+    user: dict = Depends(require_permissions("roles.manage"))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
@@ -1678,7 +1676,7 @@ def list_tax_rules(
     return {"items": rows, "count": len(rows)}
 
 @app.post("/api/tax-rules", status_code=201)
-def create_tax_rule(payload: TaxRuleCreate, user: dict = Depends(require_permissions("finance.edit"))):
+def create_tax_rule(payload: TaxRuleCreate, user: dict = Depends(require_permissions("roles.manage"))):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     now = datetime.now(timezone.utc).isoformat()
@@ -1700,7 +1698,7 @@ def create_tax_rule(payload: TaxRuleCreate, user: dict = Depends(require_permiss
 def change_tax_rule_status(
     rule_id: str,
     payload: TaxRuleStatusUpdate,
-    user: dict = Depends(require_permissions("finance.approve"))
+    user: dict = Depends(require_permissions("roles.manage"))
 ):
     try:
         object_id = ObjectId(rule_id)
@@ -1813,7 +1811,7 @@ def list_repair_rates(
 @app.post("/api/repair-rates", status_code=201)
 def create_repair_rate(
     payload: RepairRateCreate,
-    user: dict = Depends(require_permissions("finance.edit"))
+    user: dict = Depends(require_permissions("roles.manage"))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
@@ -1840,7 +1838,7 @@ def create_repair_rate(
 def change_repair_rate_status(
     rate_id: str,
     payload: RepairRateStatusUpdate,
-    user: dict = Depends(require_permissions("finance.approve"))
+    user: dict = Depends(require_permissions("roles.manage"))
 ):
     try:
         object_id = ObjectId(rate_id)
