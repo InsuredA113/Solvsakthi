@@ -74,6 +74,9 @@ class DamageReviewUpdate(BaseModel):
 class AdjusterAssignment(BaseModel):
     adjuster_email: str = Field(..., min_length=5, max_length=254)
 
+class SurveyorAssignment(BaseModel):
+    surveyor_email: str = Field(..., min_length=5, max_length=254)
+
 class FinancialEstimateReviewUpdate(BaseModel):
     status: str = Field(..., max_length=40)
     notes: str = Field(default="", max_length=2000)
@@ -758,6 +761,83 @@ def dashboard_summary(user: dict = Depends(require_permissions("dashboard.view")
         }
     except PyMongoError as exc:
         raise HTTPException(status_code=503, detail="Unable to load dashboard metrics.") from exc
+
+@app.get("/api/surveyors")
+def list_surveyors(user: dict = Depends(require_permissions("claims.assign"))):
+    """List active surveyors in the caller's organisation for claim assignment."""
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    try:
+        rows = list(get_database()["users"].find(
+            {"$and": [organisation_filter(user), {"is_active": True, "$or": [
+                {"role": {"$in": ["Insurance Surveyor", "Surveyor"]}},
+                {"roles": {"$in": ["Insurance Surveyor", "Surveyor"]}}
+            ]}]},
+            {"_id": 0, "full_name": 1, "email": 1, "role": 1, "roles": 1}
+        ).sort("full_name", 1))
+        for row in rows:
+            row["roles"] = get_user_roles(row)
+            row["role"] = "Insurance Surveyor"
+        return {"items": rows, "count": len(rows)}
+    except PyMongoError as exc:
+        raise HTTPException(status_code=503, detail="Unable to retrieve surveyors.") from exc
+
+
+@app.patch("/api/claims/{claim_id}/assign-surveyor")
+def assign_claim_surveyor(
+    claim_id: str,
+    payload: SurveyorAssignment,
+    user: dict = Depends(require_permissions("claims.assign"))
+):
+    """Assign an in-organisation Insurance Surveyor and retain assignment history."""
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    db = get_database()
+    claim = db["claims"].find_one(scoped_claim_filter(claim_id, user))
+    if not claim or (not is_in_scope_claim(claim) and claim.get("auto_intake_status") != "Provisional"):
+        raise HTTPException(status_code=404, detail="Claim not found.")
+
+    surveyor_email = normalize_email(payload.surveyor_email)
+    surveyor = db["users"].find_one({
+        "email": surveyor_email,
+        "is_active": True,
+        **organisation_filter(user)
+    })
+    if not surveyor or "Insurance Surveyor" not in get_user_roles(surveyor):
+        raise HTTPException(status_code=422, detail="Select an active Insurance Surveyor from your organisation.")
+
+    now = datetime.now(timezone.utc).isoformat()
+    assignment_event = {
+        "surveyor_email": surveyor_email,
+        "surveyor_name": surveyor.get("full_name") or surveyor_email,
+        "assigned_at": now,
+        "assigned_by": user["email"]
+    }
+    try:
+        updated = db["claims"].find_one_and_update(
+            scoped_claim_filter(claim_id, user),
+            {
+                "$set": {
+                    "assigned_surveyor_email": surveyor_email,
+                    "assigned_surveyor_name": assignment_event["surveyor_name"],
+                    "surveyor_assigned_at": now,
+                    "surveyor_assigned_by": user["email"],
+                    "updated_at": now,
+                    "updated_by": user["email"]
+                },
+                "$push": {"surveyor_assignment_history": assignment_event}
+            },
+            return_document=ReturnDocument.AFTER,
+            projection={"_id": 0}
+        )
+        if not updated:
+            raise HTTPException(status_code=404, detail="Claim not found.")
+        return updated
+    except HTTPException:
+        raise
+    except PyMongoError as exc:
+        raise HTTPException(status_code=503, detail="Unable to assign surveyor.") from exc
+
 
 @app.get("/api/claims")
 def list_claims(
