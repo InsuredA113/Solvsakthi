@@ -21,7 +21,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 
-from .auth import require_roles
+from .auth import require_permissions, require_roles
 from .claims_analytics import is_in_scope_claim
 from .database import database_is_available, get_database
 
@@ -184,7 +184,7 @@ def _load_claim_export(claim_id: str) -> tuple[Any, list[tuple[str, dict]], list
 def export_claim(
     claim_id: str,
     format: str = Query(default="pdf", pattern="^(pdf|xlsx|csv|zip)$"),
-    user: dict = Depends(require_roles(*EXPORT_READ_ROLES))
+    user: dict = Depends(require_permissions("claims.export"))
 ):
     db, records, documents = _load_claim_export(claim_id)
     claim_name = _safe_filename(claim_id)
