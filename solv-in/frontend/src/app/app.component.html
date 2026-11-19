@@ -886,9 +886,9 @@
         <section class="settings-layout">
           <aside class="panel settings-menu">
             <p class="eyebrow">WORKSPACE CONFIGURATION</p>
-            <button type="button" *ngFor="let section of ['Company Profile','User Management','Integrations','Email Configuration','AI Configuration','Currency & Regional Settings','Notifications','Security & Audit']"
-              [class.active]="settingsSection === section" (click)="settingsSection = section; section === 'User Management' && isAdmin() ? loadUsers() : null; section === 'Email Configuration' && canManageEmailConnectors() ? loadEmailConnectorStatus() : null"
-              [disabled]="section === 'User Management' && !isAdmin() || ['Integrations','Email Configuration','AI Configuration','Currency & Regional Settings','Notifications','Security & Audit'].includes(section) && !canManageEmailConnectors()">
+            <button type="button" *ngFor="let section of ['Company Profile','User Management','Custom Roles & Permissions','Integrations','Email Configuration','AI Configuration','Currency & Regional Settings','Notifications','Security & Audit']"
+              [class.active]="settingsSection === section" (click)="settingsSection = section; section === 'User Management' && isAdmin() ? loadUsers() : null; section === 'Custom Roles & Permissions' && isAdmin() ? loadCustomRoles() : null; section === 'Email Configuration' && canManageEmailConnectors() ? loadEmailConnectorStatus() : null"
+              [disabled]="['User Management','Custom Roles & Permissions'].includes(section) && !isAdmin() || ['Integrations','Email Configuration','AI Configuration','Currency & Regional Settings','Notifications','Security & Audit'].includes(section) && !canManageEmailConnectors()">
               {{ section }}
             </button>
           </aside>
@@ -916,6 +916,35 @@
                 <div class="table-scroll"><table><thead><tr><th>Name</th><th>Email</th><th>Assigned roles</th><th>Account status</th></tr></thead>
                   <tbody><tr *ngFor="let account of users"><td>{{ account.full_name }}</td><td>{{ account.email }}</td><td>{{ (account.roles?.length ? account.roles : [account.role]).join(', ') }}</td><td><span class="status">{{ account.is_active ? 'Active' : 'Inactive' }}</span></td></tr>
                     <tr *ngIf="users.length === 0"><td colspan="4" class="empty">No user accounts found.</td></tr></tbody></table></div>
+              </section>
+            </ng-container>
+
+            <ng-container *ngIf="settingsSection === 'Custom Roles & Permissions' && isAdmin()">
+              <section class="panel form-panel">
+                <div class="panel-heading"><div><h2>Custom Roles &amp; Permissions</h2><p class="muted">Create organisation role templates by selecting the permissions required for each responsibility. Predefined roles, including Super Administrator, cannot be overwritten here.</p></div></div>
+                <form (ngSubmit)="createCustomRole()">
+                  <div class="form-grid">
+                    <label>Role name *<input name="custom_role_name" [(ngModel)]="customRoleDraft.name" required minlength="3" maxlength="80" placeholder="e.g. Senior Claims Reviewer"></label>
+                    <label>Description<input name="custom_role_description" [(ngModel)]="customRoleDraft.description" maxlength="300" placeholder="Describe this role's responsibilities"></label>
+                  </div>
+                  <div style="margin-top:16px">
+                    <h3>Permission catalogue</h3>
+                    <p class="muted">Select only the actions this custom role should perform.</p>
+                    <div class="role-checkbox-grid">
+                      <label *ngFor="let permission of availablePermissions" class="checkbox-label">
+                        <input type="checkbox" [checked]="customRoleDraft.permissions.includes(permission)" (change)="toggleCustomRolePermission(permission, $any($event.target).checked)">
+                        <span>{{ permission }}</span>
+                      </label>
+                    </div>
+                  </div>
+                  <div class="form-actions"><span class="muted">{{ customRoleDraft.permissions.length }} permissions selected</span><button class="primary-action" type="submit" [disabled]="customRoleBusy">{{ customRoleBusy ? 'Saving…' : 'Create custom role' }}</button></div>
+                </form>
+              </section>
+              <section class="panel claims-panel" style="margin-top:14px">
+                <div class="panel-heading"><h2>Custom role library</h2><span class="subtle">{{ customRoles.length }} custom roles</span></div>
+                <div class="table-scroll"><table><thead><tr><th>Role</th><th>Description</th><th>Permissions</th><th>Status</th></tr></thead>
+                  <tbody><tr *ngFor="let customRole of customRoles"><td>{{ customRole.name }}</td><td>{{ customRole.description || '—' }}</td><td>{{ customRole.permissions?.length || 0 }}</td><td><span class="status">{{ customRole.is_active ? 'Active' : 'Inactive' }}</span></td></tr>
+                    <tr *ngIf="customRoles.length === 0"><td colspan="4" class="empty">No custom roles created yet.</td></tr></tbody></table></div>
               </section>
             </ng-container>
 
