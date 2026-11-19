@@ -3,7 +3,7 @@
   <aside class="sidebar">
     <div class="brand"><img class="brand-logo" src="https://raw.githubusercontent.com/InsuredA113/Solvsakthi/main/Solv-in-logo.png.png" alt="Solv-In logo"><div class="brand-copy"><strong>Solv-In</strong><small>File • Track • Resolve</small></div><button class="sidebar-toggle" type="button" (click)="toggleSidebar()" [attr.aria-label]="isSidebarCollapsed ? 'Expand navigation' : 'Collapse navigation'" [attr.title]="isSidebarCollapsed ? 'Expand navigation' : 'Collapse navigation'"><span aria-hidden="true">{{ isSidebarCollapsed ? '☰' : '‹' }}</span></button></div>
     <nav aria-label="Main navigation">
-      <ng-container *ngFor="let item of navigation"><button *ngIf="(item !== 'Users' || isAdmin()) && (item !== 'AI Damage Analysis' || canAnalyseDamage()) && (item !== 'Tax Rules' || canManageTaxRules()) && (item !== 'Repair Rates' || canManageTaxRules()) && (item !== 'Policy Coverage' || canViewPolicyCoverage())" (click)="selectPage(item)" [class.active]="activePage === item">
+      <ng-container *ngFor="let item of navigation"><button *ngIf="canAccessPage(item)" (click)="selectPage(item)" [class.active]="activePage === item">
         <span class="nav-icon">{{ item === 'Dashboard' ? '⌂' : item === 'Claims' ? '▤' : item === 'New FNOL' ? '+' : item === 'Email FNOL' ? '✉' : item === 'AI Damage Analysis' ? '◈' : item === 'Tax Rules' ? '⌁' : item === 'Repair Rates' ? '⌖' : item === 'Policy Coverage' ? '▣' : item === 'Reports' ? '▥' : item === 'Users' ? '♙' : '⚙' }}</span>{{ item }}
       </button></ng-container>
       <button *ngIf="activePage === 'Claim Details'" type="button" (click)="selectPage('Reports')"><span class="nav-icon">▥</span>Reports</button>
@@ -95,6 +95,32 @@
         </section>
       </ng-container>
 
+      <ng-container *ngIf="activePage === 'My Claims'">
+        <section class="panel claims-panel">
+          <div class="panel-heading">
+            <div><h2>My Claims</h2><span class="subtle">Claims explicitly linked to your verified policyholder account</span></div>
+            <button class="secondary-action" type="button" (click)="loadClaims()">Refresh</button>
+          </div>
+          <p class="muted" *ngIf="loadingClaims">Loading your claims…</p>
+          <div class="table-scroll" *ngIf="!loadingClaims">
+            <table>
+              <thead><tr><th>Claim ID</th><th>Claim Type</th><th>Policy Number</th><th>Incident Date</th><th>Reported Date</th><th>Status</th></tr></thead>
+              <tbody>
+                <tr *ngFor="let claim of claims">
+                  <td>{{ claim.claim_id }}</td>
+                  <td>{{ claim.claim_type === 'Casualty' ? 'Commercial Casualty' : claim.claim_type }}</td>
+                  <td>{{ claim.policy_number || 'Not recorded' }}</td>
+                  <td>{{ claim.incident_date || 'Not recorded' }}</td>
+                  <td>{{ claim.created_at ? (claim.created_at | date:'mediumDate') : 'Not recorded' }}</td>
+                  <td><span class="claim-status-pill">{{ claim.status || 'Not recorded' }}</span></td>
+                </tr>
+                <tr *ngIf="claims.length === 0"><td colspan="6" class="empty">No claims have been linked to your verified account yet.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </ng-container>
+
       <ng-container *ngIf="activePage === 'Claims'">
         <div class="dashboard-quick-filter" *ngIf="dashboardClaimsQuickFilter !== 'all'"><span>Dashboard filter: <strong>{{ dashboardClaimsQuickFilter === 'open' ? 'Open claims' : dashboardClaimsQuickFilter === 'pending' ? 'Pending approval' : dashboardClaimsQuickFilter === 'closed' ? 'Closed claims' : 'Overdue claims' }}</strong></span><button type="button" class="text-button" (click)="openDashboardClaimsFilter('all')">Clear filter</button></div>
         <section class="panel filters">
@@ -106,13 +132,14 @@
         <section class="panel claims-panel">
           <div class="panel-heading"><div><h2>Claims register</h2><span class="subtle">{{ filteredClaims().length }} records shown</span></div><button class="primary-action" type="button" (click)="selectPage('New FNOL')">＋ New FNOL</button></div>
           <p class="muted" *ngIf="loadingClaims">Loading claims…</p>
-          <div class="table-scroll" *ngIf="!loadingClaims"><table><thead><tr><th>Claim ID</th><th>Insured Name</th><th>Policy Number</th><th>Created Date</th><th>Incident Date</th><th>Loss Cause</th><th>Assigned Adjuster</th><th>Status</th><th>Mode of Upload</th><th>Actions</th></tr></thead>
+          <div class="table-scroll" *ngIf="!loadingClaims"><table><thead><tr><th>Claim ID</th><th>Insured Name</th><th>Policy Number</th><th>Created Date</th><th>Incident Date</th><th>Loss Cause</th><th>Assigned Adjuster</th><th>Assigned Surveyor</th><th>Status</th><th>Mode of Upload</th><th>Actions</th></tr></thead>
             <tbody><tr *ngFor="let claim of filteredClaims()">
               <td><button class="text-button" type="button" (click)="openClaimDetails(claim)" [attr.aria-label]="'Open claim ' + claim.claim_id">{{ claim.claim_id }}</button></td><td>{{ claim.customer_name || "Not Found" }}</td><td>{{ claim.policy_number || "Not Found" }}</td><td>{{ claim.created_at ? (claim.created_at | date:"mediumDate") : "Not Found" }}</td><td>{{ claim.incident_date || "Not Found" }}</td><td>{{ claim.loss_cause || "Not Found" }}</td>
               <td><select *ngIf="canAssignClaims()" class="status-select" [ngModel]="claim.assigned_adjuster_email || ''" (ngModelChange)="assignAdjuster(claim, $event)" [attr.aria-label]="'Assign adjuster for ' + claim.claim_id"><option value="">Unassigned</option><option *ngFor="let adjuster of adjusters" [value]="adjuster.email" [disabled]="(claim.claim_type === 'Property' && adjuster.role !== 'Property Adjuster') || (claim.claim_type === 'Casualty' && adjuster.role !== 'Casualty Adjuster')">{{ adjuster.full_name }} · {{ adjuster.role }}</option></select><span *ngIf="!canAssignClaims()">{{ claim.assigned_adjuster_name || 'Unassigned' }}</span></td>
+              <td><select *ngIf="canAssignClaims()" class="status-select" [ngModel]="claim.assigned_surveyor_email || ''" (ngModelChange)="assignSurveyor(claim, $event)" [attr.aria-label]="'Assign surveyor for ' + claim.claim_id"><option value="">Unassigned</option><option *ngFor="let surveyor of surveyors" [value]="surveyor.email">{{ surveyor.full_name }} · Insurance Surveyor</option></select><span *ngIf="!canAssignClaims()">{{ claim.assigned_surveyor_name || 'Unassigned' }}</span></td>
               <td><select class="status-select" [ngModel]="claim.status" (ngModelChange)="changeStatus(claim, $event)" [attr.aria-label]="'Update status for ' + claim.claim_id"><option *ngFor="let status of statuses" [value]="status">{{ status }}</option></select></td><td><span class="source-mode" [title]="createdByTooltip(claim)">{{ claim.source_mode === "email" || claim.source === "Email FNOL" ? "✉" : "⇧" }}</span></td>
               <td><div class="claim-row-actions"><select class="status-select" aria-label="Export claim" [disabled]="!!exportingClaimId" (change)="exportClaim(claim.claim_id, $any($event.target).value); $any($event.target).value = ''"><option value="">Export…</option><option value="pdf">PDF</option><option value="xlsx">Excel</option><option value="csv">CSV</option><option value="zip">ZIP + evidence</option></select><button class="text-button" type="button" *ngIf="canEditClaims()" (click)="openClaimForEdit(claim)">Edit</button><button class="text-button danger-text" type="button" *ngIf="canDeleteClaims()" (click)="deleteClaimFromRegister(claim)">Delete</button></div></td>
-            </tr><tr *ngIf="filteredClaims().length === 0"><td colspan="10" class="empty">No claims match this filter. Clear the dashboard filter or adjust your search.</td></tr></tbody>
+            </tr><tr *ngIf="filteredClaims().length === 0"><td colspan="11" class="empty">No claims match this filter. Clear the dashboard filter or adjust your search.</td></tr></tbody>
           </table></div>
         </section>
       </ng-container>
@@ -143,6 +170,44 @@
               <div><span>Data completeness</span><strong>{{ claimOverallProgress().complete }} / {{ claimOverallProgress().total }} fields</strong></div>
             </div>
           </div>
+
+          <section class="panel customer-verification-panel" *ngIf="selectedClaim && canAssignClaims()">
+            <div class="panel-heading">
+              <div>
+                <h3>Policyholder identity verification</h3>
+                <p class="muted">Link a customer account only after completing your organisation's identity checks.</p>
+              </div>
+              <span class="claim-status-pill" *ngIf="selectedClaim.customer_identity_verified">Verified link recorded</span>
+            </div>
+            <p class="muted" *ngIf="selectedClaim.customer_identity_verified">
+              Current linked account: {{ selectedClaim.customer_user_email }} ·
+              {{ selectedClaim.customer_identity_verification_method }} ·
+              Reference: {{ selectedClaim.customer_identity_verification_reference }}
+            </p>
+            <div class="form-grid">
+              <label>Customer account email
+                <input type="email" [(ngModel)]="customerLinkDraft.customer_email" placeholder="customer@company.com">
+              </label>
+              <label>Verification method
+                <select [(ngModel)]="customerLinkDraft.verification_method">
+                  <option value="Policyholder document review">Policyholder document review</option>
+                  <option value="Registered contact confirmation">Registered contact confirmation</option>
+                  <option value="Insurer identity check">Insurer identity check</option>
+                </select>
+              </label>
+              <label>Internal verification reference
+                <input [(ngModel)]="customerLinkDraft.verification_reference" maxlength="120" placeholder="Verification case / ticket reference">
+              </label>
+            </div>
+            <label class="checkbox-row">
+              <input type="checkbox" [(ngModel)]="customerLinkDraft.identity_verified">
+              I confirm that the policyholder's identity has been verified using the selected method.
+            </label>
+            <p class="muted">A claim contact email alone does not establish ownership. This action records your verification attestation and audit history.</p>
+            <button class="primary-action" type="button" (click)="linkVerifiedCustomerClaim(selectedClaim)" [disabled]="customerLinkBusy">
+              {{ customerLinkBusy ? 'Saving verification…' : 'Verify and link customer' }}
+            </button>
+          </section>
 
           <div class="claim-detail-workspace" *ngIf="selectedClaim">
           <section class="claim-management-summary">
@@ -296,25 +361,26 @@
               </div>
             </form>
           </section>
-          <section class="panel form-panel" *ngIf="selectedClaim" style="margin-top:14px">
+          <section class="panel form-panel" *ngIf="selectedClaim && (hasPermission('evidence.view') || hasPermission('evidence.upload'))" style="margin-top:14px">
             <div class="panel-heading"><div><h2>Evidence &amp; documents</h2><p class="muted">Upload and keep claim evidence securely linked to {{ selectedClaim.claim_id }}.</p></div><span class="subtle">{{ claimDocuments.length }} files</span></div>
-            <div class="form-grid">
+            <div class="form-grid" *ngIf="hasPermission('evidence.upload')">
               <label class="full">Choose a file
                 <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp" (change)="onClaimDocumentSelected($event)" aria-label="Choose a claim evidence document">
                 <span class="muted">PDF, JPG, JPEG, PNG or WEBP · Maximum 15 MB per file</span>
               </label>
             </div>
-            <div class="form-actions">
+            <div class="form-actions" *ngIf="hasPermission('evidence.upload')">
               <span class="muted">{{ selectedClaimDocument?.name || 'No file selected' }}</span>
               <button class="primary-action" type="button" (click)="uploadClaimDocument()" [disabled]="documentUploadBusy || !selectedClaimDocument">{{ documentUploadBusy ? 'Uploading…' : 'Upload document' }}</button>
             </div>
             <p class="muted" *ngIf="documentsLoading">Loading uploaded documents…</p>
-            <div class="table-scroll" *ngIf="!documentsLoading">
+            <p class="muted" *ngIf="!hasPermission('evidence.view')">You do not have permission to view evidence files.</p>
+            <div class="table-scroll" *ngIf="!documentsLoading && hasPermission('evidence.view')">
               <table><thead><tr><th>File name</th><th>Type</th><th>Size</th><th>Uploaded</th><th>Action</th></tr></thead>
                 <tbody>
                   <tr *ngFor="let document of claimDocuments">
                     <td>{{ document.filename }}</td><td>{{ document.content_type }}</td><td>{{ (document.size / 1024) | number:'1.0-0' }} KB</td><td>{{ document.uploaded_at | date:'medium' }}</td>
-                    <td><button class="text-button" type="button" (click)="downloadClaimDocument(document)">Download</button></td>
+                    <td><button *ngIf="hasPermission('evidence.view')" class="text-button" type="button" (click)="downloadClaimDocument(document)">Download</button><button *ngIf="canDeleteEvidence()" class="text-button danger-text" type="button" (click)="deleteClaimDocument(document)" [disabled]="documentDeleteBusyId !== null">{{ documentDeleteBusyId === document.file_id ? 'Deleting…' : 'Delete' }}</button></td>
                   </tr>
                   <tr *ngIf="claimDocuments.length === 0"><td colspan="5" class="empty">No evidence files uploaded for this claim yet.</td></tr>
                 </tbody>
@@ -886,9 +952,9 @@
         <section class="settings-layout">
           <aside class="panel settings-menu">
             <p class="eyebrow">WORKSPACE CONFIGURATION</p>
-            <button type="button" *ngFor="let section of ['Company Profile','User Management','Integrations','Email Configuration','AI Configuration','Currency & Regional Settings','Notifications','Security & Audit']"
-              [class.active]="settingsSection === section" (click)="settingsSection = section; section === 'User Management' && isAdmin() ? loadUsers() : null; section === 'Email Configuration' && canManageEmailConnectors() ? loadEmailConnectorStatus() : null"
-              [disabled]="section === 'User Management' && !isAdmin() || ['Integrations','Email Configuration','AI Configuration','Currency & Regional Settings','Notifications','Security & Audit'].includes(section) && !canManageEmailConnectors()">
+            <button type="button" *ngFor="let section of ['Company Profile','User Management','Custom Roles & Permissions','Integrations','Email Configuration','AI Configuration','Currency & Regional Settings','Notifications','Security & Audit']"
+              [class.active]="settingsSection === section" (click)="settingsSection = section; section === 'User Management' && isAdmin() ? loadUsers() : null; section === 'Custom Roles & Permissions' && isAdmin() ? loadCustomRoles() : null; section === 'Email Configuration' && canManageEmailConnectors() ? loadEmailConnectorStatus() : null"
+              [disabled]="['User Management','Custom Roles & Permissions'].includes(section) && !isAdmin() || ['Integrations','Email Configuration','AI Configuration','Currency & Regional Settings','Notifications','Security & Audit'].includes(section) && !canManageEmailConnectors()">
               {{ section }}
             </button>
           </aside>
@@ -906,16 +972,53 @@
                     <label>Full name *<input name="new_full_name" [(ngModel)]="newUser.full_name" required minlength="2" maxlength="120" placeholder="Full name"></label>
                     <label>Email address *<input type="email" name="new_email" [(ngModel)]="newUser.email" required placeholder="user@company.com"></label>
                     <label>Temporary password *<input type="password" name="new_password" [(ngModel)]="newUser.password" required minlength="12" placeholder="At least 12 characters with letters and numbers"></label>
-                    <label>Role *<select name="new_role" [(ngModel)]="newUser.role"><option *ngFor="let role of roles" [value]="role">{{ role }}</option></select></label>
+                    <fieldset class="form-field" style="border:0;padding:0;margin:0"><legend>Roles * <small class="muted">Select one or more roles</small></legend><div class="role-checkbox-grid"><label *ngFor="let role of roles" class="checkbox-label"><input type="checkbox" [checked]="newUser.roles.includes(role)" (change)="toggleNewUserRole(role, $any($event.target).checked)"><span>{{ role }}</span></label></div></fieldset>
                   </div>
                   <div class="form-actions"><span class="muted">User provisioning remains restricted to the Super Administrator.</span><button class="primary-action" type="submit" [disabled]="userBusy">{{ userBusy ? 'Creating…' : 'Create user' }}</button></div>
                 </form>
               </section>
               <section class="panel claims-panel" style="margin-top:14px">
                 <div class="panel-heading"><h2>Workspace users</h2><span class="subtle">{{ users.length }} accounts</span></div>
-                <div class="table-scroll"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Account status</th></tr></thead>
-                  <tbody><tr *ngFor="let account of users"><td>{{ account.full_name }}</td><td>{{ account.email }}</td><td>{{ account.role }}</td><td><span class="status">{{ account.is_active ? 'Active' : 'Inactive' }}</span></td></tr>
-                    <tr *ngIf="users.length === 0"><td colspan="4" class="empty">No user accounts found.</td></tr></tbody></table></div>
+                <div class="table-scroll"><table><thead><tr><th>Name</th><th>Email</th><th>Assigned roles</th><th>Account status</th><th>Actions</th></tr></thead>
+                  <tbody><tr *ngFor="let account of users"><td>{{ account.full_name }}</td><td>{{ account.email }}</td><td>{{ assignedRoleNames(account) }}<span *ngIf="account.custom_roles?.length">, {{ customRoleNames(account) }}</span></td><td><span class="status">{{ account.is_active ? 'Active' : 'Inactive' }}</span></td><td><button type="button" class="secondary-action" (click)="startUserRoleEdit(account)">Manage roles</button></td></tr>
+                    <tr *ngIf="users.length === 0"><td colspan="5" class="empty">No user accounts found.</td></tr></tbody></table></div>
+                <section class="settings-info" *ngIf="selectedUserForRoles" style="margin-top:14px">
+                  <div class="panel-heading"><div><h3>Manage roles: {{ selectedUserForRoles.full_name }}</h3><p class="muted">{{ selectedUserForRoles.email }}</p></div></div>
+                  <h4>Predefined roles</h4>
+                  <div class="role-checkbox-grid"><label *ngFor="let role of roles" class="checkbox-label"><input type="checkbox" [checked]="roleAssignmentDraft.roles.includes(role)" (change)="toggleAssignedRole(role, $any($event.target).checked)"><span>{{ role }}</span></label></div>
+                  <h4 style="margin-top:14px">Custom roles</h4>
+                  <div class="role-checkbox-grid"><label *ngFor="let role of customRoles" class="checkbox-label"><input type="checkbox" [checked]="roleAssignmentDraft.custom_roles.includes(role.name)" (change)="toggleAssignedCustomRole(role.name, $any($event.target).checked)"><span>{{ role.name }}</span></label></div>
+                  <div class="form-actions"><button type="button" class="secondary-action" (click)="selectedUserForRoles = null">Cancel</button><button type="button" class="primary-action" [disabled]="roleAssignmentBusy" (click)="saveUserRoles()">{{ roleAssignmentBusy ? 'Saving…' : 'Save role assignments' }}</button></div>
+                </section>
+              </section>
+            </ng-container>
+
+            <ng-container *ngIf="settingsSection === 'Custom Roles & Permissions' && isAdmin()">
+              <section class="panel form-panel">
+                <div class="panel-heading"><div><h2>Custom Roles &amp; Permissions</h2><p class="muted">Create organisation role templates by selecting the permissions required for each responsibility. Predefined roles, including Super Administrator, cannot be overwritten here.</p></div></div>
+                <form (ngSubmit)="createCustomRole()">
+                  <div class="form-grid">
+                    <label>Role name *<input name="custom_role_name" [(ngModel)]="customRoleDraft.name" required minlength="3" maxlength="80" placeholder="e.g. Senior Claims Reviewer"></label>
+                    <label>Description<input name="custom_role_description" [(ngModel)]="customRoleDraft.description" maxlength="300" placeholder="Describe this role's responsibilities"></label>
+                  </div>
+                  <div style="margin-top:16px">
+                    <h3>Permission catalogue</h3>
+                    <p class="muted">Select only the actions this custom role should perform.</p>
+                    <div class="role-checkbox-grid">
+                      <label *ngFor="let permission of availablePermissions" class="checkbox-label">
+                        <input type="checkbox" [checked]="customRoleDraft.permissions.includes(permission)" (change)="toggleCustomRolePermission(permission, $any($event.target).checked)">
+                        <span>{{ permission }}</span>
+                      </label>
+                    </div>
+                  </div>
+                  <div class="form-actions"><span class="muted">{{ customRoleDraft.permissions.length }} permissions selected</span><button class="primary-action" type="submit" [disabled]="customRoleBusy">{{ customRoleBusy ? 'Saving…' : (editingCustomRoleName ? 'Save changes' : 'Create custom role') }}</button><button *ngIf="editingCustomRoleName" type="button" class="secondary-action" (click)="cancelCustomRoleEdit()">Cancel</button></div>
+                </form>
+              </section>
+              <section class="panel claims-panel" style="margin-top:14px">
+                <div class="panel-heading"><h2>Custom role library</h2><span class="subtle">{{ customRoles.length }} custom roles</span></div>
+                <div class="table-scroll"><table><thead><tr><th>Role</th><th>Description</th><th>Permissions</th><th>Status</th><th>Actions</th></tr></thead>
+                  <tbody><tr *ngFor="let customRole of customRoles"><td>{{ customRole.name }}</td><td>{{ customRole.description || '—' }}</td><td>{{ customRole.permissions?.length || 0 }}</td><td><span class="status">{{ customRole.is_active ? 'Active' : 'Inactive' }}</span></td><td><button type="button" class="secondary-action" (click)="editCustomRole(customRole)">Edit</button> <button type="button" class="secondary-action" (click)="deleteCustomRole(customRole)">Delete</button></td></tr>
+                    <tr *ngIf="customRoles.length === 0"><td colspan="5" class="empty">No custom roles created yet.</td></tr></tbody></table></div>
               </section>
             </ng-container>
 

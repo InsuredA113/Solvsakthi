@@ -16,6 +16,7 @@ import httpx
 
 from .auth import require_roles
 from .database import database_is_available, get_database
+from .organisations import resolve_write_organisation_id, organisation_filter
 from .email_intake import EmailIntakeCreate, extract_email_intake, extract_pdf_text, ocr_pdf_text, extract_structured_claim_fields
 from .email_connectors import (
     setting, gmail_configured, microsoft_configured, gmail_access_token,
@@ -91,7 +92,7 @@ def _suggestions_for_missing(missing_fields: list[str]) -> dict[str, str]:
 
 
 def _create_provisional_claim(db, intake_id: str, sender_email: str, parsed: dict,
-                              received_at: str) -> dict | None:
+                              received_at: str, organisation_id: str) -> dict | None:
     classification = parsed.get("suggested_claim_type")
     if classification == "Out of Scope":
         return None
@@ -137,6 +138,7 @@ def _create_provisional_claim(db, intake_id: str, sender_email: str, parsed: dic
     claim_id = f"CLM-{datetime.now(timezone.utc).year}-{sequence['sequence']:06d}"
     claim = {
         "claim_id": claim_id,
+        "organisation_id": organisation_id,
         "customer_name": clean("customer_name"),
         "loss_cause": clean("loss_cause"),
         "email": clean("email") or sender_email,
@@ -175,14 +177,17 @@ def _create_provisional_claim(db, intake_id: str, sender_email: str, parsed: dic
 
 def _save_email(provider: str, provider_message_id: str, sender_email: str,
                 subject: str, body_text: str, received_at: datetime | None,
-                attachments: list[dict] | None = None):
+                attachments: list[dict] | None = None,
+                organisation_id: str | None = None):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     db = get_database()
+    if not organisation_id:
+        raise HTTPException(status_code=409, detail="Email connector is not linked to an organisation. Reconnect it from an organisation administrator account.")
     collection = db["email_intake"]
     collection.create_index([("provider", 1), ("provider_message_id", 1)], unique=True)
     existing = collection.find_one(
-        {"provider": provider, "provider_message_id": provider_message_id},
+        {"provider": provider, "provider_message_id": provider_message_id, "organisation_id": organisation_id},
         {"_id": 0, "body_text": 0}
     )
     if existing:
@@ -249,7 +254,7 @@ def _save_email(provider: str, provider_message_id: str, sender_email: str,
         "document_extracted_text": "".join(pdf_text_parts)[:30000],
         "pdf_processing": pdf_processing, "received_at": received,
         "created_at": datetime.now(timezone.utc).isoformat(),
-        "created_by": provider + "_connector", **parsed,
+        "created_by": provider + "_connector", "organisation_id": organisation_id, **parsed,
         "review_status": parsed["intake_status"], "review_history": [],
         "auto_creation_status": "Pending",
     }
@@ -257,16 +262,23 @@ def _save_email(provider: str, provider_message_id: str, sender_email: str,
         collection.insert_one(record)
     except DuplicateKeyError:
         existing = collection.find_one(
-            {"provider": provider, "provider_message_id": provider_message_id},
+            {"provider": provider, "provider_message_id": provider_message_id, "organisation_id": organisation_id},
             {"_id": 0, "body_text": 0}
         )
+        if not existing:
+            # The provider/message pair is globally unique. Never treat a
+            # message already bound to another organisation as this tenant's duplicate.
+            raise HTTPException(
+                status_code=409,
+                detail="This provider message is already registered under another organisation. Verify the mailbox-to-organisation binding."
+            )
         return {"duplicate": True, "intake_id": existing["intake_id"], "claim_id": existing.get("claim_id")}
 
     claim = None
     try:
-        claim = _create_provisional_claim(db, intake_id, str(payload.sender_email), parsed, received)
+        claim = _create_provisional_claim(db, intake_id, str(payload.sender_email), parsed, received, organisation_id)
         if claim:
-            collection.update_one({"intake_id": intake_id}, {"$set": {
+            collection.update_one({"intake_id": intake_id, "organisation_id": organisation_id}, {"$set": {
                 "claim_id": claim["claim_id"], "review_status": "Converted",
                 "conversion_state": "Completed", "auto_creation_status": claim["auto_intake_status"],
                 "missing_fields": claim["missing_fields"],
@@ -274,13 +286,13 @@ def _save_email(provider: str, provider_message_id: str, sender_email: str,
                 "converted_at": datetime.now(timezone.utc).isoformat(),
             }})
         else:
-            collection.update_one({"intake_id": intake_id}, {"$set": {
+            collection.update_one({"intake_id": intake_id, "organisation_id": organisation_id}, {"$set": {
                 "auto_creation_status": "Out of Scope",
                 "auto_creation_note": "Personal-lines or unsupported claim indicators were detected; no in-scope claim record was created."
             }})
     except Exception:
         logger.exception("Automatic claim creation failed for email intake %s", intake_id)
-        collection.update_one({"intake_id": intake_id}, {"$set": {"auto_creation_status": "Failed"}})
+        collection.update_one({"intake_id": intake_id, "organisation_id": organisation_id}, {"$set": {"auto_creation_status": "Failed"}})
         raise
 
     saved_documents = []
@@ -300,15 +312,15 @@ def _save_email(provider: str, provider_message_id: str, sender_email: str,
                 continue
             file_id = GridFSBucket(db, bucket_name="claim_documents").upload_from_stream(
                 filename, io.BytesIO(content),
-                metadata={"claim_id": claim["claim_id"], "content_type": content_type,
-                          "size": len(content), "uploaded_at": datetime.now(timezone.utc).isoformat(),
+                metadata={"claim_id": claim["claim_id"], "organisation_id": organisation_id,
+                          "content_type": content_type, "size": len(content), "uploaded_at": datetime.now(timezone.utc).isoformat(),
                           "uploaded_by": "system:email-attachment", "source": "email_attachment",
                           "source_intake_id": intake_id}
             )
             saved_documents.append({"file_id": str(file_id), "filename": filename})
         except Exception:
             logger.exception("Unable to store an email attachment for intake %s", intake_id)
-    collection.update_one({"intake_id": intake_id}, {"$set": {
+    collection.update_one({"intake_id": intake_id, "organisation_id": organisation_id}, {"$set": {
         "attachment_count": len(saved_documents), "attachments_saved": saved_documents
     }})
     return {"duplicate": False, "intake_id": intake_id,
@@ -348,8 +360,8 @@ def connector_status(user: dict = Depends(require_roles(*READ_ROLES))):
     db = get_database()
     gmail_mailbox = setting("GMAIL_MAILBOX").lower()
     ms_mailbox = setting("MS365_MAILBOX").lower()
-    gmail_state = db["email_connector_state"].find_one({"_id": "gmail:" + gmail_mailbox}, {"_id": 0}) if database_is_available() and gmail_mailbox else None
-    ms_state = db["email_connector_state"].find_one({"_id": "microsoft365:" + ms_mailbox}, {"_id": 0}) if database_is_available() and ms_mailbox else None
+    gmail_state = db["email_connector_state"].find_one({"_id": "gmail:" + gmail_mailbox, **organisation_filter(user)}, {"_id": 0}) if database_is_available() and gmail_mailbox else None
+    ms_state = db["email_connector_state"].find_one({"_id": "microsoft365:" + ms_mailbox, **organisation_filter(user)}, {"_id": 0}) if database_is_available() and ms_mailbox else None
     return {
         "gmail": {"configured": gmail_configured(), "watch_active": bool(gmail_state and gmail_state.get("watch_expiration")), "watch_expiration": gmail_state.get("watch_expiration") if gmail_state else None},
         "microsoft365": {"configured": microsoft_configured(), "subscription_active": bool(ms_state and ms_state.get("subscription_id")), "subscription_expiration": ms_state.get("subscription_expiration") if ms_state else None},
@@ -371,9 +383,14 @@ def start_gmail_watch(user: dict = Depends(require_roles(*ADMIN_ROLES))):
         })
         stage = "saving watch state to MongoDB"
         mailbox = setting("GMAIL_MAILBOX").lower()
+        organisation_id = resolve_write_organisation_id(get_database(), user)
+        existing_state = get_database()["email_connector_state"].find_one({"_id": "gmail:" + mailbox})
+        if existing_state and existing_state.get("organisation_id") != organisation_id:
+            raise HTTPException(status_code=409, detail="This Gmail mailbox is already linked to another organisation.")
         get_database()["email_connector_state"].update_one(
             {"_id": "gmail:" + mailbox},
             {"$set": {"provider": "gmail", "mailbox": mailbox,
+                      "organisation_id": organisation_id,
                       "last_history_id": str(result["historyId"]),
                       "watch_expiration": datetime.fromtimestamp(int(result["expiration"]) / 1000, timezone.utc).isoformat(),
                       "updated_at": datetime.now(timezone.utc).isoformat()}},
@@ -399,7 +416,7 @@ def gmail_pubsub(payload: dict, authorization: str | None = Header(default=None)
         raise HTTPException(status_code=503, detail="MongoDB unavailable; Pub/Sub should retry.")
     states = get_database()["email_connector_state"]
     state = states.find_one({"_id": "gmail:" + mailbox})
-    if not state or not state.get("last_history_id"):
+    if not state or not state.get("last_history_id") or not state.get("organisation_id"):
         raise HTTPException(status_code=409, detail="Gmail watch cursor missing. Start Gmail watch from connector settings.")
     try:
         token = gmail_access_token()
@@ -432,7 +449,7 @@ def gmail_pubsub(payload: dict, authorization: str | None = Header(default=None)
                         received = received.replace(tzinfo=timezone.utc)
                 except (TypeError, ValueError, OverflowError):
                     pass
-            _save_email("gmail", mailbox + ":" + message_id, sender, headers.get("subject", ""), gmail_body(message), received, _fetch_gmail_attachments(message, message_id, token))
+            _save_email("gmail", mailbox + ":" + message_id, sender, headers.get("subject", ""), gmail_body(message), received, _fetch_gmail_attachments(message, message_id, token), state["organisation_id"])
         states.update_one({"_id": "gmail:" + mailbox}, {"$set": {
             "last_history_id": latest_history_id,
             "last_notification_history_id": str(notified_history_id),
@@ -455,7 +472,10 @@ def create_microsoft_subscription(user: dict = Depends(require_roles(*ADMIN_ROLE
         subscription = microsoft_subscription_payload()
         mailbox = setting("MS365_MAILBOX").lower()
         states = get_database()["email_connector_state"]
+        organisation_id = resolve_write_organisation_id(get_database(), user)
         previous = states.find_one({"_id": "microsoft365:" + mailbox}) or {}
+        if previous and previous.get("organisation_id") != organisation_id:
+            raise HTTPException(status_code=409, detail="This Microsoft 365 mailbox is already linked to another organisation.")
         result = None
         if previous.get("subscription_id"):
             try:
@@ -469,6 +489,7 @@ def create_microsoft_subscription(user: dict = Depends(require_roles(*ADMIN_ROLE
         states.update_one(
             {"_id": "microsoft365:" + mailbox},
             {"$set": {"provider": "microsoft365", "mailbox": mailbox,
+                      "organisation_id": organisation_id,
                       "subscription_id": result.get("id"),
                       "subscription_expiration": result.get("expirationDateTime"),
                       "updated_at": datetime.now(timezone.utc).isoformat()}},
@@ -498,8 +519,8 @@ def graph_notifications(payload: dict | None = None, validationToken: str | None
         raise HTTPException(status_code=503, detail="Microsoft connector or MongoDB unavailable; Graph should retry.")
     mailbox = setting("MS365_MAILBOX").lower()
     state = get_database()["email_connector_state"].find_one({"_id": "microsoft365:" + mailbox})
-    if not state:
-        raise HTTPException(status_code=409, detail="No active Microsoft Graph subscription is registered.")
+    if not state or not state.get("organisation_id"):
+        raise HTTPException(status_code=409, detail="No organisation-linked Microsoft Graph subscription is registered.")
     for item in notifications:
         if not hmac.compare_digest(str(item.get("clientState", "")), setting("MS365_CLIENT_STATE")):
             raise HTTPException(status_code=401, detail="Microsoft Graph clientState is invalid.")
@@ -517,7 +538,7 @@ def graph_notifications(payload: dict | None = None, validationToken: str | None
             )
             sender = (((message.get("from") or {}).get("emailAddress") or {}).get("address") or "")
             _save_email("microsoft365", mailbox + ":" + message.get("id", message_id), sender,
-                        message.get("subject", ""), microsoft_body(message), parse_datetime(message.get("receivedDateTime")))
+                        message.get("subject", ""), microsoft_body(message), parse_datetime(message.get("receivedDateTime")), organisation_id=state["organisation_id"])
             processed += 1
         get_database()["email_connector_state"].update_one(
             {"_id": "microsoft365:" + mailbox},

@@ -21,9 +21,10 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 
-from .auth import require_roles
+from .auth import require_permissions, require_roles
 from .claims_analytics import is_in_scope_claim
 from .database import database_is_available, get_database
+from .organisations import scoped_claim_filter
 
 router = APIRouter()
 
@@ -147,11 +148,11 @@ def _safe_filename(claim_id: str) -> str:
     return re.sub(r"[^A-Za-z0-9_-]", "_", claim_id)
 
 
-def _load_claim_export(claim_id: str) -> tuple[Any, list[tuple[str, dict]], list[tuple[str, bytes]]]:
+def _load_claim_export(claim_id: str, user: dict) -> tuple[Any, list[tuple[str, dict]], list[tuple[str, bytes]]]:
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     db = get_database()
-    claim = db["claims"].find_one({"claim_id": claim_id}, {"_id": 0})
+    claim = db["claims"].find_one(scoped_claim_filter(claim_id, user), {"_id": 0})
     if not claim:
         raise HTTPException(status_code=404, detail="Claim not found.")
     if not is_in_scope_claim(claim) and claim.get("auto_intake_status") != "Provisional":
@@ -159,23 +160,31 @@ def _load_claim_export(claim_id: str) -> tuple[Any, list[tuple[str, dict]], list
     records: list[tuple[str, dict]] = [("Claim", claim)]
     policy_number = claim.get("policy_number")
     if policy_number:
-        policy = db["policies"].find_one({"policy_number": policy_number}, {"_id": 0})
+        policy = db["policies"].find_one({"policy_number": policy_number, "organisation_id": claim.get("organisation_id")}, {"_id": 0})
         if policy:
             records.append(("Policy", policy))
+    claim_child_scope = {
+        "claim_id": claim_id,
+        "organisation_id": claim.get("organisation_id"),
+    }
     for collection_name, label in RELATED_COLLECTIONS:
-        rows = list(db[collection_name].find({"claim_id": claim_id}, {"_id": 0}).sort("created_at", 1).limit(500))
+        rows = list(db[collection_name].find(claim_child_scope, {"_id": 0}).sort("created_at", 1).limit(500))
         records.extend((f"{label} {index + 1}", row) for index, row in enumerate(rows))
     documents: list[tuple[str, bytes]] = []
     bucket = GridFSBucket(db, bucket_name="claim_documents")
+    document_scope = {
+        "metadata.claim_id": claim_id,
+        "metadata.organisation_id": claim.get("organisation_id"),
+    }
     total_bytes = 0
-    for index, stored in enumerate(bucket.find({"metadata.claim_id": claim_id}).sort("uploadDate", 1).limit(MAX_EXPORT_DOCUMENTS)):
+    for index, stored in enumerate(bucket.find(document_scope).sort("uploadDate", 1).limit(MAX_EXPORT_DOCUMENTS)):
         if stored.length > MAX_EXPORT_DOCUMENT_BYTES or total_bytes + stored.length > MAX_EXPORT_DOCUMENT_BYTES:
             raise HTTPException(status_code=413, detail="Claim evidence exceeds the 100 MB ZIP export limit. Download large evidence files separately.")
         total_bytes += stored.length
         content = bucket.open_download_stream(stored._id).read()
         filename = re.sub(r"[^A-Za-z0-9._-]", "_", stored.filename or f"document-{index + 1}")
         documents.append((f"evidence/{index + 1:03d}_{filename}", content))
-    if db["claim_documents.files"].count_documents({"metadata.claim_id": claim_id}) > MAX_EXPORT_DOCUMENTS:
+    if db["claim_documents.files"].count_documents(document_scope) > MAX_EXPORT_DOCUMENTS:
         raise HTTPException(status_code=413, detail="This claim has more than 200 evidence files. Download evidence files separately.")
     return db, records, documents
 
@@ -184,9 +193,9 @@ def _load_claim_export(claim_id: str) -> tuple[Any, list[tuple[str, dict]], list
 def export_claim(
     claim_id: str,
     format: str = Query(default="pdf", pattern="^(pdf|xlsx|csv|zip)$"),
-    user: dict = Depends(require_roles(*EXPORT_READ_ROLES))
+    user: dict = Depends(require_permissions("claims.export"))
 ):
-    db, records, documents = _load_claim_export(claim_id)
+    db, records, documents = _load_claim_export(claim_id, user)
     claim_name = _safe_filename(claim_id)
     pdf_content = _pdf_bytes(records, claim_id)
     xlsx_content = _xlsx_bytes(records)
@@ -214,7 +223,7 @@ def export_claim(
         content, media_type, extension = archive.getvalue(), "application/zip", "zip"
     try:
         db["claim_export_audit"].insert_one({
-            "claim_id": claim_id, "format": format, "generated_at": generated_at,
+            "claim_id": claim_id, "organisation_id": records[0][1].get("organisation_id"), "format": format, "generated_at": generated_at,
             "generated_by": user["email"], "generated_by_role": user["role"],
             "file_size": len(content), "included_evidence_files": len(documents) if format == "zip" else 0
         })

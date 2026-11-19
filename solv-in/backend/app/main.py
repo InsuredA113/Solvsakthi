@@ -5,6 +5,7 @@ from fastapi import Body, Depends, FastAPI, HTTPException, Query, Response, File
 from fastapi.responses import StreamingResponse
 from gridfs import GridFSBucket
 from pydantic import BaseModel, Field
+from typing import Literal
 from bson import ObjectId
 from bson.errors import InvalidId
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,14 +13,16 @@ from pymongo import DESCENDING, ReturnDocument
 from pymongo.errors import PyMongoError
 from .auth import (
     ROLES, create_access_token, get_current_user, hash_password,
-    normalize_email, require_roles, verify_password
+    normalize_email, require_permissions, require_roles, verify_password
 )
-from .bootstrap import seed_initial_admin
+from .bootstrap import seed_initial_admin, migrate_initial_organisation_membership
+from .organisations import ensure_default_organisation, organisation_filter, claim_visibility_filter, scoped_claim_filter, resolve_write_organisation_id
 from .config import CORS_ORIGINS, ACCESS_TOKEN_MINUTES
 from .database import get_database, database_is_available
 from .models import ClaimCreate, ClaimStatusUpdate
 from .claims_analytics import build_claims_analytics, is_in_scope_claim, safe_csv_cell
 from .user_models import LoginRequest, UserCreate
+from .rbac import get_effective_permissions, PERMISSIONS, PREDEFINED_ROLES, ROLE_PERMISSIONS, get_user_roles, normalize_role
 from .repair_rate_models import RepairRateCreate, RepairRateStatusUpdate
 from .email_intake import EmailIntakeCreate, EmailIntakeReview, extract_email_intake
 from .email_connector_routes import router as email_connector_router
@@ -57,7 +60,8 @@ STATUS_ROLES = (
     "Super Administrator", "Insurance Company Administrator", "Claims Manager",
     "Property Adjuster", "Casualty Adjuster", "Approver"
 )
-ADMIN_ROLES = ("Super Administrator",)
+ADMIN_ROLES = ("Super Administrator", "Insurance Company Administrator")
+ROLE_ADMIN_ROLES = ("Super Administrator", "Insurance Company Administrator")
 
 DAMAGE_REVIEW_ROLES = ("Super Administrator", "Insurance Company Administrator", "Claims Manager", "Property Adjuster", "Casualty Adjuster", "Surveyor", "Actuarial Analyst", "Approver")
 DAMAGE_APPROVAL_ROLES = ("Super Administrator", "Insurance Company Administrator", "Claims Manager", "Approver")
@@ -71,6 +75,19 @@ class DamageReviewUpdate(BaseModel):
 class AdjusterAssignment(BaseModel):
     adjuster_email: str = Field(..., min_length=5, max_length=254)
 
+class SurveyorAssignment(BaseModel):
+    surveyor_email: str = Field(..., min_length=5, max_length=254)
+
+class CustomerClaimLink(BaseModel):
+    customer_email: str = Field(..., min_length=5, max_length=254)
+    verification_method: Literal[
+        "Policyholder document review",
+        "Registered contact confirmation",
+        "Insurer identity check"
+    ]
+    verification_reference: str = Field(..., min_length=4, max_length=120)
+    identity_verified: bool
+
 class FinancialEstimateReviewUpdate(BaseModel):
     status: str = Field(..., max_length=40)
     notes: str = Field(default="", max_length=2000)
@@ -78,7 +95,13 @@ class FinancialEstimateReviewUpdate(BaseModel):
 
 @app.on_event("startup")
 def startup():
-    seed_initial_admin()
+    if database_is_available():
+        db = get_database()
+        default_organisation = ensure_default_organisation(db)
+        migrate_initial_organisation_membership(default_organisation["organisation_id"])
+        seed_initial_admin()
+        db["custom_roles"].create_index([("organisation_id", 1), ("name_key", 1)], unique=True)
+        get_database()["role_audit_logs"].create_index("created_at")
 
 @app.get("/api/health")
 def health():
@@ -96,10 +119,12 @@ def login(payload: LoginRequest):
     user = get_database()["users"].find_one({"email": email, "is_active": True})
     if not user or not verify_password(payload.password, user.get("password_hash", "")):
         raise HTTPException(status_code=401, detail="Email or password is incorrect.")
+    assigned_roles = get_user_roles(user)
     safe_user = {
         "full_name": user["full_name"],
         "email": user["email"],
-        "role": user["role"]
+        "role": assigned_roles[0] if assigned_roles else user.get("role"),
+        "roles": assigned_roles
     }
     return {
         "access_token": create_access_token(safe_user),
@@ -112,16 +137,235 @@ def login(payload: LoginRequest):
 def who_am_i(user: dict = Depends(get_current_user)):
     return user
 
+@app.get("/api/auth/permissions")
+def current_user_permissions(user: dict = Depends(get_current_user)):
+    """Return the permission union for the signed-in user's assigned roles."""
+    return {"roles": user.get("roles", [user.get("role")]), "permissions": sorted(get_effective_permissions(user))}
+
 @app.get("/api/users/roles")
 def list_roles(user: dict = Depends(require_roles(*ADMIN_ROLES))):
     return {"roles": list(ROLES)}
+
+@app.get("/api/roles/custom")
+def list_custom_roles(user: dict = Depends(require_roles(*ROLE_ADMIN_ROLES))):
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    try:
+        items = list(get_database()["custom_roles"].find(organisation_filter(user), {"_id": 0}).sort("name", 1))
+        return {"items": items, "count": len(items), "available_permissions": list(PERMISSIONS)}
+    except PyMongoError as exc:
+        raise HTTPException(status_code=503, detail="Unable to retrieve custom roles.") from exc
+
+
+class CustomRoleCreate(BaseModel):
+    name: str = Field(..., min_length=3, max_length=80)
+    description: str = Field(default="", max_length=300)
+    permissions: list[str] = Field(default_factory=list, max_length=100)
+
+
+class CustomRoleUpdate(BaseModel):
+    description: str | None = Field(default=None, max_length=300)
+    permissions: list[str] | None = Field(default=None, max_length=100)
+
+
+class UserRoleUpdate(BaseModel):
+    roles: list[str] = Field(..., min_length=1, max_length=10)
+    custom_roles: list[str] = Field(default_factory=list, max_length=20)
+
+
+def _validate_custom_role_permissions(permissions: list[str], actor: dict) -> list[str]:
+    selected = list(dict.fromkeys(permissions))
+    unknown = sorted(set(selected) - set(PERMISSIONS))
+    if unknown:
+        raise HTTPException(status_code=422, detail={"message": "Unknown permission identifiers.", "permissions": unknown})
+    if actor.get("is_global_admin") is not True:
+        allowed = get_effective_permissions(actor)
+        denied = sorted(set(selected) - allowed)
+        if denied:
+            raise HTTPException(status_code=403, detail={"message": "You cannot grant permissions you do not hold.", "permissions": denied})
+    return selected
+
+
+def _validate_predefined_role_grants(roles: list[str], actor: dict):
+    """Prevent tenant admins from assigning predefined roles above their permission ceiling."""
+    if actor.get("is_global_admin") is True:
+        return
+    allowed = get_effective_permissions(actor)
+    for role in roles:
+        missing = set(ROLE_PERMISSIONS.get(role, ())) - allowed
+        if missing:
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "message": "You cannot assign a role with permissions above your own.",
+                    "role": role,
+                    "permissions_above_your_ceiling": sorted(missing),
+                },
+            )
+
+
+def _write_role_audit(action: str, role_name: str, actor: dict, details: dict | None = None, organisation_id: str | None = None):
+    get_database()["role_audit_logs"].insert_one({
+        "action": action,
+        "role_name": role_name,
+        "actor_email": actor.get("email"),
+        "details": details or {},
+        "organisation_id": organisation_id or resolve_write_organisation_id(get_database(), actor),
+        "created_at": datetime.now(timezone.utc).isoformat()
+    })
+
+
+@app.post("/api/roles/custom", status_code=201)
+def create_custom_role(payload: CustomRoleCreate, actor: dict = Depends(require_roles(*ROLE_ADMIN_ROLES))):
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    name = " ".join(payload.name.split())
+    if name.casefold() in {role.casefold() for role in PREDEFINED_ROLES}:
+        raise HTTPException(status_code=409, detail="This name is reserved for a predefined role.")
+    permissions = _validate_custom_role_permissions(payload.permissions, actor)
+    roles = get_database()["custom_roles"]
+    organisation_id = resolve_write_organisation_id(get_database(), actor)
+    if roles.find_one({"name_key": name.casefold(), "organisation_id": organisation_id}):
+        raise HTTPException(status_code=409, detail="A custom role with this name already exists.")
+    now = datetime.now(timezone.utc).isoformat()
+    record = {
+        "name": name,
+        "name_key": name.casefold(),
+        "organisation_id": organisation_id,
+        "description": payload.description.strip(),
+        "permissions": permissions,
+        "is_active": True,
+        "created_at": now,
+        "updated_at": now,
+        "created_by": actor.get("email"),
+        "updated_by": actor.get("email")
+    }
+    try:
+        roles.insert_one(record)
+        _write_role_audit("created", name, actor, {"permissions": permissions}, organisation_id)
+    except PyMongoError as exc:
+        raise HTTPException(status_code=503, detail="Unable to create custom role.") from exc
+    record.pop("_id", None)
+    return record
+
+
+@app.patch("/api/roles/custom/{role_name}")
+def update_custom_role(role_name: str, payload: CustomRoleUpdate, actor: dict = Depends(require_roles(*ROLE_ADMIN_ROLES))):
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    role = get_database()["custom_roles"].find_one({"name_key": role_name.strip().casefold(), **organisation_filter(actor)})
+    if not role:
+        raise HTTPException(status_code=404, detail="Custom role not found.")
+    permissions = _validate_custom_role_permissions(payload.permissions if payload.permissions is not None else role.get("permissions", []), actor)
+    description = payload.description.strip() if payload.description is not None else role.get("description", "")
+    now = datetime.now(timezone.utc).isoformat()
+    get_database()["custom_roles"].update_one(
+        {"_id": role["_id"], **organisation_filter(actor)},
+        {"$set": {"description": description, "permissions": permissions,
+                  "updated_at": now, "updated_by": actor.get("email")}}
+    )
+    # Keep embedded user snapshots synchronized so permission edits take effect immediately.
+    get_database()["users"].update_many(
+        {"custom_roles.name": role["name"], **organisation_filter(actor)},
+        {"$set": {"custom_roles.$[assigned].description": description,
+                  "custom_roles.$[assigned].permissions": permissions,
+                  "custom_roles.$[assigned].updated_at": now}},
+        array_filters=[{"assigned.name": role["name"]}]
+    )
+    _write_role_audit("updated", role["name"], actor, {"permissions": permissions}, role.get("organisation_id"))
+    updated = get_database()["custom_roles"].find_one({"_id": role["_id"], **organisation_filter(actor)}, {"_id": 0})
+    return updated
+
+
+@app.delete("/api/roles/custom/{role_name}")
+def delete_custom_role(role_name: str, actor: dict = Depends(require_roles(*ROLE_ADMIN_ROLES))):
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    roles = get_database()["custom_roles"]
+    role = roles.find_one({"name_key": role_name.strip().casefold(), **organisation_filter(actor)})
+    if not role:
+        raise HTTPException(status_code=404, detail="Custom role not found.")
+    users_using_role = get_database()["users"].count_documents({"custom_roles.name": role["name"], **organisation_filter(actor)})
+    if users_using_role:
+        raise HTTPException(status_code=409, detail="This role is assigned to users. Reassign users before deleting it.")
+    roles.delete_one({"_id": role["_id"], **organisation_filter(actor)})
+    _write_role_audit("deleted", role["name"], actor, organisation_id=role.get("organisation_id"))
+    return {"message": "Custom role deleted."}
+
+
+@app.patch("/api/users/{email}/roles")
+def update_user_roles(email: str, payload: UserRoleUpdate, actor: dict = Depends(require_roles(*ROLE_ADMIN_ROLES))):
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    assigned_roles = list(dict.fromkeys(normalize_role(role) for role in payload.roles if role))
+    unknown_roles = sorted(set(assigned_roles) - set(PREDEFINED_ROLES))
+    if unknown_roles:
+        raise HTTPException(status_code=422, detail={"message": "Unknown predefined roles.", "roles": unknown_roles})
+    if "Super Administrator" in assigned_roles and actor.get("is_global_admin") is not True:
+        raise HTTPException(status_code=403, detail="Only a global Super Administrator can grant Super Administrator access.")
+    _validate_predefined_role_grants(assigned_roles, actor)
+    users = get_database()["users"]
+    target = users.find_one({"email": normalize_email(email), **organisation_filter(actor)})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found.")
+    if "Super Administrator" in get_user_roles(target) and "Super Administrator" not in assigned_roles:
+        remaining = users.count_documents({"$or": [{"role": "Super Administrator"}, {"roles": "Super Administrator"}]})
+        if remaining <= 1:
+            raise HTTPException(status_code=409, detail="The last Super Administrator cannot be removed.")
+    custom_names = list(dict.fromkeys(payload.custom_roles))
+    custom_docs = list(get_database()["custom_roles"].find({"name": {"$in": custom_names}, "is_active": True, "organisation_id": target.get("organisation_id")}, {"_id": 0}))
+    found_names = {item["name"] for item in custom_docs}
+    if actor.get("is_global_admin") is not True:
+        actor_permissions = get_effective_permissions(actor)
+        excessive = sorted({
+            permission
+            for custom_role in custom_docs
+            for permission in custom_role.get("permissions", [])
+            if permission not in actor_permissions
+        })
+        if excessive:
+            raise HTTPException(status_code=403, detail={
+                "message": "You cannot assign a custom role with permissions above your own.",
+                "permissions_above_your_ceiling": excessive,
+            })
+    missing = sorted(set(custom_names) - found_names)
+    if missing:
+        raise HTTPException(status_code=422, detail={"message": "Unknown or inactive custom roles.", "roles": missing})
+    target_is_global = "Super Administrator" in assigned_roles
+    target_organisation_id = None if target_is_global else (target.get("organisation_id") or resolve_write_organisation_id(get_database(), actor))
+    update = {
+        "is_global_admin": target_is_global,
+        "organisation_id": target_organisation_id,
+        "roles": assigned_roles,
+        "role": assigned_roles[0] if assigned_roles else None,
+        "custom_roles": custom_docs,
+        "roles_updated_at": datetime.now(timezone.utc).isoformat(),
+        "roles_updated_by": actor.get("email")
+    }
+    users.update_one({"_id": target["_id"], **organisation_filter(actor)}, {"$set": update})
+    _write_role_audit("user_roles_updated", target["email"], actor, {"roles": assigned_roles, "custom_roles": custom_names}, target.get("organisation_id"))
+    return {"email": target["email"], "roles": assigned_roles, "custom_roles": custom_names}
+
+
+@app.get("/api/roles/audit")
+def list_role_audit(user: dict = Depends(require_roles(*ROLE_ADMIN_ROLES))):
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    rows = list(get_database()["role_audit_logs"].find(organisation_filter(user), {"_id": 0}).sort("created_at", DESCENDING).limit(200))
+    return {"items": rows, "count": len(rows)}
+
 
 @app.get("/api/users")
 def list_users(user: dict = Depends(require_roles(*ADMIN_ROLES))):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     try:
-        rows = list(get_database()["users"].find({}, {"_id": 0, "password_hash": 0}).sort("created_at", DESCENDING))
+        rows = list(get_database()["users"].find(organisation_filter(user), {"_id": 0, "password_hash": 0}).sort("created_at", DESCENDING))
+        for row in rows:
+            assigned_roles = get_user_roles(row)
+            row["roles"] = assigned_roles
+            if assigned_roles:
+                row["role"] = assigned_roles[0]
         return {"items": rows, "count": len(rows)}
     except PyMongoError as exc:
         raise HTTPException(status_code=503, detail="Unable to retrieve users.") from exc
@@ -131,16 +375,36 @@ def create_user(payload: UserCreate, actor: dict = Depends(require_roles(*ADMIN_
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     email = normalize_email(str(payload.email))
-    if payload.role == "Super Administrator" and actor["role"] != "Super Administrator":
-        raise HTTPException(status_code=403, detail="Only a Super Administrator can create another Super Administrator.")
-    users = get_database()["users"]
+    assigned_roles = list(dict.fromkeys(normalize_role(role) for role in (payload.roles or ([payload.role] if payload.role else [])) if role))
+    if not assigned_roles:
+        raise HTTPException(status_code=422, detail="At least one role must be selected.")
+    if "Super Administrator" in assigned_roles and actor.get("is_global_admin") is not True:
+        raise HTTPException(status_code=403, detail="Only a global Super Administrator can create another Super Administrator.")
+    _validate_predefined_role_grants(assigned_roles, actor)
+    db = get_database()
+    users = db["users"]
     if users.find_one({"email": email}):
         raise HTTPException(status_code=409, detail="A user with this email already exists.")
+
+    is_global_admin = "Super Administrator" in assigned_roles
+    if is_global_admin:
+        organisation_id = None
+    else:
+        organisation_id = actor.get("organisation_id")
+        if not organisation_id and actor.get("is_global_admin"):
+            default_org = db["organisations"].find_one({"key": "solv-in-default", "status": "active"})
+            organisation_id = default_org.get("organisation_id") if default_org else None
+        if not organisation_id:
+            raise HTTPException(status_code=403, detail="Your account is not assigned to an active organisation.")
+
     record = {
         "full_name": payload.full_name,
         "email": email,
         "password_hash": hash_password(payload.password),
-        "role": payload.role,
+        "role": assigned_roles[0],
+        "roles": assigned_roles,
+        "is_global_admin": is_global_admin,
+        "organisation_id": organisation_id,
         "is_active": True,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "created_by": actor["email"]
@@ -156,7 +420,8 @@ def _load_claims_analytics(
     to_date: date | None,
     country_code: str | None,
     currency: str | None,
-    portfolio: str
+    portfolio: str,
+    user: dict
 ):
     if from_date and to_date and from_date > to_date:
         raise HTTPException(status_code=422, detail="From date must be on or before to date.")
@@ -183,7 +448,7 @@ def _load_claims_analytics(
     elif portfolio == "Commercial Casualty":
         scope_filter = {"claim_type": "Casualty", "casualty_segment": "Commercial"}
 
-    query_parts = [scope_filter, *common_filters]
+    query_parts = [scope_filter, *common_filters, claim_visibility_filter(user)]
     query = {"$and": query_parts}
     db = get_database()
     try:
@@ -198,8 +463,12 @@ def _load_claims_analytics(
         claim_ids = [claim.get("claim_id") for claim in claims if claim.get("claim_id")]
         estimates = []
         if claim_ids:
+            claim_scope_pairs = [
+                {"claim_id": item.get("claim_id"), "organisation_id": item.get("organisation_id")}
+                for item in claims if item.get("claim_id")
+            ]
             estimates = list(db["financial_estimates"].aggregate([
-                {"$match": {"claim_id": {"$in": claim_ids}}},
+                {"$match": {"$or": claim_scope_pairs}},
                 {"$sort": {"created_at": -1}},
                 {"$group": {"_id": "$claim_id", "latest": {"$first": "$$ROOT"}}},
                 {"$replaceRoot": {"newRoot": "$latest"}}
@@ -207,6 +476,7 @@ def _load_claims_analytics(
 
         result = build_claims_analytics(claims, estimates)
         unclassified_query_parts = [
+            claim_visibility_filter(user),
             {"claim_type": "Casualty", "casualty_segment": {"$ne": "Commercial"}},
             *common_filters
         ]
@@ -235,11 +505,11 @@ def claims_analytics(
     country_code: str | None = Query(default=None, min_length=2, max_length=2),
     currency: str | None = Query(default=None, min_length=3, max_length=3),
     portfolio: str = Query(default="All", pattern="^(All|Property|Commercial Casualty)$"),
-    user: dict = Depends(require_roles(*READ_ROLES))
+    user: dict = Depends(require_permissions("reports.view"))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
-    return _load_claims_analytics(from_date, to_date, country_code, currency, portfolio)
+    return _load_claims_analytics(from_date, to_date, country_code, currency, portfolio, user)
 
 
 @app.get("/api/reports/claims-analytics.csv")
@@ -249,11 +519,11 @@ def export_claims_analytics_csv(
     country_code: str | None = Query(default=None, min_length=2, max_length=2),
     currency: str | None = Query(default=None, min_length=3, max_length=3),
     portfolio: str = Query(default="All", pattern="^(All|Property|Commercial Casualty)$"),
-    user: dict = Depends(require_roles(*READ_ROLES))
+    user: dict = Depends(require_permissions("reports.export"))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
-    data = _load_claims_analytics(from_date, to_date, country_code, currency, portfolio)
+    data = _load_claims_analytics(from_date, to_date, country_code, currency, portfolio, user)
     output = io.StringIO()
     writer = csv.writer(output)
     def write_row(values):
@@ -285,14 +555,22 @@ def export_claims_analytics_csv(
 
 
 @app.get("/api/adjusters")
-def list_adjusters(user: dict = Depends(require_roles(*READ_ROLES))):
+def list_adjusters(user: dict = Depends(require_permissions("claims.assign"))):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     try:
         rows = list(get_database()["users"].find(
-            {"is_active": True, "role": {"$in": ["Property Adjuster", "Casualty Adjuster"]}},
-            {"_id": 0, "full_name": 1, "email": 1, "role": 1}
+            {"$and": [organisation_filter(user), {"is_active": True, "$or": [
+                {"role": {"$in": ["Property Adjuster", "Casualty Adjuster"]}},
+                {"roles": {"$in": ["Property Adjuster", "Casualty Adjuster"]}}
+            ]}]},
+            {"_id": 0, "full_name": 1, "email": 1, "role": 1, "roles": 1}
         ).sort("full_name", 1))
+        for row in rows:
+            assigned_roles = get_user_roles(row)
+            row["roles"] = assigned_roles
+            if assigned_roles:
+                row["role"] = assigned_roles[0]
         return {"items": rows, "count": len(rows)}
     except PyMongoError as exc:
         raise HTTPException(status_code=503, detail="Unable to retrieve adjusters.") from exc
@@ -302,29 +580,30 @@ def list_adjusters(user: dict = Depends(require_roles(*READ_ROLES))):
 def assign_claim_adjuster(
     claim_id: str,
     payload: AdjusterAssignment,
-    user: dict = Depends(require_roles("Super Administrator", "Insurance Company Administrator", "Claims Manager"))
+    user: dict = Depends(require_permissions("claims.assign"))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     db = get_database()
-    claim = db["claims"].find_one({"claim_id": claim_id})
+    claim = db["claims"].find_one(scoped_claim_filter(claim_id, user))
     if not claim or (not is_in_scope_claim(claim) and claim.get("auto_intake_status") != "Provisional"):
         raise HTTPException(status_code=404, detail="Claim not found.")
     adjuster_email = normalize_email(payload.adjuster_email)
-    adjuster = db["users"].find_one({"email": adjuster_email, "is_active": True})
-    if not adjuster or adjuster.get("role") not in {"Property Adjuster", "Casualty Adjuster"}:
+    adjuster = db["users"].find_one({"email": adjuster_email, "is_active": True, **organisation_filter(user)})
+    adjuster_roles = set(get_user_roles(adjuster or {}))
+    if not adjuster or not adjuster_roles.intersection({"Property Adjuster", "Casualty Adjuster"}):
         raise HTTPException(status_code=422, detail="Select an active Property or Casualty Adjuster.")
     expected_role = "Property Adjuster" if claim.get("claim_type") == "Property" else "Casualty Adjuster" if claim.get("claim_type") == "Casualty" else None
-    if expected_role and adjuster.get("role") != expected_role:
+    if expected_role and expected_role not in adjuster_roles:
         raise HTTPException(status_code=422, detail=f"This claim must be assigned to a {expected_role}.")
     now = datetime.now(timezone.utc).isoformat()
     try:
         updated = db["claims"].find_one_and_update(
-            {"claim_id": claim_id},
+            scoped_claim_filter(claim_id, user),
             {"$set": {
                 "assigned_adjuster_email": adjuster_email,
                 "assigned_adjuster_name": adjuster.get("full_name") or adjuster_email,
-                "assigned_adjuster_role": adjuster["role"],
+                "assigned_adjuster_role": expected_role or next(iter(adjuster_roles.intersection({"Property Adjuster", "Casualty Adjuster"}))),
                 "assigned_at": now,
                 "assigned_by": user["email"],
                 "updated_at": now,
@@ -345,12 +624,12 @@ def dashboard_analytics(
     status: str | None = Query(default=None, max_length=40),
     claim_type: str = Query(default="All", pattern="^(All|Property|Casualty)$"),
     adjuster_email: str | None = Query(default=None, max_length=254),
-    user: dict = Depends(require_roles(*READ_ROLES))
+    user: dict = Depends(require_permissions("analytics.view"))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     now = datetime.now(timezone.utc)
-    query_parts = [{"$or": [
+    query_parts = [claim_visibility_filter(user), {"$or": [
         {"claim_type": "Property"},
         {"claim_type": "Casualty", "casualty_segment": "Commercial"}
     ]}]
@@ -441,7 +720,7 @@ def dashboard_analytics(
             adjuster_rows.append(row)
         adjuster_rows.sort(key=lambda item: (item["adjuster_name"] == "Unassigned", item["adjuster_name"].casefold()))
         year_rows = get_database()["claims"].find(
-            {"$or": [{"claim_type": "Property"}, {"claim_type": "Casualty", "casualty_segment": "Commercial"}]},
+            {"$and": [claim_visibility_filter(user), {"$or": [{"claim_type": "Property"}, {"claim_type": "Casualty", "casualty_segment": "Commercial"}]}]},
             {"_id": 0, "created_at": 1}
         )
         for year_row in year_rows:
@@ -470,15 +749,15 @@ def dashboard_analytics(
 
 
 @app.get("/api/dashboard/summary")
-def dashboard_summary(user: dict = Depends(require_roles(*READ_ROLES))):
+def dashboard_summary(user: dict = Depends(require_permissions("dashboard.view"))):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     try:
         claims = get_database()["claims"]
-        scope_query = {"$or": [
+        scope_query = {"$and": [claim_visibility_filter(user), {"$or": [
             {"claim_type": "Property"},
             {"claim_type": "Casualty", "casualty_segment": "Commercial"}
-        ]}
+        ]}]}
         def scoped_count(status_query=None):
             filters = [scope_query]
             if status_query:
@@ -491,12 +770,195 @@ def dashboard_summary(user: dict = Depends(require_roles(*READ_ROLES))):
             "under_investigation": scoped_count({"status": {"$in": ["Under Review", "Investigation", "Assessment"]}}),
             "pending_approval": scoped_count({"status": "Pending Approval"}),
             "settled_claims": scoped_count({"status": "Closed"}),
-            "unclassified_legacy_casualty_claims": claims.count_documents({
+            "unclassified_legacy_casualty_claims": claims.count_documents({"$and": [claim_visibility_filter(user), {
                 "claim_type": "Casualty", "casualty_segment": {"$ne": "Commercial"}
-            })
+            }]})
         }
     except PyMongoError as exc:
         raise HTTPException(status_code=503, detail="Unable to load dashboard metrics.") from exc
+
+@app.get("/api/surveyors")
+def list_surveyors(user: dict = Depends(require_permissions("claims.assign"))):
+    """List active surveyors in the caller's organisation for claim assignment."""
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    try:
+        rows = list(get_database()["users"].find(
+            {"$and": [organisation_filter(user), {"is_active": True, "$or": [
+                {"role": {"$in": ["Insurance Surveyor", "Surveyor"]}},
+                {"roles": {"$in": ["Insurance Surveyor", "Surveyor"]}}
+            ]}]},
+            {"_id": 0, "full_name": 1, "email": 1, "role": 1, "roles": 1}
+        ).sort("full_name", 1))
+        for row in rows:
+            row["roles"] = get_user_roles(row)
+            row["role"] = "Insurance Surveyor"
+        return {"items": rows, "count": len(rows)}
+    except PyMongoError as exc:
+        raise HTTPException(status_code=503, detail="Unable to retrieve surveyors.") from exc
+
+
+@app.patch("/api/claims/{claim_id}/assign-surveyor")
+def assign_claim_surveyor(
+    claim_id: str,
+    payload: SurveyorAssignment,
+    user: dict = Depends(require_permissions("claims.assign"))
+):
+    """Assign an in-organisation Insurance Surveyor and retain assignment history."""
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    db = get_database()
+    claim = db["claims"].find_one(scoped_claim_filter(claim_id, user))
+    if not claim or (not is_in_scope_claim(claim) and claim.get("auto_intake_status") != "Provisional"):
+        raise HTTPException(status_code=404, detail="Claim not found.")
+
+    surveyor_email = normalize_email(payload.surveyor_email)
+    surveyor = db["users"].find_one({
+        "email": surveyor_email,
+        "is_active": True,
+        **organisation_filter(user)
+    })
+    if not surveyor or "Insurance Surveyor" not in get_user_roles(surveyor):
+        raise HTTPException(status_code=422, detail="Select an active Insurance Surveyor from your organisation.")
+
+    now = datetime.now(timezone.utc).isoformat()
+    assignment_event = {
+        "surveyor_email": surveyor_email,
+        "surveyor_name": surveyor.get("full_name") or surveyor_email,
+        "assigned_at": now,
+        "assigned_by": user["email"]
+    }
+    try:
+        updated = db["claims"].find_one_and_update(
+            scoped_claim_filter(claim_id, user),
+            {
+                "$set": {
+                    "assigned_surveyor_email": surveyor_email,
+                    "assigned_surveyor_name": assignment_event["surveyor_name"],
+                    "surveyor_assigned_at": now,
+                    "surveyor_assigned_by": user["email"],
+                    "updated_at": now,
+                    "updated_by": user["email"]
+                },
+                "$push": {"surveyor_assignment_history": assignment_event}
+            },
+            return_document=ReturnDocument.AFTER,
+            projection={"_id": 0}
+        )
+        if not updated:
+            raise HTTPException(status_code=404, detail="Claim not found.")
+        return updated
+    except HTTPException:
+        raise
+    except PyMongoError as exc:
+        raise HTTPException(status_code=503, detail="Unable to assign surveyor.") from exc
+
+
+CUSTOMER_CLAIM_VIEW_FIELDS = {
+    "claim_id", "customer_name", "claim_type", "policy_number", "incident_date",
+    "incident_description", "loss_location", "loss_cause", "status", "created_at",
+    "updated_at", "estimated_loss", "currency", "assigned_adjuster_name"
+}
+
+
+def customer_claim_view(claim: dict) -> dict:
+    """Return only policyholder-facing fields; omit internal verification/audit metadata."""
+    return {key: claim[key] for key in CUSTOMER_CLAIM_VIEW_FIELDS if key in claim}
+
+
+@app.get("/api/customer/claims")
+def list_customer_claims(user: dict = Depends(require_permissions("own_claims.view"))):
+    """List only claims explicitly linked to this verified policyholder account."""
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    try:
+        query = claim_visibility_filter(user)
+        rows = list(get_database()["claims"].find(
+            query, {"_id": 0}
+        ).sort("created_at", DESCENDING).limit(250))
+        safe_rows = [customer_claim_view(row) for row in rows]
+        return {"items": safe_rows, "count": len(safe_rows)}
+    except PyMongoError as exc:
+        raise HTTPException(status_code=503, detail="Unable to retrieve your claims.") from exc
+
+
+@app.get("/api/customer/claims/{claim_id}")
+def get_customer_claim(claim_id: str, user: dict = Depends(require_permissions("own_claims.view"))):
+    """Return a single claim only when an authorised staff member verified its owner link."""
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    try:
+        claim = get_database()["claims"].find_one(
+            scoped_claim_filter(claim_id, user), {"_id": 0}
+        )
+        if not claim:
+            raise HTTPException(status_code=404, detail="Claim not found.")
+        return customer_claim_view(claim)
+    except PyMongoError as exc:
+        raise HTTPException(status_code=503, detail="Unable to retrieve this claim.") from exc
+
+
+@app.post("/api/claims/{claim_id}/customer-link")
+def verify_and_link_customer_claim(
+    claim_id: str,
+    payload: CustomerClaimLink,
+    actor: dict = Depends(require_permissions("claims.assign"))
+):
+    """Record an authorised staff attestation after off-platform policyholder identity checks."""
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    if payload.identity_verified is not True:
+        raise HTTPException(status_code=422, detail="Confirm that policyholder identity was verified before linking.")
+    db = get_database()
+    claim = db["claims"].find_one(scoped_claim_filter(claim_id, actor))
+    if not claim:
+        raise HTTPException(status_code=404, detail="Claim not found.")
+    customer_email = normalize_email(payload.customer_email)
+    customer = db["users"].find_one({
+        "email": customer_email,
+        "is_active": True,
+        "organisation_id": claim.get("organisation_id")
+    })
+    if not customer or "Customer / Policyholder" not in get_user_roles(customer):
+        raise HTTPException(status_code=422, detail="Select an active Customer / Policyholder account in this organisation.")
+
+    now = datetime.now(timezone.utc).isoformat()
+    verification = {
+        "customer_user_email": customer_email,
+        "customer_identity_verified": True,
+        "customer_identity_verified_at": now,
+        "customer_identity_verified_by": actor.get("email"),
+        "customer_identity_verification_method": payload.verification_method,
+        "customer_identity_verification_reference": payload.verification_reference.strip()
+    }
+    history_event = {
+        **verification,
+        "action": "customer_link_verified",
+        "created_at": now
+    }
+    try:
+        updated = db["claims"].find_one_and_update(
+            scoped_claim_filter(claim_id, actor),
+            {
+                "$set": {
+                    **verification,
+                    "customer_user_name": customer.get("full_name") or customer_email,
+                    "updated_at": now,
+                    "updated_by": actor.get("email")
+                },
+                "$push": {"customer_link_history": history_event}
+            },
+            return_document=ReturnDocument.AFTER,
+            projection={"_id": 0}
+        )
+        if not updated:
+            raise HTTPException(status_code=404, detail="Claim not found.")
+        return updated
+    except HTTPException:
+        raise
+    except PyMongoError as exc:
+        raise HTTPException(status_code=503, detail="Unable to verify and link the customer.") from exc
+
 
 @app.get("/api/claims")
 def list_claims(
@@ -505,7 +967,7 @@ def list_claims(
     status: str | None = Query(default=None, max_length=40),
     loss_cause: str | None = Query(default=None, max_length=120),
     limit: int = Query(default=100, ge=1, le=250),
-    user: dict = Depends(require_roles(*READ_ROLES))
+    user: dict = Depends(require_permissions("claims.view"))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
@@ -514,6 +976,7 @@ def list_claims(
         {"claim_type": "Casualty", "casualty_segment": "Commercial"},
         {"auto_intake_status": "Provisional"}
     ]}]}
+    query["$and"].append(claim_visibility_filter(user))
     if claim_type:
         query["$and"].append({"claim_type": claim_type})
     if status:
@@ -535,16 +998,16 @@ def list_claims(
 
 @app.get("/api/claims/loss-causes")
 def list_recorded_loss_causes(
-    user: dict = Depends(require_roles(*READ_ROLES))
+    user: dict = Depends(require_permissions("claims.view"))
 ):
     """Return only non-empty loss causes already recorded on in-scope claims."""
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
-    scope_query = {"$or": [
+    scope_query = {"$and": [claim_visibility_filter(user), {"$or": [
         {"claim_type": "Property"},
         {"claim_type": "Casualty", "casualty_segment": "Commercial"},
         {"auto_intake_status": "Provisional"}
-    ]}
+    ]}]}
     try:
         recorded_values = get_database()["claims"].distinct("loss_cause", scope_query)
         options = sorted({
@@ -562,12 +1025,12 @@ def list_recorded_loss_causes(
 @app.get("/api/claims/{claim_id}")
 def get_claim_details(
     claim_id: str,
-    user: dict = Depends(require_roles(*READ_ROLES))
+    user: dict = Depends(require_permissions("claims.view"))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     try:
-        claim = get_database()["claims"].find_one({"claim_id": claim_id}, {"_id": 0})
+        claim = get_database()["claims"].find_one(scoped_claim_filter(claim_id, user), {"_id": 0})
         if not claim or (not is_in_scope_claim(claim) and claim.get("auto_intake_status") != "Provisional"):
             raise HTTPException(status_code=404, detail="Claim not found.")
         return claim
@@ -576,7 +1039,7 @@ def get_claim_details(
 
 
 @app.post("/api/claims", status_code=201)
-def create_claim(payload: ClaimCreate, user: dict = Depends(require_roles(*CREATE_CLAIM_ROLES))):
+def create_claim(payload: ClaimCreate, user: dict = Depends(require_permissions("claims.create"))):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable. No claim was saved.")
     try:
@@ -591,8 +1054,23 @@ def create_claim(payload: ClaimCreate, user: dict = Depends(require_roles(*CREAT
         claim_id = f"CLM-{year}-{sequence['sequence']:06d}"
         record = payload.model_dump(mode="json")
         now = datetime.now(timezone.utc).isoformat()
+        organisation_id = user.get("organisation_id")
+        if not organisation_id and user.get("is_global_admin"):
+            default_org = db["organisations"].find_one({"key": "solv-in-default", "status": "active"})
+            organisation_id = default_org.get("organisation_id") if default_org else None
+        if not organisation_id:
+            raise HTTPException(status_code=403, detail="Your account is not assigned to an active organisation.")
+
+        creator_roles = set(get_user_roles(user))
+        assignment = {}
+        if "Property Adjuster" in creator_roles and record.get("claim_type") == "Property":
+            assignment = {"assigned_adjuster_email": user["email"], "assigned_adjuster_name": user.get("full_name")}
+        elif "Casualty Adjuster" in creator_roles and record.get("claim_type") == "Casualty":
+            assignment = {"assigned_adjuster_email": user["email"], "assigned_adjuster_name": user.get("full_name")}
         record.update({
             "claim_id": claim_id,
+            "organisation_id": organisation_id,
+            **assignment,
             "status": "FNOL Received",
             "created_at": now,
             "updated_at": now,
@@ -622,7 +1100,7 @@ EDITABLE_CLAIM_FIELDS = {
 def edit_claim(
     claim_id: str,
     payload: dict = Body(...),
-    user: dict = Depends(require_roles(*CLAIM_EDIT_ROLES))
+    user: dict = Depends(require_permissions("claims.edit"))
 ):
     """Edit claim intake/business fields while preserving claim identity and audit metadata."""
     if not database_is_available():
@@ -633,7 +1111,7 @@ def edit_claim(
     if not payload:
         raise HTTPException(status_code=422, detail="Provide at least one field to update.")
     collection = get_database()["claims"]
-    existing = collection.find_one({"claim_id": claim_id})
+    existing = collection.find_one(scoped_claim_filter(claim_id, user))
     if not existing or (not is_in_scope_claim(existing) and existing.get("auto_intake_status") != "Provisional"):
         raise HTTPException(status_code=404, detail="Claim not found.")
     merged = {key: existing.get(key) for key in EDITABLE_CLAIM_FIELDS}
@@ -652,7 +1130,7 @@ def edit_claim(
     changes.update({"updated_at": now, "updated_by": user["email"]})
     try:
         updated = collection.find_one_and_update(
-            {"claim_id": claim_id},
+            scoped_claim_filter(claim_id, user),
             {"$set": changes},
             return_document=ReturnDocument.AFTER,
             projection={"_id": 0}
@@ -679,7 +1157,7 @@ def update_claim_field(
     claim_id: str,
     field_name: str,
     payload: dict = Body(...),
-    user: dict = Depends(require_roles(*CLAIM_EDIT_ROLES))
+    user: dict = Depends(require_permissions("claims.edit"))
 ):
     """Update or clear one claim field without changing any other field."""
     if not database_is_available():
@@ -694,7 +1172,7 @@ def update_claim_field(
             raise HTTPException(status_code=422, detail="This is a required claim field and cannot be cleared.")
         value = None
     collection = get_database()["claims"]
-    existing = collection.find_one({"claim_id": claim_id})
+    existing = collection.find_one(scoped_claim_filter(claim_id, user))
     if not existing or (not is_in_scope_claim(existing) and existing.get("auto_intake_status") != "Provisional"):
         raise HTTPException(status_code=404, detail="Claim not found.")
     if field_name == "status":
@@ -749,7 +1227,7 @@ def update_claim_field(
     now = datetime.now(timezone.utc).isoformat()
     try:
         updated = collection.find_one_and_update(
-            {"claim_id": claim_id},
+            scoped_claim_filter(claim_id, user),
             {"$set": {field_name: value, "updated_at": now, "updated_by": user["email"]}},
             return_document=ReturnDocument.AFTER,
             projection={"_id": 0}
@@ -765,22 +1243,36 @@ def update_claim_field(
 @app.delete("/api/claims/{claim_id}")
 def delete_claim(
     claim_id: str,
-    user: dict = Depends(require_roles(*CLAIM_DELETE_ROLES))
+    user: dict = Depends(require_permissions("claims.delete"))
 ):
     """Permanently delete a claim and its claim-linked evidence and derived assessments."""
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     db = get_database()
-    existing = db["claims"].find_one({"claim_id": claim_id}, {"_id": 0, "claim_id": 1})
+    existing = db["claims"].find_one(
+        scoped_claim_filter(claim_id, user),
+        {"_id": 0, "claim_id": 1, "organisation_id": 1}
+    )
     if not existing:
         raise HTTPException(status_code=404, detail="Claim not found.")
+    child_scope = {
+        "claim_id": claim_id,
+        "organisation_id": existing.get("organisation_id"),
+    }
+    document_scope = {
+        "metadata.claim_id": claim_id,
+        "metadata.organisation_id": existing.get("organisation_id"),
+    }
     try:
         bucket = GridFSBucket(db, bucket_name="claim_documents")
-        for stored_file in bucket.find({"metadata.claim_id": claim_id}):
+        for stored_file in bucket.find(document_scope):
             bucket.delete(stored_file._id)
-        for collection_name in ("financial_estimates", "damage_assessments", "coverage_assessments"):
-            db[collection_name].delete_many({"claim_id": claim_id})
-        db["claims"].delete_one({"claim_id": claim_id})
+        for collection_name in (
+            "financial_estimates", "damage_assessments", "coverage_assessments",
+            "adjuster_reports", "comparison_comments", "email_intake",
+        ):
+            db[collection_name].delete_many(child_scope)
+        db["claims"].delete_one(scoped_claim_filter(claim_id, user))
         return {"deleted": True, "claim_id": claim_id}
     except PyMongoError as exc:
         raise HTTPException(status_code=503, detail="Unable to fully delete the claim and linked records.") from exc
@@ -790,13 +1282,15 @@ def delete_claim(
 def update_claim_status(
     claim_id: str,
     payload: ClaimStatusUpdate,
-    user: dict = Depends(require_roles(*STATUS_ROLES))
+    user: dict = Depends(require_permissions("claims.edit"))
 ):
+    if payload.status == "Approved" and "claims.approve" not in get_effective_permissions(user):
+        raise HTTPException(status_code=403, detail="Your account needs the claims.approve permission to approve a claim.")
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     try:
         updated = get_database()["claims"].find_one_and_update(
-            {"claim_id": claim_id},
+            scoped_claim_filter(claim_id, user),
             {"$set": {
                 "status": payload.status,
                 "updated_at": datetime.now(timezone.utc).isoformat(),
@@ -828,11 +1322,11 @@ MAX_CLAIM_DOCUMENT_BYTES = 15 * 1024 * 1024
 async def upload_claim_document(
     claim_id: str,
     file: UploadFile = File(...),
-    user: dict = Depends(require_roles(*CREATE_CLAIM_ROLES))
+    user: dict = Depends(require_permissions("evidence.upload"))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
-    claim = get_database()["claims"].find_one({"claim_id": claim_id}, {"_id": 0, "claim_id": 1})
+    claim = get_database()["claims"].find_one(scoped_claim_filter(claim_id, user), {"_id": 0, "claim_id": 1, "organisation_id": 1})
     if not claim:
         raise HTTPException(status_code=404, detail="Claim not found.")
     content_type = (file.content_type or "").lower()
@@ -860,7 +1354,7 @@ async def upload_claim_document(
         file_id = bucket.upload_from_stream(
             filename, io.BytesIO(content),
             metadata={
-                "claim_id": claim_id, "content_type": content_type,
+                "claim_id": claim_id, "organisation_id": claim.get("organisation_id"), "content_type": content_type,
                 "size": len(content), "uploaded_at": now, "uploaded_by": user["email"]
             }
         )
@@ -876,14 +1370,21 @@ async def upload_claim_document(
 @app.get("/api/claims/{claim_id}/documents")
 def list_claim_documents(
     claim_id: str,
-    user: dict = Depends(require_roles(*READ_ROLES))
+    user: dict = Depends(require_permissions("evidence.view"))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
-    if not get_database()["claims"].find_one({"claim_id": claim_id}, {"_id": 1}):
+    claim = get_database()["claims"].find_one(
+        scoped_claim_filter(claim_id, user),
+        {"_id": 0, "claim_id": 1, "organisation_id": 1}
+    )
+    if not claim:
         raise HTTPException(status_code=404, detail="Claim not found.")
     bucket = GridFSBucket(get_database(), bucket_name="claim_documents")
-    rows = list(bucket.find({"metadata.claim_id": claim_id}).sort("uploadDate", DESCENDING).limit(200))
+    rows = list(bucket.find({
+        "metadata.claim_id": claim_id,
+        "metadata.organisation_id": claim.get("organisation_id"),
+    }).sort("uploadDate", DESCENDING).limit(200))
     return {"items": [{
         "file_id": str(row._id), "claim_id": claim_id, "filename": row.filename,
         "content_type": row.metadata.get("content_type", "application/octet-stream"),
@@ -896,7 +1397,7 @@ def list_claim_documents(
 def download_claim_document(
     claim_id: str,
     file_id: str,
-    user: dict = Depends(require_roles(*READ_ROLES))
+    user: dict = Depends(require_permissions("evidence.view"))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
@@ -904,10 +1405,20 @@ def download_claim_document(
         object_id = ObjectId(file_id)
     except InvalidId as exc:
         raise HTTPException(status_code=400, detail="Invalid document ID.") from exc
-    bucket = GridFSBucket(get_database(), bucket_name="claim_documents")
+    db = get_database()
+    claim = db["claims"].find_one(
+        scoped_claim_filter(claim_id, user),
+        {"_id": 0, "claim_id": 1, "organisation_id": 1}
+    )
+    if not claim:
+        raise HTTPException(status_code=404, detail="Claim not found.")
+    bucket = GridFSBucket(db, bucket_name="claim_documents")
     try:
         stored = bucket.open_download_stream(object_id)
-        if stored.metadata.get("claim_id") != claim_id:
+        if (
+            stored.metadata.get("claim_id") != claim_id
+            or stored.metadata.get("organisation_id") != claim.get("organisation_id")
+        ):
             raise HTTPException(status_code=404, detail="Document not found for this claim.")
         content = stored.read()
         return Response(
@@ -919,6 +1430,44 @@ def download_claim_document(
         raise HTTPException(status_code=404, detail="Document not found.") from exc
     except PyMongoError as exc:
         raise HTTPException(status_code=503, detail="Unable to retrieve the claim document.") from exc
+
+
+@app.delete("/api/claims/{claim_id}/documents/{file_id}")
+def delete_claim_document(
+    claim_id: str,
+    file_id: str,
+    user: dict = Depends(require_permissions("evidence.delete"))
+):
+    """Delete one evidence file only after validating its parent claim and tenant."""
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    try:
+        object_id = ObjectId(file_id)
+    except InvalidId as exc:
+        raise HTTPException(status_code=400, detail="Invalid document ID.") from exc
+
+    db = get_database()
+    claim = db["claims"].find_one(
+        scoped_claim_filter(claim_id, user),
+        {"_id": 0, "claim_id": 1, "organisation_id": 1}
+    )
+    if not claim:
+        raise HTTPException(status_code=404, detail="Claim not found.")
+
+    bucket = GridFSBucket(db, bucket_name="claim_documents")
+    try:
+        stored = bucket.open_download_stream(object_id)
+        if (
+            stored.metadata.get("claim_id") != claim_id
+            or stored.metadata.get("organisation_id") != claim.get("organisation_id")
+        ):
+            raise HTTPException(status_code=404, detail="Document not found for this claim.")
+        bucket.delete(object_id)
+        return {"deleted": True, "claim_id": claim_id, "file_id": file_id}
+    except NoFile as exc:
+        raise HTTPException(status_code=404, detail="Document not found.") from exc
+    except PyMongoError as exc:
+        raise HTTPException(status_code=503, detail="Unable to delete the claim document.") from exc
 
 
 # Phase 4: AI-assisted visual damage analysis
@@ -940,7 +1489,7 @@ MAX_DAMAGE_IMAGE_BYTES = 10 * 1024 * 1024
 async def analyse_damage_image(
     image: UploadFile = File(...),
     claim_id: str | None = Form(default=None, max_length=40),
-    user: dict = Depends(require_roles(*DAMAGE_ANALYSIS_ROLES))
+    user: dict = Depends(require_permissions("damage.analyse"))
 ):
     if not GEMINI_API_KEY:
         raise HTTPException(status_code=503, detail="AI damage analysis is not configured. Add GEMINI_API_KEY to backend/.env.")
@@ -954,9 +1503,10 @@ async def analyse_damage_image(
         raise HTTPException(status_code=400, detail="The uploaded image is empty.")
     if len(image_bytes) > MAX_DAMAGE_IMAGE_BYTES:
         raise HTTPException(status_code=413, detail="Image size must not exceed 10 MB.")
+    claim = None
     if claim_id:
-        claim = get_database()["claims"].find_one({"claim_id": claim_id}, {
-            "_id": 0, "claim_id": 1, "claim_type": 1, "casualty_segment": 1
+        claim = get_database()["claims"].find_one(scoped_claim_filter(claim_id, user), {
+            "_id": 0, "claim_id": 1, "claim_type": 1, "casualty_segment": 1, "organisation_id": 1
         })
         if not claim:
             raise HTTPException(status_code=404, detail="The selected claim ID was not found.")
@@ -1016,6 +1566,7 @@ Keep findings concise and distinguish observation from hypothesis.
     result["possible_cause"] = str(result.get("possible_cause") or "Undetermined")[:500]
     record = {
         "claim_id": claim_id,
+        "organisation_id": (claim.get("organisation_id") if claim else resolve_write_organisation_id(get_database(), user)),
         "file_name": (image.filename or "uploaded-image")[:255],
         "mime_type": content_type,
         "damage_category": result["damage_category"],
@@ -1043,26 +1594,31 @@ Keep findings concise and distinguish observation from hypothesis.
 @app.get("/api/claims/{claim_id}/damage-assessments")
 def list_damage_assessments(
     claim_id: str,
-    user: dict = Depends(require_roles(*READ_ROLES))
+    user: dict = Depends(require_permissions("damage.view"))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
-    if not get_database()["claims"].find_one({"claim_id": claim_id}, {"_id": 0}):
+    claim = get_database()["claims"].find_one(
+        scoped_claim_filter(claim_id, user),
+        {"_id": 0, "claim_id": 1, "organisation_id": 1}
+    )
+    if not claim:
         raise HTTPException(status_code=404, detail="Claim not found.")
-    rows = list(get_database()["damage_assessments"].find(
-        {"claim_id": claim_id}
-    ).sort("created_at", DESCENDING).limit(100))
+    rows = list(get_database()["damage_assessments"].find({
+        "claim_id": claim_id,
+        "organisation_id": claim.get("organisation_id"),
+    }).sort("created_at", DESCENDING).limit(100))
     for row in rows:
         row["assessment_id"] = str(row.pop("_id"))
     return {"items": rows, "count": len(rows)}
 
 @app.patch("/api/damage-assessments/{assessment_id}/review")
-def review_damage_assessment(assessment_id: str, payload: DamageReviewUpdate, user: dict = Depends(require_roles(*DAMAGE_REVIEW_ROLES))):
+def review_damage_assessment(assessment_id: str, payload: DamageReviewUpdate, user: dict = Depends(require_permissions("damage.review"))):
     allowed_statuses = {"Reviewed", "More Evidence Required", "Approved", "Rejected"}
     if payload.status not in allowed_statuses:
         raise HTTPException(status_code=422, detail="Choose a valid assessment review status.")
-    if payload.status in {"Approved", "Rejected"} and user["role"] not in DAMAGE_APPROVAL_ROLES:
-        raise HTTPException(status_code=403, detail="Only an authorised approver can approve or reject an AI assessment.")
+    if payload.status in {"Approved", "Rejected"} and "claims.approve" not in get_effective_permissions(user):
+        raise HTTPException(status_code=403, detail="Your account needs the claims.approve permission to approve or reject an AI assessment.")
     if payload.status in {"More Evidence Required", "Rejected"} and not payload.notes.strip():
         raise HTTPException(status_code=422, detail="Reviewer notes are required for this decision.")
     try:
@@ -1074,13 +1630,28 @@ def review_damage_assessment(assessment_id: str, payload: DamageReviewUpdate, us
     now = datetime.now(timezone.utc).isoformat()
     review_entry = {"status": payload.status, "notes": payload.notes.strip(), "reviewed_at": now, "reviewed_by": user["email"], "reviewer_role": user["role"]}
     try:
-        updated = get_database()["damage_assessments"].find_one_and_update(
-            {"_id": object_id, "status": {"$nin": ["Approved", "Rejected"]}},
+        assessment_collection = get_database()["damage_assessments"]
+        assessment = assessment_collection.find_one({"_id": object_id})
+        parent_claim = (
+            get_database()["claims"].find_one(
+                scoped_claim_filter(assessment.get("claim_id", ""), user),
+                {"_id": 0, "claim_id": 1, "organisation_id": 1}
+            ) if assessment else None
+        )
+        if not assessment or not parent_claim or assessment.get("organisation_id") != parent_claim.get("organisation_id"):
+            raise HTTPException(status_code=404, detail="Damage assessment not found.")
+        child_scope = {
+            "_id": object_id,
+            "claim_id": assessment.get("claim_id"),
+            "organisation_id": parent_claim.get("organisation_id"),
+        }
+        updated = assessment_collection.find_one_and_update(
+            {**child_scope, "status": {"$nin": ["Approved", "Rejected"]}},
             {"$set": {"status": payload.status, "updated_at": now, "updated_by": user["email"]}, "$push": {"review_history": review_entry}},
             return_document=ReturnDocument.AFTER, projection={"_id": 0}
         )
         if not updated:
-            existing = get_database()["damage_assessments"].find_one({"_id": object_id}, {"status": 1})
+            existing = assessment_collection.find_one(child_scope, {"status": 1})
             if not existing:
                 raise HTTPException(status_code=404, detail="Damage assessment not found.")
             raise HTTPException(status_code=409, detail="This assessment has already been finalised.")
@@ -1104,12 +1675,12 @@ FINANCIAL_ESTIMATE_ROLES = (
 def create_financial_estimate(
     claim_id: str,
     payload: FinancialEstimateRequest,
-    user: dict = Depends(require_roles(*FINANCIAL_ESTIMATE_ROLES))
+    user: dict = Depends(require_permissions("finance.edit"))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable. The estimate was not saved.")
     db = get_database()
-    claim = db["claims"].find_one({"claim_id": claim_id}, {
+    claim = db["claims"].find_one(scoped_claim_filter(claim_id, user), {
         "_id": 0, "claim_id": 1, "currency": 1, "country_code": 1,
         "loss_location": 1, "region": 1, "locality": 1, "incident_date": 1,
         "claim_type": 1, "casualty_segment": 1
@@ -1126,7 +1697,11 @@ def create_financial_estimate(
             damage_object_id = ObjectId(payload.source_damage_assessment_id)
         except InvalidId as exc:
             raise HTTPException(status_code=422, detail="Invalid source damage assessment ID.") from exc
-        source_damage_assessment = db["damage_assessments"].find_one({"_id": damage_object_id, "claim_id": claim_id})
+        source_damage_assessment = db["damage_assessments"].find_one({
+            "_id": damage_object_id,
+            "claim_id": claim_id,
+            "organisation_id": claim.get("organisation_id"),
+        })
         if not source_damage_assessment:
             raise HTTPException(status_code=404, detail="The selected damage assessment was not found for this claim.")
         if source_damage_assessment.get("status") not in {"Reviewed", "Approved"}:
@@ -1150,7 +1725,7 @@ def create_financial_estimate(
             rate_object_id = ObjectId(item.repair_rate_id)
         except InvalidId as exc:
             raise HTTPException(status_code=422, detail="Invalid repair catalogue rate ID.") from exc
-        rate = db["repair_rates"].find_one({"_id": rate_object_id, "status": "Active"})
+        rate = db["repair_rates"].find_one({"_id": rate_object_id, "status": "Active", "organisation_id": claim.get("organisation_id")})
         if not rate:
             raise HTTPException(status_code=409, detail="The selected repair rate is no longer active. Refresh the catalogue.")
         def location_key(value):
@@ -1193,7 +1768,8 @@ def create_financial_estimate(
         rules = list(db["tax_rules"].find({
             "country_code": payload.country_code,
             "currency": payload.currency,
-            "status": "Active"
+            "status": "Active",
+            "organisation_id": claim.get("organisation_id")
         }))
         selected_rules, ambiguous_tax_names = select_applicable_tax_rules(
             rules, country_code=payload.country_code, currency=payload.currency,
@@ -1259,7 +1835,7 @@ def create_financial_estimate(
     )
     now = datetime.now(timezone.utc).isoformat()
     record = {
-        **result, "claim_id": claim_id, "claim_type": claim.get("claim_type"),
+        **result, "claim_id": claim_id, "organisation_id": claim.get("organisation_id"), "claim_type": claim.get("claim_type"),
         "source_damage_assessment": ({
             "assessment_id": str(source_damage_assessment["_id"]),
             "status": source_damage_assessment.get("status"),
@@ -1288,13 +1864,20 @@ def create_financial_estimate(
 @app.get("/api/claims/{claim_id}/financial-estimates")
 def list_financial_estimates(
     claim_id: str,
-    user: dict = Depends(require_roles(*READ_ROLES))
+    user: dict = Depends(require_permissions("finance.view"))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
-    if not get_database()["claims"].find_one({"claim_id": claim_id}, {"_id": 1}):
+    claim = get_database()["claims"].find_one(
+        scoped_claim_filter(claim_id, user),
+        {"_id": 0, "claim_id": 1, "organisation_id": 1}
+    )
+    if not claim:
         raise HTTPException(status_code=404, detail="Claim not found.")
-    rows = list(get_database()["financial_estimates"].find({"claim_id": claim_id}).sort("created_at", DESCENDING).limit(100))
+    rows = list(get_database()["financial_estimates"].find({
+        "claim_id": claim_id,
+        "organisation_id": claim.get("organisation_id"),
+    }).sort("created_at", DESCENDING).limit(100))
     for row in rows:
         row["estimate_id"] = str(row.pop("_id"))
     return {"items": rows, "count": len(rows)}
@@ -1305,28 +1888,32 @@ def review_financial_estimate(
     claim_id: str,
     estimate_id: str,
     payload: FinancialEstimateReviewUpdate,
-    user: dict = Depends(require_roles(
-        "Super Administrator", "Insurance Company Administrator", "Claims Manager",
-        "Property Adjuster", "Casualty Adjuster", "Surveyor", "Actuarial Analyst", "Approver"
-    ))
+    user: dict = Depends(require_permissions("finance.approve"))
 ):
     allowed = {"Reviewed", "More Evidence Required", "Approved", "Rejected"}
     if payload.status not in allowed:
         raise HTTPException(status_code=422, detail=f"Status must be one of: {', '.join(sorted(allowed))}.")
     if payload.status in {"More Evidence Required", "Rejected"} and not payload.notes.strip():
         raise HTTPException(status_code=422, detail="Reviewer notes are required for this decision.")
-    if payload.status in {"Approved", "Rejected"} and user.get("role") not in {
-        "Super Administrator", "Insurance Company Administrator", "Claims Manager", "Approver"
-    }:
-        raise HTTPException(status_code=403, detail="Your role cannot approve or reject financial estimates.")
     try:
         object_id = ObjectId(estimate_id)
     except InvalidId as exc:
         raise HTTPException(status_code=400, detail="Invalid financial estimate ID.") from exc
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    claim = get_database()["claims"].find_one(
+        scoped_claim_filter(claim_id, user),
+        {"_id": 0, "claim_id": 1, "organisation_id": 1}
+    )
+    if not claim:
+        raise HTTPException(status_code=404, detail="Claim not found.")
+    child_scope = {
+        "_id": object_id,
+        "claim_id": claim_id,
+        "organisation_id": claim.get("organisation_id"),
+    }
     collection = get_database()["financial_estimates"]
-    existing = collection.find_one({"_id": object_id, "claim_id": claim_id})
+    existing = collection.find_one(child_scope)
     if not existing:
         raise HTTPException(status_code=404, detail="Financial estimate not found for this claim.")
     if existing.get("review_status") in {"Approved", "Rejected"}:
@@ -1337,7 +1924,7 @@ def review_financial_estimate(
         "reviewer_email": user["email"], "reviewer_role": user["role"], "reviewed_at": now
     }
     updated = collection.find_one_and_update(
-        {"_id": object_id, "claim_id": claim_id, "review_status": existing.get("review_status")},
+        {**child_scope, "review_status": existing.get("review_status")},
         {"$set": {"review_status": payload.status, "updated_at": now},
          "$push": {"review_history": event}},
         return_document=ReturnDocument.AFTER
@@ -1362,11 +1949,13 @@ POLICY_ADMIN_ROLES = ("Super Administrator", "Insurance Company Administrator")
 @app.get("/api/policies")
 def list_policies(
     policy_number: str | None = Query(default=None, max_length=80),
-    user: dict = Depends(require_roles(*POLICY_READ_ROLES))
+    user: dict = Depends(require_permissions("coverage.view"))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
-    query = {"policy_number": policy_number.strip()} if policy_number else {}
+    query = {"$and": [organisation_filter(user)]}
+    if policy_number:
+        query["$and"].append({"policy_number": policy_number.strip()})
     rows = list(get_database()["policies"].find(query).sort("created_at", DESCENDING).limit(250))
     for row in rows:
         row["policy_id"] = str(row.pop("_id"))
@@ -1376,15 +1965,17 @@ def list_policies(
 @app.post("/api/policies", status_code=201)
 def create_policy(
     payload: PolicyCreate,
-    user: dict = Depends(require_roles(*POLICY_ADMIN_ROLES))
+    user: dict = Depends(require_permissions("roles.manage"))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     collection = get_database()["policies"]
-    if collection.find_one({"policy_number": payload.policy_number}):
+    organisation_id = resolve_write_organisation_id(get_database(), user)
+    if collection.find_one({"policy_number": payload.policy_number, "organisation_id": organisation_id}):
         raise HTTPException(status_code=409, detail="A policy with this policy number already exists in the current workspace.")
     record = payload.model_dump(mode="json")
     record.update({
+        "organisation_id": organisation_id,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "created_by": user["email"]
     })
@@ -1401,17 +1992,17 @@ def create_policy(
 def create_coverage_assessment(
     claim_id: str,
     payload: CoverageAssessmentRequest,
-    user: dict = Depends(require_roles(*POLICY_READ_ROLES))
+    user: dict = Depends(require_permissions("coverage.review"))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     db = get_database()
-    claim = db["claims"].find_one({"claim_id": claim_id}, {"_id": 0})
+    claim = db["claims"].find_one(scoped_claim_filter(claim_id, user), {"_id": 0})
     if not claim:
         raise HTTPException(status_code=404, detail="Claim not found.")
     if not is_in_scope_claim(claim):
         raise HTTPException(status_code=422, detail="Coverage screening is limited to all Property and Commercial Casualty claims.")
-    policy = db["policies"].find_one({"policy_number": claim.get("policy_number")})
+    policy = db["policies"].find_one({"policy_number": claim.get("policy_number"), "organisation_id": claim.get("organisation_id")})
     result = assess_policy(policy, claim, payload)
     now = datetime.now(timezone.utc).isoformat()
     policy_snapshot = None
@@ -1433,7 +2024,7 @@ def create_coverage_assessment(
             "policy_wording_reference": policy.get("policy_wording_reference")
         }
     record = {
-        **result, "claim_id": claim_id, "policy_number": claim.get("policy_number"),
+        **result, "claim_id": claim_id, "organisation_id": claim.get("organisation_id"), "policy_number": claim.get("policy_number"),
         "policy_snapshot": policy_snapshot, "loss_category": payload.loss_category,
         "claimed_amount": str(payload.claimed_amount) if payload.claimed_amount is not None else None,
         "notes": payload.notes, "created_at": now, "created_by": user["email"],
@@ -1451,13 +2042,20 @@ def create_coverage_assessment(
 @app.get("/api/claims/{claim_id}/coverage-assessments")
 def list_coverage_assessments(
     claim_id: str,
-    user: dict = Depends(require_roles(*POLICY_READ_ROLES))
+    user: dict = Depends(require_permissions("coverage.view"))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
-    if not get_database()["claims"].find_one({"claim_id": claim_id}, {"_id": 1}):
+    claim = get_database()["claims"].find_one(
+        scoped_claim_filter(claim_id, user),
+        {"_id": 0, "claim_id": 1, "organisation_id": 1}
+    )
+    if not claim:
         raise HTTPException(status_code=404, detail="Claim not found.")
-    rows = list(get_database()["coverage_assessments"].find({"claim_id": claim_id}).sort("created_at", DESCENDING).limit(100))
+    rows = list(get_database()["coverage_assessments"].find({
+        "claim_id": claim_id,
+        "organisation_id": claim.get("organisation_id"),
+    }).sort("created_at", DESCENDING).limit(100))
     for row in rows:
         row["coverage_assessment_id"] = str(row.pop("_id"))
     return {"items": rows, "count": len(rows)}
@@ -1477,11 +2075,11 @@ TAX_RULE_ADMIN_ROLES = ("Super Administrator", "Insurance Company Administrator"
 def list_tax_rules(
     country_code: str | None = Query(default=None, min_length=2, max_length=2),
     status: str | None = Query(default=None, pattern="^(Draft|Active|Inactive)$"),
-    user: dict = Depends(require_roles(*TAX_RULE_READ_ROLES))
+    user: dict = Depends(require_permissions("finance.view"))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
-    query = {}
+    query = {"organisation_id": resolve_write_organisation_id(get_database(), user)}
     if country_code:
         query["country_code"] = country_code.upper()
     if status:
@@ -1492,12 +2090,13 @@ def list_tax_rules(
     return {"items": rows, "count": len(rows)}
 
 @app.post("/api/tax-rules", status_code=201)
-def create_tax_rule(payload: TaxRuleCreate, user: dict = Depends(require_roles(*TAX_RULE_ADMIN_ROLES))):
+def create_tax_rule(payload: TaxRuleCreate, user: dict = Depends(require_permissions("roles.manage"))):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     now = datetime.now(timezone.utc).isoformat()
     record = payload.model_dump(mode="json")
     record.update({
+        "organisation_id": resolve_write_organisation_id(get_database(), user),
         "status": "Draft", "created_at": now, "created_by": user["email"],
         "verified_by": None, "verified_at": None, "activated_at": None,
         "version": 1
@@ -1514,7 +2113,7 @@ def create_tax_rule(payload: TaxRuleCreate, user: dict = Depends(require_roles(*
 def change_tax_rule_status(
     rule_id: str,
     payload: TaxRuleStatusUpdate,
-    user: dict = Depends(require_roles(*TAX_RULE_ADMIN_ROLES))
+    user: dict = Depends(require_permissions("roles.manage"))
 ):
     try:
         object_id = ObjectId(rule_id)
@@ -1523,7 +2122,7 @@ def change_tax_rule_status(
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     collection = get_database()["tax_rules"]
-    existing = collection.find_one({"_id": object_id})
+    existing = collection.find_one({"_id": object_id, "organisation_id": resolve_write_organisation_id(get_database(), user)})
     if not existing:
         raise HTTPException(status_code=404, detail="Tax rule not found.")
     if existing.get("status") == "Active" and payload.status == "Active":
@@ -1540,7 +2139,7 @@ def change_tax_rule_status(
             "verification_note": payload.verification_note.strip()
         })
     updated = collection.find_one_and_update(
-        {"_id": object_id, "status": existing.get("status")},
+        {"_id": object_id, "organisation_id": existing.get("organisation_id"), "status": existing.get("status")},
         {"$set": changes}, return_document=ReturnDocument.AFTER, projection={"_id": 0}
     )
     if not updated:
@@ -1552,11 +2151,11 @@ def change_tax_rule_status(
 def applicable_tax_rules(
     claim_id: str,
     tax_point_date: str = Query(..., min_length=10, max_length=10),
-    user: dict = Depends(require_roles(*TAX_RULE_READ_ROLES))
+    user: dict = Depends(require_permissions("finance.view"))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
-    claim = get_database()["claims"].find_one({"claim_id": claim_id}, {"_id": 0})
+    claim = get_database()["claims"].find_one(scoped_claim_filter(claim_id, user), {"_id": 0})
     if not claim:
         raise HTTPException(status_code=404, detail="Claim not found.")
     try:
@@ -1566,7 +2165,7 @@ def applicable_tax_rules(
     candidates = list(get_database()["tax_rules"].find({
         "country_code": (claim.get("country_code") or "").upper(),
         "currency": (claim.get("currency") or "").upper(),
-        "status": "Active"
+        "status": "Active", "organisation_id": claim.get("organisation_id")
     }))
     selected, ambiguous = select_applicable_tax_rules(
         candidates, country_code=claim.get("country_code", ""), currency=claim.get("currency", ""),
@@ -1600,11 +2199,11 @@ def list_repair_rates(
     city: str | None = Query(default=None, max_length=100),
     category: str | None = Query(default=None, max_length=80),
     status: str | None = Query(default=None, pattern="^(Draft|Active|Inactive)$"),
-    user: dict = Depends(require_roles(*REPAIR_RATE_READ_ROLES))
+    user: dict = Depends(require_permissions("finance.view"))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
-    query = {}
+    query = {"organisation_id": resolve_write_organisation_id(get_database(), user)}
     if country_code:
         query["country_code"] = country_code.strip().upper()
     if state:
@@ -1627,7 +2226,7 @@ def list_repair_rates(
 @app.post("/api/repair-rates", status_code=201)
 def create_repair_rate(
     payload: RepairRateCreate,
-    user: dict = Depends(require_roles(*REPAIR_RATE_ADMIN_ROLES))
+    user: dict = Depends(require_permissions("roles.manage"))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
@@ -1637,6 +2236,7 @@ def create_repair_rate(
     record = payload.model_dump(mode="json")
     record["unit_rate"] = str(payload.unit_rate)
     record.update({
+        "organisation_id": resolve_write_organisation_id(get_database(), user),
         "status": "Draft", "version": 1, "created_at": now, "created_by": user["email"],
         "verified_by": None, "verified_at": None, "activated_at": None,
         "verification_note": None
@@ -1654,7 +2254,7 @@ def create_repair_rate(
 def change_repair_rate_status(
     rate_id: str,
     payload: RepairRateStatusUpdate,
-    user: dict = Depends(require_roles(*REPAIR_RATE_ADMIN_ROLES))
+    user: dict = Depends(require_permissions("roles.manage"))
 ):
     try:
         object_id = ObjectId(rate_id)
@@ -1663,7 +2263,7 @@ def change_repair_rate_status(
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     collection = get_database()["repair_rates"]
-    existing = collection.find_one({"_id": object_id})
+    existing = collection.find_one({"_id": object_id, "organisation_id": resolve_write_organisation_id(get_database(), user)})
     if not existing:
         raise HTTPException(status_code=404, detail="Repair rate not found.")
     if existing.get("status") == "Active" and payload.status == "Active":
@@ -1678,7 +2278,7 @@ def change_repair_rate_status(
             raise HTTPException(status_code=422, detail="A named pricing source and source reference are required before activation.")
         changes.update({"verified_by": user["email"], "verified_at": now, "activated_at": now})
     updated = collection.find_one_and_update(
-        {"_id": object_id, "status": existing.get("status")},
+        {"_id": object_id, "organisation_id": existing.get("organisation_id"), "status": existing.get("status")},
         {"$set": changes}, return_document=ReturnDocument.AFTER, projection={"_id": 0}
     )
     if not updated:
@@ -1692,11 +2292,11 @@ def change_repair_rate_status(
 def applicable_repair_rates(
     claim_id: str,
     category: str | None = Query(default=None, max_length=80),
-    user: dict = Depends(require_roles(*REPAIR_RATE_READ_ROLES))
+    user: dict = Depends(require_permissions("finance.view"))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
-    claim = get_database()["claims"].find_one({"claim_id": claim_id}, {"_id": 0})
+    claim = get_database()["claims"].find_one(scoped_claim_filter(claim_id, user), {"_id": 0})
     if not claim:
         raise HTTPException(status_code=404, detail="Claim not found.")
     if claim.get("claim_type") != "Property":
@@ -1705,7 +2305,7 @@ def applicable_repair_rates(
     currency = (claim.get("currency") or "").upper()
     state = (claim.get("region") or "").strip()
     city = (claim.get("locality") or "").strip()
-    query = {"country_code": country, "currency": currency, "status": "Active"}
+    query = {"country_code": country, "currency": currency, "status": "Active", "organisation_id": claim.get("organisation_id")}
     if state:
         query["state"] = {"$regex": f"^{state}$", "$options": "i"}
     if city:
@@ -1747,16 +2347,19 @@ EMAIL_INTAKE_REVIEW_ROLES = (
 @app.post("/api/email-intake", status_code=201)
 def receive_email_intake(
     payload: EmailIntakeCreate,
-    user: dict = Depends(require_roles(*CREATE_CLAIM_ROLES))
+    user: dict = Depends(require_permissions("claims.create"))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable. The email was not queued.")
     collection = get_database()["email_intake"]
+    organisation_id = resolve_write_organisation_id(get_database(), user)
+    org_scope = {"organisation_id": organisation_id}
     try:
         collection.create_index([("provider", 1), ("provider_message_id", 1)], unique=True)
         existing = collection.find_one({
             "provider": payload.provider,
-            "provider_message_id": payload.provider_message_id
+            "provider_message_id": payload.provider_message_id,
+            **org_scope
         }, {"_id": 0, "body_text": 0})
         if existing:
             return {"duplicate": True, "item": existing}
@@ -1772,6 +2375,7 @@ def receive_email_intake(
             "received_at": received_at,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "created_by": user["email"],
+            "organisation_id": organisation_id,
             **parsed,
             "received_at": received_at,
             "review_status": parsed["intake_status"],
@@ -1788,8 +2392,14 @@ def receive_email_intake(
         if isinstance(exc, DuplicateKeyError):
             existing = collection.find_one({
                 "provider": payload.provider,
-                "provider_message_id": payload.provider_message_id
+                "provider_message_id": payload.provider_message_id,
+                **org_scope
             }, {"_id": 0, "body_text": 0})
+            if not existing:
+                raise HTTPException(
+                    status_code=409,
+                    detail="This provider message is already registered under another organisation. Verify the mailbox-to-organisation binding."
+                )
             return {"duplicate": True, "item": existing}
         if isinstance(exc, PyMongoError):
             raise HTTPException(status_code=503, detail="Unable to store the incoming email.") from exc
@@ -1800,11 +2410,13 @@ def receive_email_intake(
 def list_email_intake(
     status: str | None = Query(default=None, max_length=40),
     limit: int = Query(default=100, ge=1, le=250),
-    user: dict = Depends(require_roles(*READ_ROLES))
+    user: dict = Depends(require_permissions("claims.view"))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
-    query = {"review_status": status} if status else {}
+    query = {"$and": [organisation_filter(user)]}
+    if status:
+        query["$and"].append({"review_status": status})
     try:
         rows = list(get_database()["email_intake"].find(
             query, {"_id": 0, "body_text": 0}
@@ -1817,11 +2429,11 @@ def list_email_intake(
 @app.get("/api/email-intake/{intake_id}")
 def get_email_intake(
     intake_id: str,
-    user: dict = Depends(require_roles(*READ_ROLES))
+    user: dict = Depends(require_permissions("claims.view"))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
-    record = get_database()["email_intake"].find_one({"intake_id": intake_id}, {"_id": 0})
+    record = get_database()["email_intake"].find_one({"$and": [{"intake_id": intake_id}, organisation_filter(user)]}, {"_id": 0})
     if not record:
         raise HTTPException(status_code=404, detail="Email intake record not found.")
     return record
@@ -1831,14 +2443,14 @@ def get_email_intake(
 def review_email_intake(
     intake_id: str,
     payload: EmailIntakeReview,
-    user: dict = Depends(require_roles(*EMAIL_INTAKE_REVIEW_ROLES))
+    user: dict = Depends(require_permissions("claims.approve"))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     if payload.status == "Rejected" and not payload.notes.strip():
         raise HTTPException(status_code=422, detail="A reason is required when rejecting an email intake.")
     collection = get_database()["email_intake"]
-    record = collection.find_one({"intake_id": intake_id})
+    record = collection.find_one({"$and": [{"intake_id": intake_id}, organisation_filter(user)]})
     if not record:
         raise HTTPException(status_code=404, detail="Email intake record not found.")
     if record.get("review_status") == "Out of Scope":
@@ -1855,7 +2467,7 @@ def review_email_intake(
         "reviewed_by": user["email"], "reviewer_role": user["role"]
     })
     updated = collection.find_one_and_update(
-        {"intake_id": intake_id, "claim_id": {"$exists": False}},
+        {"$and": [{"intake_id": intake_id, "claim_id": {"$exists": False}}, organisation_filter(user)]},
         {"$set": {"review_status": payload.status, "review_history": history,
                   "confirmed_claim_type": confirmed_type if payload.status == "Reviewed" else record.get("confirmed_claim_type"),
                   "reviewed_at": datetime.now(timezone.utc).isoformat(),
@@ -1872,17 +2484,18 @@ def review_email_intake(
 def create_claim_from_email_intake(
     intake_id: str,
     payload: ClaimCreate,
-    user: dict = Depends(require_roles(*CREATE_CLAIM_ROLES))
+    user: dict = Depends(require_permissions("claims.create"))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     db = get_database()
     collection = db["email_intake"]
+    org_scope = organisation_filter(user)
     try:
         db["claims"].create_index("source_intake_id", unique=True, sparse=True)
-        existing_claim = db["claims"].find_one({"source_intake_id": intake_id}, {"_id": 0})
+        existing_claim = db["claims"].find_one({"$and": [{"source_intake_id": intake_id}, org_scope]}, {"_id": 0})
         if existing_claim:
-            collection.update_one({"intake_id": intake_id}, {"$set": {
+            collection.update_one({"$and": [{"intake_id": intake_id}, org_scope]}, {"$set": {
                 "review_status": "Converted", "conversion_state": "Completed",
                 "claim_id": existing_claim["claim_id"]
             }})
@@ -1890,8 +2503,8 @@ def create_claim_from_email_intake(
     except PyMongoError as exc:
         raise HTTPException(status_code=503, detail="Unable to verify email-to-claim conversion state.") from exc
     record = collection.find_one_and_update(
-        {"intake_id": intake_id, "review_status": "Reviewed",
-         "claim_id": {"$exists": False}, "conversion_state": {"$ne": "Processing"}},
+        {"$and": [{"intake_id": intake_id, "review_status": "Reviewed",
+         "claim_id": {"$exists": False}, "conversion_state": {"$ne": "Processing"}}, org_scope]},
         {"$set": {"conversion_state": "Processing"}},
         return_document=ReturnDocument.AFTER
     )
@@ -1901,7 +2514,7 @@ def create_claim_from_email_intake(
     if ((confirmed_type == "Property" and payload.claim_type != "Property") or
         (confirmed_type == "Commercial Casualty" and
          (payload.claim_type != "Casualty" or payload.casualty_segment != "Commercial"))):
-        collection.update_one({"intake_id": intake_id}, {"$set": {"conversion_state": "Failed"}})
+        collection.update_one({"$and": [{"intake_id": intake_id}, org_scope]}, {"$set": {"conversion_state": "Failed"}})
         raise HTTPException(status_code=422, detail="The claim type must match the reviewed email classification.")
     db = get_database()
     try:
@@ -1913,8 +2526,9 @@ def create_claim_from_email_intake(
         claim_id = f"CLM-{year}-{sequence['sequence']:06d}"
         now = datetime.now(timezone.utc).isoformat()
         claim_record = payload.model_dump(mode="json")
+        intake_organisation_id = record.get("organisation_id") or resolve_write_organisation_id(db, user)
         claim_record.update({
-            "claim_id": claim_id, "status": "FNOL Received",
+            "claim_id": claim_id, "organisation_id": intake_organisation_id, "status": "FNOL Received",
             "created_at": now, "updated_at": now,
             "created_by": user["email"],
             "created_by_name": user.get("full_name") or user["email"],
@@ -1925,21 +2539,21 @@ def create_claim_from_email_intake(
         })
         db["claims"].insert_one(claim_record)
         collection.update_one(
-            {"intake_id": intake_id, "conversion_state": "Processing"},
+            {"$and": [{"intake_id": intake_id, "conversion_state": "Processing"}, org_scope]},
             {"$set": {"review_status": "Converted", "conversion_state": "Completed",
                       "claim_id": claim_id, "converted_at": now,
                       "converted_by": user["email"]}}
         )
         return claim_record
     except PyMongoError as exc:
-        existing_claim = db["claims"].find_one({"source_intake_id": intake_id}, {"_id": 0})
+        existing_claim = db["claims"].find_one({"$and": [{"source_intake_id": intake_id}, org_scope]}, {"_id": 0})
         if existing_claim:
-            collection.update_one({"intake_id": intake_id}, {"$set": {
+            collection.update_one({"$and": [{"intake_id": intake_id}, org_scope]}, {"$set": {
                 "review_status": "Converted", "conversion_state": "Completed",
                 "claim_id": existing_claim["claim_id"]
             }})
             return existing_claim
-        collection.update_one({"intake_id": intake_id, "conversion_state": "Processing"},
+        collection.update_one({"$and": [{"intake_id": intake_id, "conversion_state": "Processing"}, org_scope]},
                               {"$set": {"conversion_state": "Failed"}})
         raise HTTPException(status_code=503, detail="Unable to create the claim from this email.") from exc
 
@@ -1949,7 +2563,7 @@ from .state_tax_matrix import US_STATES
 
 @app.get("/api/tax-research/us-water-restoration")
 def get_us_water_restoration_tax_matrix(
-    user: dict = Depends(require_roles(*READ_ROLES))
+    user: dict = Depends(require_permissions("finance.view"))
 ):
     """Return 50-state official-source research status; this endpoint never supplies rates."""
     items = [dict(state) for state in US_STATES]

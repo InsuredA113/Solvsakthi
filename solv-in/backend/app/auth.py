@@ -7,22 +7,13 @@ from pwdlib import PasswordHash
 from pymongo.errors import PyMongoError
 from .config import JWT_SECRET_KEY, JWT_ALGORITHM, ACCESS_TOKEN_MINUTES
 from .database import get_database, database_is_available
+from .rbac import PERMISSIONS, PREDEFINED_ROLES, get_effective_permissions, get_user_roles, normalize_role, user_has_any_role
 
 password_hash = PasswordHash.recommended()
 bearer = HTTPBearer(auto_error=False)
 
-ROLES = (
-    "Super Administrator",
-    "Insurance Company Administrator",
-    "Claims Manager",
-    "Property Adjuster",
-    "Casualty Adjuster",
-    "Surveyor",
-    "Actuarial Analyst",
-    "Approver",
-    "Auditor",
-    "Customer",
-)
+# Public role catalogue consumed by the existing user-management endpoint.
+ROLES = PREDEFINED_ROLES
 
 def normalize_email(email: str) -> str:
     return email.strip().lower()
@@ -40,9 +31,11 @@ def verify_password(password: str, stored_hash: str) -> bool:
 
 def create_access_token(user: dict) -> str:
     now = datetime.now(timezone.utc)
+    roles = get_user_roles(user)
     payload = {
         "sub": user["email"],
-        "role": user["role"],
+        "role": normalize_role(user.get("role")) or (roles[0] if roles else None),
+        "roles": roles,
         "iat": now,
         "exp": now + timedelta(minutes=ACCESS_TOKEN_MINUTES),
     }
@@ -64,16 +57,58 @@ def get_current_user(credentials: HTTPAuthorizationCredentials | None = Depends(
         user = get_database()["users"].find_one({"email": email, "is_active": True}, {"_id": 0, "password_hash": 0})
         if not user:
             raise unauthorized
+        # Enforce an active organisation for every non-global account.
+        # Global access is granted only by the explicit is_global_admin flag.
+        if user.get("is_global_admin") is True:
+            user["organisation_id"] = None
+        else:
+            organisation_id = user.get("organisation_id")
+            if not organisation_id:
+                raise HTTPException(status_code=403, detail="Your account is not assigned to an organisation.")
+            organisation = get_database()["organisations"].find_one(
+                {"organisation_id": organisation_id, "status": "active"},
+                {"_id": 1}
+            )
+            if not organisation:
+                raise HTTPException(status_code=403, detail="Your organisation is inactive or unavailable.")
+
+        # Backward-compatible normalization: legacy single-role users keep working.
+        roles = get_user_roles(user)
+        if roles:
+            user["roles"] = roles
+            user["role"] = roles[0]
         return user
     except (jwt.PyJWTError, PyMongoError, ValueError):
         raise unauthorized
 
 def require_roles(*allowed_roles: str):
     def dependency(user: dict = Depends(get_current_user)):
-        if user.get("role") not in allowed_roles:
+        if not user_has_any_role(user, allowed_roles):
             raise HTTPException(status_code=403, detail="Your account does not have permission for this action.")
         return user
     return dependency
+
+def require_permissions(*required_permissions: str):
+    """Enforce permission identifiers on every protected API request."""
+    unknown = set(required_permissions) - set(PERMISSIONS)
+    if unknown:
+        raise ValueError(f"Unknown permission identifiers: {sorted(unknown)}")
+
+    def dependency(user: dict = Depends(get_current_user)):
+        effective = get_effective_permissions(user)
+        missing = set(required_permissions) - effective
+        if missing:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "message": "Your account does not have permission for this action.",
+                    "required_permissions": list(required_permissions),
+                    "missing_permissions": sorted(missing),
+                },
+            )
+        return user
+    return dependency
+
 
 def ensure_user_indexes():
     if database_is_available():

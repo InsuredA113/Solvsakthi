@@ -6,9 +6,10 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pymongo import DESCENDING
 from pymongo.errors import PyMongoError
 
-from .auth import require_roles
+from .auth import require_permissions, require_roles
 from .claims_analytics import is_in_scope_claim
 from .database import database_is_available, get_database
+from .organisations import scoped_claim_filter
 
 router = APIRouter()
 
@@ -64,18 +65,21 @@ def _serialise_report(row: dict) -> dict:
 @router.get("/api/claims/{claim_id}/adjuster-reports")
 def list_adjuster_reports(
     claim_id: str,
-    user: dict = Depends(require_roles(*REPORT_READ_ROLES))
+    user: dict = Depends(require_permissions("reports.view"))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     db = get_database()
-    claim = db["claims"].find_one({"claim_id": claim_id}, {"_id": 0, "claim_id": 1, "claim_type": 1, "casualty_segment": 1})
+    claim = db["claims"].find_one(scoped_claim_filter(claim_id, user), {"_id": 0, "claim_id": 1, "claim_type": 1, "casualty_segment": 1, "organisation_id": 1})
     if not claim:
         raise HTTPException(status_code=404, detail="Claim not found.")
     if not is_in_scope_claim(claim):
         raise HTTPException(status_code=422, detail="Adjuster reports are limited to Property and Commercial Casualty claims.")
     try:
-        rows = list(db["adjuster_reports"].find({"claim_id": claim_id}).sort("created_at", DESCENDING).limit(100))
+        rows = list(db["adjuster_reports"].find({
+            "claim_id": claim_id,
+            "organisation_id": claim.get("organisation_id"),
+        }).sort("created_at", DESCENDING).limit(100))
         return {"items": [_serialise_report(row) for row in rows], "count": len(rows)}
     except PyMongoError as exc:
         raise HTTPException(status_code=503, detail="Unable to retrieve adjuster reports.") from exc
@@ -85,12 +89,12 @@ def list_adjuster_reports(
 def create_adjuster_report(
     claim_id: str,
     payload: AdjusterReportCreate,
-    user: dict = Depends(require_roles(*REPORT_WRITE_ROLES))
+    user: dict = Depends(require_permissions("reports.compare"))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     db = get_database()
-    claim = db["claims"].find_one({"claim_id": claim_id}, {"_id": 0, "claim_id": 1, "claim_type": 1, "casualty_segment": 1})
+    claim = db["claims"].find_one(scoped_claim_filter(claim_id, user), {"_id": 0, "claim_id": 1, "claim_type": 1, "casualty_segment": 1, "organisation_id": 1})
     if not claim:
         raise HTTPException(status_code=404, detail="Claim not found.")
     if not is_in_scope_claim(claim):
@@ -98,6 +102,7 @@ def create_adjuster_report(
     now = datetime.now(timezone.utc).isoformat()
     record = {
         "claim_id": claim_id,
+        "organisation_id": claim.get("organisation_id"),
         "report_title": payload.report_title,
         "report_reference": payload.report_reference,
         "report_date": payload.report_date,
@@ -110,6 +115,7 @@ def create_adjuster_report(
     try:
         saved = db["adjuster_reports"].insert_one(record)
         record["report_id"] = str(saved.inserted_id)
+        record.pop("_id", None)
         return record
     except PyMongoError as exc:
         raise HTTPException(status_code=503, detail="Unable to save adjuster report.") from exc

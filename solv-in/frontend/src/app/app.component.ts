@@ -4,8 +4,9 @@ import { HttpClient, HttpClientModule, HttpHeaders, HttpParams } from '@angular/
 import { FormsModule } from '@angular/forms';
 import { environment } from '../environments/environment';
 
-interface User { full_name: string; email: string; role: string; is_active?: boolean; }
+interface User { full_name: string; email: string; role: string; roles?: string[]; custom_roles?: any[]; is_active?: boolean; }
 interface Adjuster { full_name: string; email: string; role: 'Property Adjuster' | 'Casualty Adjuster'; }
+interface Surveyor { full_name: string; email: string; role: 'Insurance Surveyor'; }
 interface Claim {
   claim_id: string; customer_name?: string | null; loss_cause?: string | null; email?: string | null; phone?: string | null;
   policy_number?: string | null; claim_type: 'Property' | 'Casualty' | 'Unclassified'; property_occupancy?: string | null;
@@ -14,7 +15,11 @@ interface Claim {
   incident_description?: string | null; loss_location?: string | null; country_code?: string | null; region?: string | null; locality?: string | null; postal_code?: string | null; estimated_loss?: number | null;
   currency?: string | null; status: string; created_at?: string; updated_at?: string;
   created_by?: string; created_by_name?: string; created_by_email?: string; source?: string; source_mode?: string;
-  assigned_adjuster_email?: string | null; assigned_adjuster_name?: string | null; assigned_adjuster_role?: string | null; closed_at?: string | null;
+  assigned_adjuster_email?: string | null; assigned_adjuster_name?: string | null; assigned_adjuster_role?: string | null;
+  assigned_surveyor_email?: string | null; assigned_surveyor_name?: string | null;
+  customer_user_email?: string | null; customer_identity_verified?: boolean;
+  customer_identity_verification_method?: string | null; customer_identity_verification_reference?: string | null;
+  closed_at?: string | null;
   auto_intake_status?: string; missing_fields?: string[]; suggested_information?: Record<string, string>;
 }
 interface ComparisonComment { comment_id: string; claim_id: string; comment: string; field_key?: string | null; field_label?: string | null; created_at: string; created_by: string; created_by_role: string; }
@@ -48,6 +53,7 @@ export class AppComponent implements OnInit {
   private http = inject(HttpClient);
   isAuthenticated = false;
   currentUser: User | null = null;
+  effectivePermissions: string[] = [];
   loginEmail = '';
   loginPassword = '';
   loginBusy = false;
@@ -102,8 +108,24 @@ export class AppComponent implements OnInit {
   selectedFnolDocument: File | null = null;
   documentUploadBusy = false;
   documentsLoading = false;
+  documentDeleteBusyId: string | null = null;
   users: User[] = [];
   roles: string[] = [];
+  customRoles: any[] = [];
+  availablePermissions: string[] = [];
+  customRoleDraft = { name: '', description: '', permissions: [] as string[] };
+  customRoleBusy = false;
+  editingCustomRoleName = '';
+  selectedUserForRoles: User | null = null;
+  roleAssignmentDraft = { roles: [] as string[], custom_roles: [] as string[] };
+  roleAssignmentBusy = false;
+  customerLinkDraft = {
+    customer_email: '',
+    verification_method: 'Policyholder document review',
+    verification_reference: '',
+    identity_verified: false
+  };
+  customerLinkBusy = false;
   userBusy = false;
   selectedDamageImage: File | null = null;
   damageImagePreview = '';
@@ -149,7 +171,7 @@ export class AppComponent implements OnInit {
   selectedRepairRateId = '';
   repairRatesLookupBusy = false;
   estimateDraft: any = this.emptyEstimateDraft();
-  newUser = { full_name: '', email: '', password: '', role: 'Claims Manager' };
+  newUser = { full_name: '', email: '', password: '', roles: ['Claims Manager'] as string[] };
   totalClaims = 0;
   newClaims = 0;
   investigatingClaims = 0;
@@ -157,6 +179,7 @@ export class AppComponent implements OnInit {
   closedClaims = 0;
   unclassifiedLegacyCasualtyClaims = 0;
   adjusters: Adjuster[] = [];
+  surveyors: Surveyor[] = [];
   dashboardAnalytics: any = null;
   dashboardBusy = false;
   dashboardYear = '';
@@ -177,7 +200,7 @@ export class AppComponent implements OnInit {
   analyticsCountry = '';
   analyticsCurrency = '';
   analyticsPortfolio = 'All';
-  readonly navigation = ['Dashboard', 'Claims', 'AI Damage Analysis', 'Policy Coverage', 'Financial Estimate', 'Settings'];
+  readonly navigation = ['Dashboard', 'Claims', 'My Claims', 'AI Damage Analysis', 'Policy Coverage', 'Financial Estimate', 'Settings'];
   readonly statuses = ['FNOL Received', 'Under Review', 'Investigation', 'Assessment', 'Pending Approval', 'Approved', 'Closed'];
   draft: ClaimDraft = this.emptyDraft();
 
@@ -228,16 +251,51 @@ export class AppComponent implements OnInit {
 
   private afterLogin(): void {
     this.apiStatus = 'Signed in';
-    this.loadDashboard();
-    this.loadDashboardAnalytics();
-    this.loadAdjusters();
-    this.loadClaims();
-    if (this.isAdmin()) this.loadUsers();
+    this.loadEffectivePermissions(() => {
+      if (this.hasPermission('dashboard.view')) this.loadDashboard();
+      if (!this.hasPermission('dashboard.view') && this.hasPermission('own_claims.view')) this.activePage = 'My Claims';
+      if (this.hasPermission('analytics.view')) this.loadDashboardAnalytics();
+      if (this.hasPermission('claims.assign')) { this.loadAdjusters(); this.loadSurveyors(); }
+      if (this.hasPermission('claims.view') || this.hasPermission('own_claims.view')) this.loadClaims();
+      if (this.isAdmin()) this.loadUsers();
+    });
+  }
+
+  loadEffectivePermissions(onLoaded?: () => void): void {
+    this.http.get<{roles: string[]; permissions: string[]}>(`${environment.apiBaseUrl}/auth/permissions`, { headers: this.authHeaders() }).subscribe({
+      next: result => {
+        this.effectivePermissions = result.permissions || [];
+        onLoaded?.();
+      },
+      error: error => {
+        this.effectivePermissions = [];
+        this.handleApiError(error);
+      }
+    });
+  }
+
+  hasPermission(permission: string): boolean {
+    return this.effectivePermissions.includes(permission);
+  }
+
+  canAccessPage(page: string): boolean {
+    const required: Record<string, string[]> = {
+      'Dashboard': ['dashboard.view'],
+      'Claims': ['claims.view'],
+      'My Claims': ['own_claims.view'],
+      'AI Damage Analysis': ['damage.analyse'],
+      'Policy Coverage': ['coverage.view'],
+      'Financial Estimate': ['finance.view', 'finance.edit', 'finance.approve'],
+    };
+    if (page === 'Settings') return this.isAdmin();
+    const permissions = required[page] || [];
+    return permissions.some(permission => this.hasPermission(permission));
   }
 
   logout(showMessage = true): void {
     sessionStorage.removeItem('solvin_access_token');
     this.currentUser = null;
+    this.effectivePermissions = [];
     this.isAuthenticated = false;
     this.activePage = 'Dashboard';
     this.claims = [];
@@ -248,29 +306,21 @@ export class AppComponent implements OnInit {
   }
 
   isAdmin(): boolean {
-    return this.currentUser?.role === 'Super Administrator';
+    return this.currentUser?.roles?.includes('Super Administrator') || this.currentUser?.role === 'Super Administrator';
   }
 
-  canManageTaxRules(): boolean {
-    return ['Super Administrator', 'Insurance Company Administrator'].includes(this.currentUser?.role || '');
-  }
+  canManageTaxRules(): boolean { return this.hasPermission('roles.manage'); }
 
-  canManagePolicies(): boolean {
-    return ['Super Administrator', 'Insurance Company Administrator'].includes(this.currentUser?.role || '');
-  }
+  canManagePolicies(): boolean { return this.hasPermission('roles.manage'); }
 
-  canViewPolicyCoverage(): boolean {
-    return ['Super Administrator', 'Insurance Company Administrator', 'Claims Manager', 'Property Adjuster', 'Casualty Adjuster', 'Surveyor', 'Actuarial Analyst', 'Approver', 'Auditor'].includes(this.currentUser?.role || '');
-  }
+  canViewPolicyCoverage(): boolean { return this.hasPermission('coverage.view'); }
 
   latestFinancialReview(estimate: FinancialEstimate): any | null {
     const history = estimate.review_history;
     return history?.length ? history[history.length - 1] : null;
   }
 
-  canAnalyseDamage(): boolean {
-    return ['Super Administrator', 'Insurance Company Administrator', 'Claims Manager', 'Property Adjuster', 'Casualty Adjuster', 'Surveyor', 'Actuarial Analyst', 'Approver'].includes(this.currentUser?.role || '');
-  }
+  canAnalyseDamage(): boolean { return this.hasPermission('damage.analyse'); }
 
   emptyPolicyDraft(): any {
     return {
@@ -526,7 +576,7 @@ export class AppComponent implements OnInit {
     }
     this.errorMessage = '';
     this.successMessage = '';
-    if (page === 'Claims') this.loadClaims();
+    if (page === 'Claims' || page === 'My Claims') this.loadClaims();
     if (page === 'AI Damage Analysis' && this.damageClaimId.trim()) this.loadDamageAssessments();
     if (page === 'Financial Estimate' && this.canManageTaxRules()) { this.loadTaxRules(); this.loadUsTaxResearchMatrix(); }
     if (page === 'Repair Rates' && this.canManageTaxRules()) this.loadRepairRates();
@@ -553,9 +603,14 @@ export class AppComponent implements OnInit {
     this.http.get<{items: Adjuster[]; count: number}>(`${environment.apiBaseUrl}/adjusters`, { headers: this.authHeaders() }).subscribe({ next: result => this.adjusters = result.items || [], error: error => this.handleApiError(error) });
   }
 
-  canAssignClaims(): boolean {
-    return ['Super Administrator', 'Insurance Company Administrator', 'Claims Manager'].includes(this.currentUser?.role || '');
+  loadSurveyors(): void {
+    this.http.get<{items: Surveyor[]; count: number}>(`${environment.apiBaseUrl}/surveyors`, { headers: this.authHeaders() }).subscribe({
+      next: result => this.surveyors = result.items || [],
+      error: error => this.handleApiError(error)
+    });
   }
+
+  canAssignClaims(): boolean { return this.hasPermission('claims.assign'); }
 
   loadDashboardAnalytics(): void {
     this.dashboardBusy = true;
@@ -571,6 +626,50 @@ export class AppComponent implements OnInit {
   assignAdjuster(claim: Claim, email: string): void {
     if (!this.canAssignClaims() || !email) return;
     this.http.patch<Claim>(`${environment.apiBaseUrl}/claims/${encodeURIComponent(claim.claim_id)}/assign-adjuster`, { adjuster_email: email }, { headers: this.authHeaders() }).subscribe({ next: updated => { this.claims = this.claims.map(item => item.claim_id === updated.claim_id ? updated : item); this.successMessage = `Assigned ${updated.claim_id} to ${updated.assigned_adjuster_name}.`; this.loadDashboardAnalytics(); }, error: error => this.handleApiError(error) });
+  }
+
+  assignSurveyor(claim: Claim, email: string): void {
+    if (!this.canAssignClaims() || !email) return;
+    this.http.patch<Claim>(`${environment.apiBaseUrl}/claims/${encodeURIComponent(claim.claim_id)}/assign-surveyor`, { surveyor_email: email }, { headers: this.authHeaders() }).subscribe({
+      next: updated => {
+        this.claims = this.claims.map(item => item.claim_id === updated.claim_id ? updated : item);
+        if (this.selectedClaim?.claim_id === updated.claim_id) this.selectedClaim = updated;
+        this.successMessage = `Assigned ${updated.claim_id} to surveyor ${updated.assigned_surveyor_name}.`;
+      },
+      error: error => this.handleApiError(error)
+    });
+  }
+
+  linkVerifiedCustomerClaim(claim: Claim): void {
+    if (!this.canAssignClaims() || !this.customerLinkDraft.customer_email.trim()
+      || !this.customerLinkDraft.verification_reference.trim() || !this.customerLinkDraft.identity_verified) {
+      this.errorMessage = 'Enter the customer account email, verification reference, and confirm that identity checks are complete.';
+      return;
+    }
+    this.customerLinkBusy = true;
+    this.errorMessage = '';
+    this.http.post<Claim>(
+      `${environment.apiBaseUrl}/claims/${encodeURIComponent(claim.claim_id)}/customer-link`,
+      this.customerLinkDraft,
+      { headers: this.authHeaders() }
+    ).subscribe({
+      next: updated => {
+        this.customerLinkBusy = false;
+        this.claims = this.claims.map(item => item.claim_id === updated.claim_id ? updated : item);
+        this.selectedClaim = updated;
+        this.successMessage = `Verified customer account linked to ${updated.claim_id}.`;
+        this.customerLinkDraft = {
+          customer_email: '',
+          verification_method: 'Policyholder document review',
+          verification_reference: '',
+          identity_verified: false
+        };
+      },
+      error: error => {
+        this.customerLinkBusy = false;
+        this.handleApiError(error);
+      }
+    });
   }
 
   loadClaimsAnalytics(): void {
@@ -629,8 +728,13 @@ export class AppComponent implements OnInit {
     if (this.searchTerm.trim()) params = params.set('search', this.searchTerm.trim());
     if (this.lossCauseFilter) params = params.set('loss_cause', this.lossCauseFilter);
     if (this.statusFilter) params = params.set('status', this.statusFilter);
-    this.http.get<{items: Claim[]; count: number}>(`${environment.apiBaseUrl}/claims`, { params, headers: this.authHeaders() }).subscribe({
-      next: result => { this.claims = result.items; this.loadingClaims = false; this.loadLossCauseOptions(); },
+    const customerOnly = this.activePage === 'My Claims' || !this.hasPermission('claims.view');
+    const endpoint = customerOnly ? '/customer/claims' : '/claims';
+    this.http.get<{items: Claim[]; count: number}>(`${environment.apiBaseUrl}${endpoint}`, {
+      params: customerOnly ? new HttpParams() : params,
+      headers: this.authHeaders()
+    }).subscribe({
+      next: result => { this.claims = result.items; this.loadingClaims = false; if (!customerOnly) this.loadLossCauseOptions(); },
       error: error => { this.loadingClaims = false; this.handleApiError(error); this.claims = []; }
     });
   }
@@ -688,13 +792,9 @@ export class AppComponent implements OnInit {
     });
   }
 
-  canEditClaims(): boolean {
-    return ['Super Administrator', 'Insurance Company Administrator', 'Claims Manager', 'Property Adjuster', 'Casualty Adjuster'].includes(this.currentUser?.role || '');
-  }
+  canEditClaims(): boolean { return this.hasPermission('claims.edit'); }
 
-  canDeleteClaims(): boolean {
-    return ['Super Administrator', 'Insurance Company Administrator', 'Claims Manager'].includes(this.currentUser?.role || '');
-  }
+  canDeleteClaims(): boolean { return this.hasPermission('claims.delete'); }
 
   startClaimEdit(): void {
     if (!this.selectedClaim || !this.canEditClaims()) return;
@@ -1158,9 +1258,16 @@ export class AppComponent implements OnInit {
     });
   }
 
+  canDeleteEvidence(): boolean { return this.hasPermission('evidence.delete'); }
+
   loadClaimDocuments(): void {
     const claimId = this.selectedClaim?.claim_id;
     if (!claimId) return;
+    if (!this.hasPermission('evidence.view')) {
+      this.claimDocuments = [];
+      this.documentsLoading = false;
+      return;
+    }
     this.documentsLoading = true;
     this.http.get<{items: ClaimDocument[]; count: number}>(`${environment.apiBaseUrl}/claims/${encodeURIComponent(claimId)}/documents`, { headers: this.authHeaders() }).subscribe({
       next: result => { this.claimDocuments = result.items; this.documentsLoading = false; },
@@ -1223,6 +1330,27 @@ export class AppComponent implements OnInit {
         URL.revokeObjectURL(url);
       },
       error: error => this.handleApiError(error)
+    });
+  }
+
+  deleteClaimDocument(document: ClaimDocument): void {
+    if (!this.canDeleteEvidence() || this.documentDeleteBusyId) return;
+    const confirmed = window.confirm(`Permanently delete evidence file "${document.filename}" from claim ${document.claim_id}?`);
+    if (!confirmed) return;
+    this.documentDeleteBusyId = document.file_id;
+    this.errorMessage = '';
+    this.http.delete<{deleted: boolean}>(`${environment.apiBaseUrl}/claims/${encodeURIComponent(document.claim_id)}/documents/${encodeURIComponent(document.file_id)}`, {
+      headers: this.authHeaders()
+    }).subscribe({
+      next: () => {
+        this.documentDeleteBusyId = null;
+        this.successMessage = `${document.filename} deleted successfully.`;
+        this.loadClaimDocuments();
+      },
+      error: error => {
+        this.documentDeleteBusyId = null;
+        this.handleApiError(error);
+      }
     });
   }
 
@@ -1329,7 +1457,8 @@ export class AppComponent implements OnInit {
   closeAIProviderSetup(): void { this.selectedAIProvider = ''; }
 
   canManageEmailConnectors(): boolean {
-    return ['Super Administrator', 'Insurance Company Administrator'].includes(this.currentUser?.role || '');
+    const roles = this.currentUser?.roles?.length ? this.currentUser.roles : [this.currentUser?.role || ''];
+    return roles.includes('Super Administrator') || roles.includes('Insurance Company Administrator');
   }
 
   loadEmailConnectorStatus(): void {
@@ -1582,9 +1711,7 @@ export class AppComponent implements OnInit {
     return compared ? Math.round((matched / compared) * 100) : 0;
   }
 
-  canAddComparisonComment(): boolean {
-    return ['Super Administrator', 'Insurance Company Administrator', 'Claims Manager', 'Property Adjuster', 'Casualty Adjuster', 'Surveyor', 'Actuarial Analyst', 'Approver'].includes(this.currentUser?.role || '');
-  }
+  canAddComparisonComment(): boolean { return this.hasPermission('reports.comment'); }
 
   loadComparisonComments(): void {
     const id = this.selectedClaim?.claim_id;
@@ -1624,13 +1751,9 @@ export class AppComponent implements OnInit {
     });
   }
 
-  canReviewFinancialEstimate(): boolean {
-    return ['Super Administrator', 'Insurance Company Administrator', 'Claims Manager', 'Property Adjuster', 'Casualty Adjuster', 'Surveyor', 'Actuarial Analyst', 'Approver'].includes(this.currentUser?.role || '');
-  }
+  canReviewFinancialEstimate(): boolean { return this.hasPermission('finance.edit') || this.hasPermission('finance.approve'); }
 
-  canApproveFinancialEstimate(): boolean {
-    return ['Super Administrator', 'Insurance Company Administrator', 'Claims Manager', 'Approver'].includes(this.currentUser?.role || '');
-  }
+  canApproveFinancialEstimate(): boolean { return this.hasPermission('finance.approve'); }
 
   isFinalEstimateReview(estimate: FinancialEstimate): boolean {
     return ['Approved', 'Rejected'].includes(estimate.review_status || '');
@@ -1677,13 +1800,9 @@ export class AppComponent implements OnInit {
     this.damageImagePreview = URL.createObjectURL(file);
   }
 
-  canReviewDamage(): boolean {
-    return ['Super Administrator', 'Insurance Company Administrator', 'Claims Manager', 'Property Adjuster', 'Casualty Adjuster', 'Surveyor'].includes(this.currentUser?.role || '');
-  }
+  canReviewDamage(): boolean { return this.hasPermission('damage.review'); }
 
-  canApproveDamage(): boolean {
-    return ['Super Administrator', 'Insurance Company Administrator', 'Claims Manager', 'Approver'].includes(this.currentUser?.role || '');
-  }
+  canApproveDamage(): boolean { return this.hasPermission('claims.approve'); }
 
   loadDamageAssessments(): void {
     const claimId = this.damageClaimId.trim();
@@ -1794,6 +1913,7 @@ export class AppComponent implements OnInit {
 
   loadUsers(): void {
     if (!this.isAdmin()) return;
+    this.loadCustomRoles();
     this.http.get<{items: User[]; count: number}>(`${environment.apiBaseUrl}/users`, { headers: this.authHeaders() }).subscribe({
       next: result => this.users = result.items,
       error: error => this.handleApiError(error)
@@ -1804,6 +1924,96 @@ export class AppComponent implements OnInit {
     });
   }
 
+  loadCustomRoles(): void {
+    if (!this.isAdmin()) return;
+    this.http.get<{items: any[]; available_permissions: string[]}>(`${environment.apiBaseUrl}/roles/custom`, { headers: this.authHeaders() }).subscribe({
+      next: result => { this.customRoles = result.items || []; this.availablePermissions = result.available_permissions || []; },
+      error: error => this.handleApiError(error)
+    });
+  }
+
+  toggleCustomRolePermission(permission: string, checked: boolean): void {
+    const selected = new Set(this.customRoleDraft.permissions);
+    if (checked) selected.add(permission); else selected.delete(permission);
+    this.customRoleDraft.permissions = Array.from(selected);
+  }
+
+  editCustomRole(role: any): void {
+    this.editingCustomRoleName = role.name;
+    this.customRoleDraft = { name: role.name, description: role.description || '', permissions: [...(role.permissions || [])] };
+  }
+
+  cancelCustomRoleEdit(): void {
+    this.editingCustomRoleName = '';
+    this.customRoleDraft = { name: '', description: '', permissions: [] };
+  }
+
+  createCustomRole(): void {
+    if (!this.customRoleDraft.name.trim() || this.customRoleDraft.permissions.length === 0) { this.errorMessage = 'Enter a role name and select at least one permission.'; return; }
+    this.customRoleBusy = true; this.errorMessage = ''; this.successMessage = '';
+    const request = this.editingCustomRoleName
+      ? this.http.patch(`${environment.apiBaseUrl}/roles/custom/${encodeURIComponent(this.editingCustomRoleName)}`, { description: this.customRoleDraft.description, permissions: this.customRoleDraft.permissions }, { headers: this.authHeaders() })
+      : this.http.post(`${environment.apiBaseUrl}/roles/custom`, this.customRoleDraft, { headers: this.authHeaders() });
+    request.subscribe({
+      next: () => { this.customRoleBusy = false; this.successMessage = this.editingCustomRoleName ? 'Custom role updated successfully.' : 'Custom role created successfully.'; this.cancelCustomRoleEdit(); this.loadCustomRoles(); },
+      error: error => { this.customRoleBusy = false; this.handleApiError(error); }
+    });
+  }
+
+  deleteCustomRole(role: any): void {
+    if (!confirm('Delete custom role ' + role.name + '? It must not be assigned to users.')) return;
+    this.http.delete(`${environment.apiBaseUrl}/roles/custom/${encodeURIComponent(role.name)}`, { headers: this.authHeaders() }).subscribe({
+      next: () => { this.successMessage = 'Custom role deleted.'; this.loadCustomRoles(); },
+      error: error => this.handleApiError(error)
+    });
+  }
+
+  assignedRoleNames(account: User): string {
+    return (account.roles?.length ? account.roles : [account.role]).filter(Boolean).join(', ');
+  }
+
+  customRoleNames(account: User): string {
+    return (account.custom_roles || []).map((role: any) => typeof role === 'string' ? role : role.name).filter(Boolean).join(', ');
+  }
+
+  startUserRoleEdit(account: User): void {
+    this.selectedUserForRoles = account;
+    this.roleAssignmentDraft = {
+      roles: [...(account.roles?.length ? account.roles : [account.role])],
+      custom_roles: (account.custom_roles || []).map((role: any) => typeof role === 'string' ? role : role.name)
+    };
+  }
+
+  toggleAssignedRole(role: string, checked: boolean): void {
+    const selected = new Set(this.roleAssignmentDraft.roles);
+    if (checked) selected.add(role); else selected.delete(role);
+    this.roleAssignmentDraft.roles = Array.from(selected);
+  }
+
+  toggleAssignedCustomRole(role: string, checked: boolean): void {
+    const selected = new Set(this.roleAssignmentDraft.custom_roles);
+    if (checked) selected.add(role); else selected.delete(role);
+    this.roleAssignmentDraft.custom_roles = Array.from(selected);
+  }
+
+  saveUserRoles(): void {
+    if (!this.selectedUserForRoles || this.roleAssignmentDraft.roles.length === 0) {
+      this.errorMessage = 'Every account must have at least one predefined role.';
+      return;
+    }
+    this.roleAssignmentBusy = true;
+    this.http.patch(`${environment.apiBaseUrl}/users/${encodeURIComponent(this.selectedUserForRoles.email)}/roles`, this.roleAssignmentDraft, { headers: this.authHeaders() }).subscribe({
+      next: () => { this.roleAssignmentBusy = false; this.successMessage = 'User roles updated.'; this.selectedUserForRoles = null; this.loadUsers(); },
+      error: error => { this.roleAssignmentBusy = false; this.handleApiError(error); }
+    });
+  }
+
+  toggleNewUserRole(role: string, checked: boolean): void {
+    const selected = new Set(this.newUser.roles);
+    if (checked) selected.add(role); else selected.delete(role);
+    this.newUser.roles = Array.from(selected);
+  }
+
   createUser(): void {
     this.errorMessage = '';
     this.successMessage = '';
@@ -1812,7 +2022,7 @@ export class AppComponent implements OnInit {
       next: user => {
         this.userBusy = false;
         this.successMessage = `User ${user.email} created successfully.`;
-        this.newUser = { full_name: '', email: '', password: '', role: 'Claims Manager' };
+        this.newUser = { full_name: '', email: '', password: '', roles: ['Claims Manager'] };
         this.loadUsers();
       },
       error: error => { this.userBusy = false; this.handleApiError(error); }
