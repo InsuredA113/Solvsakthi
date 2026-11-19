@@ -304,6 +304,11 @@ def list_users(user: dict = Depends(require_roles(*ADMIN_ROLES))):
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     try:
         rows = list(get_database()["users"].find({}, {"_id": 0, "password_hash": 0}).sort("created_at", DESCENDING))
+        for row in rows:
+            assigned_roles = get_user_roles(row)
+            row["roles"] = assigned_roles
+            if assigned_roles:
+                row["role"] = assigned_roles[0]
         return {"items": rows, "count": len(rows)}
     except PyMongoError as exc:
         raise HTTPException(status_code=503, detail="Unable to retrieve users.") from exc
@@ -477,11 +482,16 @@ def list_adjusters(user: dict = Depends(require_permissions("claims.assign"))):
     try:
         rows = list(get_database()["users"].find(
             {"is_active": True, "$or": [
-                {"role": {"$in": ["Property Adjuster", "Casualty Adjuster"]}},
-                {"roles": {"$in": ["Property Adjuster", "Casualty Adjuster"]}}
+                {"role": {"$in": ["Property Adjuster", "Casualty Adjuster", "Surveyor"]}},
+                {"roles": {"$in": ["Property Adjuster", "Casualty Adjuster", "Insurance Surveyor", "Surveyor"]}}
             ]},
             {"_id": 0, "full_name": 1, "email": 1, "role": 1, "roles": 1}
         ).sort("full_name", 1))
+        for row in rows:
+            assigned_roles = get_user_roles(row)
+            row["roles"] = assigned_roles
+            if assigned_roles:
+                row["role"] = assigned_roles[0]
         return {"items": rows, "count": len(rows)}
     except PyMongoError as exc:
         raise HTTPException(status_code=503, detail="Unable to retrieve adjusters.") from exc
