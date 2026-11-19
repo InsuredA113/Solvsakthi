@@ -4,7 +4,7 @@ import { HttpClient, HttpClientModule, HttpHeaders, HttpParams } from '@angular/
 import { FormsModule } from '@angular/forms';
 import { environment } from '../environments/environment';
 
-interface User { full_name: string; email: string; role: string; roles?: string[]; is_active?: boolean; }
+interface User { full_name: string; email: string; role: string; roles?: string[]; custom_roles?: any[]; is_active?: boolean; }
 interface Adjuster { full_name: string; email: string; role: 'Property Adjuster' | 'Casualty Adjuster'; }
 interface Claim {
   claim_id: string; customer_name?: string | null; loss_cause?: string | null; email?: string | null; phone?: string | null;
@@ -109,6 +109,9 @@ export class AppComponent implements OnInit {
   customRoleDraft = { name: '', description: '', permissions: [] as string[] };
   customRoleBusy = false;
   editingCustomRoleName = '';
+  selectedUserForRoles: User | null = null;
+  roleAssignmentDraft = { roles: [] as string[], custom_roles: [] as string[] };
+  roleAssignmentBusy = false;
   userBusy = false;
   selectedDamageImage: File | null = null;
   damageImagePreview = '';
@@ -253,7 +256,7 @@ export class AppComponent implements OnInit {
   }
 
   isAdmin(): boolean {
-    return this.currentUser?.role === 'Super Administrator';
+    return this.currentUser?.roles?.includes('Super Administrator') || this.currentUser?.role === 'Super Administrator';
   }
 
   canManageTaxRules(): boolean {
@@ -1799,6 +1802,7 @@ export class AppComponent implements OnInit {
 
   loadUsers(): void {
     if (!this.isAdmin()) return;
+    this.loadCustomRoles();
     this.http.get<{items: User[]; count: number}>(`${environment.apiBaseUrl}/users`, { headers: this.authHeaders() }).subscribe({
       next: result => this.users = result.items,
       error: error => this.handleApiError(error)
@@ -1850,6 +1854,38 @@ export class AppComponent implements OnInit {
     this.http.delete(`${environment.apiBaseUrl}/roles/custom/${encodeURIComponent(role.name)}`, { headers: this.authHeaders() }).subscribe({
       next: () => { this.successMessage = 'Custom role deleted.'; this.loadCustomRoles(); },
       error: error => this.handleApiError(error)
+    });
+  }
+
+  startUserRoleEdit(account: User): void {
+    this.selectedUserForRoles = account;
+    this.roleAssignmentDraft = {
+      roles: [...(account.roles?.length ? account.roles : [account.role])],
+      custom_roles: (account.custom_roles || []).map((role: any) => typeof role === 'string' ? role : role.name)
+    };
+  }
+
+  toggleAssignedRole(role: string, checked: boolean): void {
+    const selected = new Set(this.roleAssignmentDraft.roles);
+    if (checked) selected.add(role); else selected.delete(role);
+    this.roleAssignmentDraft.roles = Array.from(selected);
+  }
+
+  toggleAssignedCustomRole(role: string, checked: boolean): void {
+    const selected = new Set(this.roleAssignmentDraft.custom_roles);
+    if (checked) selected.add(role); else selected.delete(role);
+    this.roleAssignmentDraft.custom_roles = Array.from(selected);
+  }
+
+  saveUserRoles(): void {
+    if (!this.selectedUserForRoles || this.roleAssignmentDraft.roles.length === 0) {
+      this.errorMessage = 'Every account must have at least one predefined role.';
+      return;
+    }
+    this.roleAssignmentBusy = true;
+    this.http.patch(`${environment.apiBaseUrl}/users/${encodeURIComponent(this.selectedUserForRoles.email)}/roles`, this.roleAssignmentDraft, { headers: this.authHeaders() }).subscribe({
+      next: () => { this.roleAssignmentBusy = false; this.successMessage = 'User roles updated.'; this.selectedUserForRoles = null; this.loadUsers(); },
+      error: error => { this.roleAssignmentBusy = false; this.handleApiError(error); }
     });
   }
 
