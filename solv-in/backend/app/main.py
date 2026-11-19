@@ -5,6 +5,7 @@ from fastapi import Body, Depends, FastAPI, HTTPException, Query, Response, File
 from fastapi.responses import StreamingResponse
 from gridfs import GridFSBucket
 from pydantic import BaseModel, Field
+from typing import Literal
 from bson import ObjectId
 from bson.errors import InvalidId
 from fastapi.middleware.cors import CORSMiddleware
@@ -76,6 +77,16 @@ class AdjusterAssignment(BaseModel):
 
 class SurveyorAssignment(BaseModel):
     surveyor_email: str = Field(..., min_length=5, max_length=254)
+
+class CustomerClaimLink(BaseModel):
+    customer_email: str = Field(..., min_length=5, max_length=254)
+    verification_method: Literal[
+        "Policyholder document review",
+        "Registered contact confirmation",
+        "Insurer identity check"
+    ]
+    verification_reference: str = Field(..., min_length=4, max_length=120)
+    identity_verified: bool
 
 class FinancialEstimateReviewUpdate(BaseModel):
     status: str = Field(..., max_length=40)
@@ -837,6 +848,99 @@ def assign_claim_surveyor(
         raise
     except PyMongoError as exc:
         raise HTTPException(status_code=503, detail="Unable to assign surveyor.") from exc
+
+
+@app.get("/api/customer/claims")
+def list_customer_claims(user: dict = Depends(require_permissions("own_claims.view"))):
+    """List only claims explicitly linked to this verified policyholder account."""
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    try:
+        query = claim_visibility_filter(user)
+        rows = list(get_database()["claims"].find(
+            query, {"_id": 0}
+        ).sort("created_at", DESCENDING).limit(250))
+        return {"items": rows, "count": len(rows)}
+    except PyMongoError as exc:
+        raise HTTPException(status_code=503, detail="Unable to retrieve your claims.") from exc
+
+
+@app.get("/api/customer/claims/{claim_id}")
+def get_customer_claim(claim_id: str, user: dict = Depends(require_permissions("own_claims.view"))):
+    """Return a single claim only when an authorised staff member verified its owner link."""
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    try:
+        claim = get_database()["claims"].find_one(
+            scoped_claim_filter(claim_id, user), {"_id": 0}
+        )
+        if not claim:
+            raise HTTPException(status_code=404, detail="Claim not found.")
+        return claim
+    except PyMongoError as exc:
+        raise HTTPException(status_code=503, detail="Unable to retrieve this claim.") from exc
+
+
+@app.post("/api/claims/{claim_id}/customer-link")
+def verify_and_link_customer_claim(
+    claim_id: str,
+    payload: CustomerClaimLink,
+    actor: dict = Depends(require_permissions("claims.assign"))
+):
+    """Record an authorised staff attestation after off-platform policyholder identity checks."""
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    if payload.identity_verified is not True:
+        raise HTTPException(status_code=422, detail="Confirm that policyholder identity was verified before linking.")
+    db = get_database()
+    claim = db["claims"].find_one(scoped_claim_filter(claim_id, actor))
+    if not claim:
+        raise HTTPException(status_code=404, detail="Claim not found.")
+    customer_email = normalize_email(payload.customer_email)
+    customer = db["users"].find_one({
+        "email": customer_email,
+        "is_active": True,
+        "organisation_id": claim.get("organisation_id")
+    })
+    if not customer or "Customer / Policyholder" not in get_user_roles(customer):
+        raise HTTPException(status_code=422, detail="Select an active Customer / Policyholder account in this organisation.")
+
+    now = datetime.now(timezone.utc).isoformat()
+    verification = {
+        "customer_user_email": customer_email,
+        "customer_identity_verified": True,
+        "customer_identity_verified_at": now,
+        "customer_identity_verified_by": actor.get("email"),
+        "customer_identity_verification_method": payload.verification_method,
+        "customer_identity_verification_reference": payload.verification_reference.strip()
+    }
+    history_event = {
+        **verification,
+        "action": "customer_link_verified",
+        "created_at": now
+    }
+    try:
+        updated = db["claims"].find_one_and_update(
+            scoped_claim_filter(claim_id, actor),
+            {
+                "$set": {
+                    **verification,
+                    "customer_user_name": customer.get("full_name") or customer_email,
+                    "updated_at": now,
+                    "updated_by": actor.get("email")
+                },
+                "$push": {"customer_link_history": history_event}
+            },
+            return_document=ReturnDocument.AFTER,
+            projection={"_id": 0}
+        )
+        if not updated:
+            raise HTTPException(status_code=404, detail="Claim not found.")
+        return updated
+    except HTTPException:
+        raise
+    except PyMongoError as exc:
+        raise HTTPException(status_code=503, detail="Unable to verify and link the customer.") from exc
 
 
 @app.get("/api/claims")
