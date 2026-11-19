@@ -147,6 +147,11 @@ class CustomRoleUpdate(BaseModel):
     permissions: list[str] = Field(default_factory=list, max_length=100)
 
 
+class UserRoleUpdate(BaseModel):
+    roles: list[str] = Field(default_factory=list, max_length=10)
+    custom_roles: list[str] = Field(default_factory=list, max_length=20)
+
+
 def _validate_custom_role_permissions(permissions: list[str], actor: dict) -> list[str]:
     selected = list(dict.fromkeys(permissions))
     unknown = sorted(set(selected) - set(PERMISSIONS))
@@ -237,6 +242,42 @@ def delete_custom_role(role_name: str, actor: dict = Depends(require_roles(*ROLE
     return {"message": "Custom role deleted."}
 
 
+@app.patch("/api/users/{email}/roles")
+def update_user_roles(email: str, payload: UserRoleUpdate, actor: dict = Depends(require_roles(*ROLE_ADMIN_ROLES))):
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    assigned_roles = list(dict.fromkeys(payload.roles))
+    unknown_roles = sorted(set(assigned_roles) - set(PREDEFINED_ROLES))
+    if unknown_roles:
+        raise HTTPException(status_code=422, detail={"message": "Unknown predefined roles.", "roles": unknown_roles})
+    if "Super Administrator" in assigned_roles and "Super Administrator" not in get_user_roles(actor):
+        raise HTTPException(status_code=403, detail="Only a Super Administrator can grant Super Administrator access.")
+    users = get_database()["users"]
+    target = users.find_one({"email": normalize_email(email)})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found.")
+    if "Super Administrator" in get_user_roles(target) and "Super Administrator" not in assigned_roles:
+        remaining = users.count_documents({"$or": [{"role": "Super Administrator"}, {"roles": "Super Administrator"}]})
+        if remaining <= 1:
+            raise HTTPException(status_code=409, detail="The last Super Administrator cannot be removed.")
+    custom_names = list(dict.fromkeys(payload.custom_roles))
+    custom_docs = list(get_database()["custom_roles"].find({"name": {"$in": custom_names}, "is_active": True}, {"_id": 0}))
+    found_names = {item["name"] for item in custom_docs}
+    missing = sorted(set(custom_names) - found_names)
+    if missing:
+        raise HTTPException(status_code=422, detail={"message": "Unknown or inactive custom roles.", "roles": missing})
+    update = {
+        "roles": assigned_roles,
+        "role": assigned_roles[0] if assigned_roles else None,
+        "custom_roles": custom_docs,
+        "roles_updated_at": datetime.now(timezone.utc).isoformat(),
+        "roles_updated_by": actor.get("email")
+    }
+    users.update_one({"_id": target["_id"]}, {"$set": update})
+    _write_role_audit("user_roles_updated", target["email"], actor, {"roles": assigned_roles, "custom_roles": custom_names})
+    return {"email": target["email"], "roles": assigned_roles, "custom_roles": custom_names}
+
+
 @app.get("/api/roles/audit")
 def list_role_audit(user: dict = Depends(require_roles(*ROLE_ADMIN_ROLES))):
     if not database_is_available():
@@ -263,7 +304,7 @@ def create_user(payload: UserCreate, actor: dict = Depends(require_roles(*ADMIN_
     assigned_roles = list(dict.fromkeys(payload.roles or ([payload.role] if payload.role else [])))
     if not assigned_roles:
         raise HTTPException(status_code=422, detail="At least one role must be selected.")
-    if "Super Administrator" in assigned_roles and actor.get("role") != "Super Administrator":
+    if "Super Administrator" in assigned_roles and "Super Administrator" not in get_user_roles(actor):
         raise HTTPException(status_code=403, detail="Only a Super Administrator can create another Super Administrator.")
     users = get_database()["users"]
     if users.find_one({"email": email}):
