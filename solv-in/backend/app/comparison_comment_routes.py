@@ -103,6 +103,7 @@ def create_comparison_comment(
     try:
         saved = db["comparison_comments"].insert_one(record)
         record["comment_id"] = str(saved.inserted_id)
+        record.pop("_id", None)
         return record
     except PyMongoError as exc:
         raise HTTPException(status_code=503, detail="Unable to save comparison comment.") from exc
