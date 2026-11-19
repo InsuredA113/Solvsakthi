@@ -59,7 +59,7 @@ STATUS_ROLES = (
     "Super Administrator", "Insurance Company Administrator", "Claims Manager",
     "Property Adjuster", "Casualty Adjuster", "Approver"
 )
-ADMIN_ROLES = ("Super Administrator",)
+ADMIN_ROLES = ("Super Administrator", "Insurance Company Administrator")
 ROLE_ADMIN_ROLES = ("Super Administrator", "Insurance Company Administrator")
 
 DAMAGE_REVIEW_ROLES = ("Super Administrator", "Insurance Company Administrator", "Claims Manager", "Property Adjuster", "Casualty Adjuster", "Surveyor", "Actuarial Analyst", "Approver")
@@ -85,7 +85,7 @@ def startup():
         db = get_database()
         ensure_default_organisation(db)
         seed_initial_admin()
-        db["custom_roles"].create_index("name_key", unique=True)
+        db["custom_roles"].create_index([("organisation_id", 1), ("name_key", 1)], unique=True)
         get_database()["role_audit_logs"].create_index("created_at")
 
 @app.get("/api/health")
@@ -424,6 +424,7 @@ def _load_claims_analytics(
 
         result = build_claims_analytics(claims, estimates)
         unclassified_query_parts = [
+            organisation_filter(user),
             {"claim_type": "Casualty", "casualty_segment": {"$ne": "Commercial"}},
             *common_filters
         ]
@@ -576,7 +577,7 @@ def dashboard_analytics(
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     now = datetime.now(timezone.utc)
-    query_parts = [{"$or": [
+    query_parts = [organisation_filter(user), {"$or": [
         {"claim_type": "Property"},
         {"claim_type": "Casualty", "casualty_segment": "Commercial"}
     ]}]
