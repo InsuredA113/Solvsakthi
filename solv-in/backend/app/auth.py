@@ -7,7 +7,7 @@ from pwdlib import PasswordHash
 from pymongo.errors import PyMongoError
 from .config import JWT_SECRET_KEY, JWT_ALGORITHM, ACCESS_TOKEN_MINUTES
 from .database import get_database, database_is_available
-from .rbac import PREDEFINED_ROLES, get_user_roles, normalize_role, user_has_any_role
+from .rbac import PERMISSIONS, PREDEFINED_ROLES, get_effective_permissions, get_user_roles, normalize_role, user_has_any_role
 
 password_hash = PasswordHash.recommended()
 bearer = HTTPBearer(auto_error=False)
@@ -75,12 +75,11 @@ def require_roles(*allowed_roles: str):
 
 def require_permissions(*required_permissions: str):
     """Enforce permission identifiers on every protected API request."""
-    unknown = set(required_permissions) - set(__import__(".rbac", fromlist=["PERMISSIONS"]).PERMISSIONS)
+    unknown = set(required_permissions) - set(PERMISSIONS)
     if unknown:
         raise ValueError(f"Unknown permission identifiers: {sorted(unknown)}")
 
     def dependency(user: dict = Depends(get_current_user)):
-        from .rbac import get_effective_permissions
         effective = get_effective_permissions(user)
         missing = set(required_permissions) - effective
         if missing:
