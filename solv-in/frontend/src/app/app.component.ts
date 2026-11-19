@@ -48,6 +48,7 @@ export class AppComponent implements OnInit {
   private http = inject(HttpClient);
   isAuthenticated = false;
   currentUser: User | null = null;
+  effectivePermissions: string[] = [];
   loginEmail = '';
   loginPassword = '';
   loginBusy = false;
@@ -236,11 +237,30 @@ export class AppComponent implements OnInit {
 
   private afterLogin(): void {
     this.apiStatus = 'Signed in';
-    this.loadDashboard();
-    this.loadDashboardAnalytics();
-    this.loadAdjusters();
-    this.loadClaims();
-    if (this.isAdmin()) this.loadUsers();
+    this.loadEffectivePermissions(() => {
+      if (this.hasPermission('dashboard.view')) this.loadDashboard();
+      if (this.hasPermission('analytics.view')) this.loadDashboardAnalytics();
+      if (this.hasPermission('claims.assign')) this.loadAdjusters();
+      if (this.hasPermission('claims.view')) this.loadClaims();
+      if (this.isAdmin()) this.loadUsers();
+    });
+  }
+
+  loadEffectivePermissions(onLoaded?: () => void): void {
+    this.http.get<{roles: string[]; permissions: string[]}>(`${environment.apiBaseUrl}/auth/permissions`, { headers: this.authHeaders() }).subscribe({
+      next: result => {
+        this.effectivePermissions = result.permissions || [];
+        onLoaded?.();
+      },
+      error: error => {
+        this.effectivePermissions = [];
+        this.handleApiError(error);
+      }
+    });
+  }
+
+  hasPermission(permission: string): boolean {
+    return this.effectivePermissions.includes(permission);
   }
 
   logout(showMessage = true): void {
@@ -259,26 +279,18 @@ export class AppComponent implements OnInit {
     return this.currentUser?.roles?.includes('Super Administrator') || this.currentUser?.role === 'Super Administrator';
   }
 
-  canManageTaxRules(): boolean {
-    return ['Super Administrator', 'Insurance Company Administrator'].includes(this.currentUser?.role || '');
-  }
+  canManageTaxRules(): boolean { return this.hasPermission('roles.manage'); }
 
-  canManagePolicies(): boolean {
-    return ['Super Administrator', 'Insurance Company Administrator'].includes(this.currentUser?.role || '');
-  }
+  canManagePolicies(): boolean { return this.hasPermission('roles.manage'); }
 
-  canViewPolicyCoverage(): boolean {
-    return ['Super Administrator', 'Insurance Company Administrator', 'Claims Manager', 'Property Adjuster', 'Casualty Adjuster', 'Surveyor', 'Actuarial Analyst', 'Approver', 'Auditor'].includes(this.currentUser?.role || '');
-  }
+  canViewPolicyCoverage(): boolean { return this.hasPermission('coverage.view'); }
 
   latestFinancialReview(estimate: FinancialEstimate): any | null {
     const history = estimate.review_history;
     return history?.length ? history[history.length - 1] : null;
   }
 
-  canAnalyseDamage(): boolean {
-    return ['Super Administrator', 'Insurance Company Administrator', 'Claims Manager', 'Property Adjuster', 'Casualty Adjuster', 'Surveyor', 'Actuarial Analyst', 'Approver'].includes(this.currentUser?.role || '');
-  }
+  canAnalyseDamage(): boolean { return this.hasPermission('damage.analyse'); }
 
   emptyPolicyDraft(): any {
     return {
@@ -561,9 +573,7 @@ export class AppComponent implements OnInit {
     this.http.get<{items: Adjuster[]; count: number}>(`${environment.apiBaseUrl}/adjusters`, { headers: this.authHeaders() }).subscribe({ next: result => this.adjusters = result.items || [], error: error => this.handleApiError(error) });
   }
 
-  canAssignClaims(): boolean {
-    return ['Super Administrator', 'Insurance Company Administrator', 'Claims Manager'].includes(this.currentUser?.role || '');
-  }
+  canAssignClaims(): boolean { return this.hasPermission('claims.assign'); }
 
   loadDashboardAnalytics(): void {
     this.dashboardBusy = true;
@@ -696,13 +706,9 @@ export class AppComponent implements OnInit {
     });
   }
 
-  canEditClaims(): boolean {
-    return ['Super Administrator', 'Insurance Company Administrator', 'Claims Manager', 'Property Adjuster', 'Casualty Adjuster'].includes(this.currentUser?.role || '');
-  }
+  canEditClaims(): boolean { return this.hasPermission('claims.edit'); }
 
-  canDeleteClaims(): boolean {
-    return ['Super Administrator', 'Insurance Company Administrator', 'Claims Manager'].includes(this.currentUser?.role || '');
-  }
+  canDeleteClaims(): boolean { return this.hasPermission('claims.delete'); }
 
   startClaimEdit(): void {
     if (!this.selectedClaim || !this.canEditClaims()) return;
@@ -1590,9 +1596,7 @@ export class AppComponent implements OnInit {
     return compared ? Math.round((matched / compared) * 100) : 0;
   }
 
-  canAddComparisonComment(): boolean {
-    return ['Super Administrator', 'Insurance Company Administrator', 'Claims Manager', 'Property Adjuster', 'Casualty Adjuster', 'Surveyor', 'Actuarial Analyst', 'Approver'].includes(this.currentUser?.role || '');
-  }
+  canAddComparisonComment(): boolean { return this.hasPermission('reports.comment'); }
 
   loadComparisonComments(): void {
     const id = this.selectedClaim?.claim_id;
@@ -1632,13 +1636,9 @@ export class AppComponent implements OnInit {
     });
   }
 
-  canReviewFinancialEstimate(): boolean {
-    return ['Super Administrator', 'Insurance Company Administrator', 'Claims Manager', 'Property Adjuster', 'Casualty Adjuster', 'Surveyor', 'Actuarial Analyst', 'Approver'].includes(this.currentUser?.role || '');
-  }
+  canReviewFinancialEstimate(): boolean { return this.hasPermission('finance.edit') || this.hasPermission('finance.approve'); }
 
-  canApproveFinancialEstimate(): boolean {
-    return ['Super Administrator', 'Insurance Company Administrator', 'Claims Manager', 'Approver'].includes(this.currentUser?.role || '');
-  }
+  canApproveFinancialEstimate(): boolean { return this.hasPermission('finance.approve'); }
 
   isFinalEstimateReview(estimate: FinancialEstimate): boolean {
     return ['Approved', 'Rejected'].includes(estimate.review_status || '');
@@ -1685,13 +1685,9 @@ export class AppComponent implements OnInit {
     this.damageImagePreview = URL.createObjectURL(file);
   }
 
-  canReviewDamage(): boolean {
-    return ['Super Administrator', 'Insurance Company Administrator', 'Claims Manager', 'Property Adjuster', 'Casualty Adjuster', 'Surveyor'].includes(this.currentUser?.role || '');
-  }
+  canReviewDamage(): boolean { return this.hasPermission('damage.review'); }
 
-  canApproveDamage(): boolean {
-    return ['Super Administrator', 'Insurance Company Administrator', 'Claims Manager', 'Approver'].includes(this.currentUser?.role || '');
-  }
+  canApproveDamage(): boolean { return this.hasPermission('claims.approve'); }
 
   loadDamageAssessments(): void {
     const claimId = this.damageClaimId.trim();
