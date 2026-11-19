@@ -1857,6 +1857,10 @@ export class AppComponent implements OnInit {
     });
   }
 
+  assignedRoleNames(account: User): string {
+    return (account.roles?.length ? account.roles : [account.role]).filter(Boolean).join(', ');
+  }
+
   customRoleNames(account: User): string {
     return (account.custom_roles || []).map((role: any) => typeof role === 'string' ? role : role.name).filter(Boolean).join(', ');
   }
