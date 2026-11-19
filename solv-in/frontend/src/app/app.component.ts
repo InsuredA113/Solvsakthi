@@ -731,7 +731,7 @@ export class AppComponent implements OnInit {
       params: this.hasPermission('claims.view') ? params : new HttpParams(),
       headers: this.authHeaders()
     }).subscribe({
-      next: result => { this.claims = result.items; this.loadingClaims = false; this.loadLossCauseOptions(); },
+      next: result => { this.claims = result.items; this.loadingClaims = false; if (this.hasPermission('claims.view')) this.loadLossCauseOptions(); },
       error: error => { this.loadingClaims = false; this.handleApiError(error); this.claims = []; }
     });
   }
