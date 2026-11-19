@@ -62,7 +62,7 @@ def _get_scoped_claim(claim_id: str, user: dict):
         raise HTTPException(status_code=404, detail="Claim not found.")
     if not is_in_scope_claim(claim):
         raise HTTPException(status_code=422, detail="Comparison comments are limited to Property and Commercial Casualty claims.")
-    return db
+    return db, claim
 
 
 @router.get("/api/claims/{claim_id}/comparison-comments")
@@ -70,7 +70,7 @@ def list_comparison_comments(
     claim_id: str,
     user: dict = Depends(require_permissions("reports.view"))
 ):
-    db = _get_scoped_claim(claim_id, user)
+    db, claim = _get_scoped_claim(claim_id, user)
     try:
         rows = list(
             db["comparison_comments"].find({"claim_id": claim_id})
@@ -90,7 +90,7 @@ def create_comparison_comment(
     db = _get_scoped_claim(claim_id)
     record = {
         "claim_id": claim_id,
-        "organisation_id": user.get("organisation_id"),
+        "organisation_id": claim.get("organisation_id"),
         "comment": payload.comment,
         "field_key": payload.field_key,
         "field_label": payload.field_label,
