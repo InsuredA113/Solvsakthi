@@ -6,6 +6,7 @@ import { environment } from '../environments/environment';
 
 interface User { full_name: string; email: string; role: string; roles?: string[]; custom_roles?: any[]; is_active?: boolean; }
 interface Adjuster { full_name: string; email: string; role: 'Property Adjuster' | 'Casualty Adjuster'; }
+interface Surveyor { full_name: string; email: string; role: 'Insurance Surveyor'; }
 interface Claim {
   claim_id: string; customer_name?: string | null; loss_cause?: string | null; email?: string | null; phone?: string | null;
   policy_number?: string | null; claim_type: 'Property' | 'Casualty' | 'Unclassified'; property_occupancy?: string | null;
@@ -14,7 +15,8 @@ interface Claim {
   incident_description?: string | null; loss_location?: string | null; country_code?: string | null; region?: string | null; locality?: string | null; postal_code?: string | null; estimated_loss?: number | null;
   currency?: string | null; status: string; created_at?: string; updated_at?: string;
   created_by?: string; created_by_name?: string; created_by_email?: string; source?: string; source_mode?: string;
-  assigned_adjuster_email?: string | null; assigned_adjuster_name?: string | null; assigned_adjuster_role?: string | null; closed_at?: string | null;
+  assigned_adjuster_email?: string | null; assigned_adjuster_name?: string | null; assigned_adjuster_role?: string | null;
+  assigned_surveyor_email?: string | null; assigned_surveyor_name?: string | null; closed_at?: string | null;
   auto_intake_status?: string; missing_fields?: string[]; suggested_information?: Record<string, string>;
 }
 interface ComparisonComment { comment_id: string; claim_id: string; comment: string; field_key?: string | null; field_label?: string | null; created_at: string; created_by: string; created_by_role: string; }
@@ -166,6 +168,7 @@ export class AppComponent implements OnInit {
   closedClaims = 0;
   unclassifiedLegacyCasualtyClaims = 0;
   adjusters: Adjuster[] = [];
+  surveyors: Surveyor[] = [];
   dashboardAnalytics: any = null;
   dashboardBusy = false;
   dashboardYear = '';
@@ -240,7 +243,7 @@ export class AppComponent implements OnInit {
     this.loadEffectivePermissions(() => {
       if (this.hasPermission('dashboard.view')) this.loadDashboard();
       if (this.hasPermission('analytics.view')) this.loadDashboardAnalytics();
-      if (this.hasPermission('claims.assign')) this.loadAdjusters();
+      if (this.hasPermission('claims.assign')) { this.loadAdjusters(); this.loadSurveyors(); }
       if (this.hasPermission('claims.view')) this.loadClaims();
       if (this.isAdmin()) this.loadUsers();
     });
@@ -587,6 +590,13 @@ export class AppComponent implements OnInit {
     this.http.get<{items: Adjuster[]; count: number}>(`${environment.apiBaseUrl}/adjusters`, { headers: this.authHeaders() }).subscribe({ next: result => this.adjusters = result.items || [], error: error => this.handleApiError(error) });
   }
 
+  loadSurveyors(): void {
+    this.http.get<{items: Surveyor[]; count: number}>(`${environment.apiBaseUrl}/surveyors`, { headers: this.authHeaders() }).subscribe({
+      next: result => this.surveyors = result.items || [],
+      error: error => this.handleApiError(error)
+    });
+  }
+
   canAssignClaims(): boolean { return this.hasPermission('claims.assign'); }
 
   loadDashboardAnalytics(): void {
@@ -603,6 +613,18 @@ export class AppComponent implements OnInit {
   assignAdjuster(claim: Claim, email: string): void {
     if (!this.canAssignClaims() || !email) return;
     this.http.patch<Claim>(`${environment.apiBaseUrl}/claims/${encodeURIComponent(claim.claim_id)}/assign-adjuster`, { adjuster_email: email }, { headers: this.authHeaders() }).subscribe({ next: updated => { this.claims = this.claims.map(item => item.claim_id === updated.claim_id ? updated : item); this.successMessage = `Assigned ${updated.claim_id} to ${updated.assigned_adjuster_name}.`; this.loadDashboardAnalytics(); }, error: error => this.handleApiError(error) });
+  }
+
+  assignSurveyor(claim: Claim, email: string): void {
+    if (!this.canAssignClaims() || !email) return;
+    this.http.patch<Claim>(`${environment.apiBaseUrl}/claims/${encodeURIComponent(claim.claim_id)}/assign-surveyor`, { surveyor_email: email }, { headers: this.authHeaders() }).subscribe({
+      next: updated => {
+        this.claims = this.claims.map(item => item.claim_id === updated.claim_id ? updated : item);
+        if (this.selectedClaim?.claim_id === updated.claim_id) this.selectedClaim = updated;
+        this.successMessage = `Assigned ${updated.claim_id} to surveyor ${updated.assigned_surveyor_name}.`;
+      },
+      error: error => this.handleApiError(error)
+    });
   }
 
   loadClaimsAnalytics(): void {
