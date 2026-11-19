@@ -63,18 +63,18 @@ ROLE_PERMISSIONS = {
         "compliance.view",
     }),
     "Claims Manager": frozenset({
-        "dashboard.view", "claims.view", "claims.create", "claims.edit", "claims.assign",
-        "claims.export", "evidence.view", "evidence.upload", "damage.view", "damage.review",
+        "dashboard.view", "claims.view", "claims.create", "claims.edit", "claims.assign", "claims.approve",
+        "claims.export", "evidence.view", "evidence.upload", "damage.view", "damage.review", "finance.edit", "finance.approve",
         "coverage.view", "coverage.review", "reports.view", "reports.compare",
         "reports.export", "reports.comment", "analytics.view",
     }),
     "Property Adjuster": frozenset({
-        "dashboard.view", "claims.view", "claims.edit", "evidence.view", "evidence.upload",
+        "dashboard.view", "claims.view", "claims.edit", "evidence.view", "evidence.upload", "finance.edit",
         "damage.view", "damage.analyse", "damage.review", "coverage.view", "reports.view",
         "reports.compare", "reports.comment",
     }),
     "Casualty Adjuster": frozenset({
-        "dashboard.view", "claims.view", "claims.edit", "evidence.view", "evidence.upload",
+        "dashboard.view", "claims.view", "claims.edit", "evidence.view", "evidence.upload", "finance.edit",
         "coverage.view", "reports.view", "reports.compare", "reports.comment",
     }),
     "Claims Approver": frozenset({
@@ -87,7 +87,7 @@ ROLE_PERMISSIONS = {
         "damage.review", "reports.view", "reports.comment",
     }),
     "Actuarial Analyst": frozenset({
-        "dashboard.view", "claims.view", "damage.view", "coverage.view", "finance.view",
+        "dashboard.view", "claims.view", "damage.view", "coverage.view", "finance.view", "finance.edit",
         "reports.view", "reports.compare", "reports.export", "analytics.view",
     }),
     "Auditor": frozenset({
