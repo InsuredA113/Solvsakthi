@@ -108,6 +108,7 @@ export class AppComponent implements OnInit {
   availablePermissions: string[] = [];
   customRoleDraft = { name: '', description: '', permissions: [] as string[] };
   customRoleBusy = false;
+  editingCustomRoleName = '';
   userBusy = false;
   selectedDamageImage: File | null = null;
   damageImagePreview = '';
@@ -1822,22 +1823,33 @@ export class AppComponent implements OnInit {
     this.customRoleDraft.permissions = Array.from(selected);
   }
 
+  editCustomRole(role: any): void {
+    this.editingCustomRoleName = role.name;
+    this.customRoleDraft = { name: role.name, description: role.description || '', permissions: [...(role.permissions || [])] };
+  }
+
+  cancelCustomRoleEdit(): void {
+    this.editingCustomRoleName = '';
+    this.customRoleDraft = { name: '', description: '', permissions: [] };
+  }
+
   createCustomRole(): void {
-    if (!this.customRoleDraft.name.trim() || this.customRoleDraft.permissions.length === 0) {
-      this.errorMessage = 'Enter a role name and select at least one permission.';
-      return;
-    }
-    this.customRoleBusy = true;
-    this.errorMessage = '';
-    this.successMessage = '';
-    this.http.post(`${environment.apiBaseUrl}/roles/custom`, this.customRoleDraft, { headers: this.authHeaders() }).subscribe({
-      next: () => {
-        this.customRoleBusy = false;
-        this.successMessage = 'Custom role created successfully.';
-        this.customRoleDraft = { name: '', description: '', permissions: [] };
-        this.loadCustomRoles();
-      },
+    if (!this.customRoleDraft.name.trim() || this.customRoleDraft.permissions.length === 0) { this.errorMessage = 'Enter a role name and select at least one permission.'; return; }
+    this.customRoleBusy = true; this.errorMessage = ''; this.successMessage = '';
+    const request = this.editingCustomRoleName
+      ? this.http.patch(`${environment.apiBaseUrl}/roles/custom/${encodeURIComponent(this.editingCustomRoleName)}`, { description: this.customRoleDraft.description, permissions: this.customRoleDraft.permissions }, { headers: this.authHeaders() })
+      : this.http.post(`${environment.apiBaseUrl}/roles/custom`, this.customRoleDraft, { headers: this.authHeaders() });
+    request.subscribe({
+      next: () => { this.customRoleBusy = false; this.successMessage = this.editingCustomRoleName ? 'Custom role updated successfully.' : 'Custom role created successfully.'; this.cancelCustomRoleEdit(); this.loadCustomRoles(); },
       error: error => { this.customRoleBusy = false; this.handleApiError(error); }
+    });
+  }
+
+  deleteCustomRole(role: any): void {
+    if (!confirm('Delete custom role ' + role.name + '? It must not be assigned to users.')) return;
+    this.http.delete(`${environment.apiBaseUrl}/roles/custom/${encodeURIComponent(role.name)}`, { headers: this.authHeaders() }).subscribe({
+      next: () => { this.successMessage = 'Custom role deleted.'; this.loadCustomRoles(); },
+      error: error => this.handleApiError(error)
     });
   }
 
