@@ -392,3 +392,38 @@ def test_bootstrap_preserves_existing_super_admin_deactivation_and_password(tena
     assert updated["password_hash"] == original_hash
     assert updated["roles"] == ["Super Administrator"]
     assert updated["is_global_admin"] is True
+
+
+
+def test_manual_email_intake_rejects_cross_organisation_message_collision(tenant_api, monkeypatch):
+    client, db, sign_in_as = tenant_api
+    db["email_intake"].insert_one({
+        "intake_id": "intake-org-b-manual",
+        "provider": "gmail",
+        "provider_message_id": "shared-provider-message",
+        "organisation_id": "org-b",
+    })
+    monkeypatch.setattr(
+        main,
+        "extract_email_intake",
+        lambda subject, body: {
+            "intake_status": "Needs Review",
+            "suggested_claim_type": None,
+            "extracted_fields": {},
+            "missing_fields": [],
+        },
+    )
+    sign_in_as(manager())
+    response = client.post(
+        "/api/email-intake",
+        json={
+            "provider": "gmail",
+            "provider_message_id": "shared-provider-message",
+            "sender_email": "sender@example.com",
+            "subject": "New claim",
+            "body_text": "Please register a new claim.",
+        },
+    )
+
+    assert response.status_code == 409
+    assert "another organisation" in response.json()["detail"]
