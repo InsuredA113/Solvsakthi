@@ -124,13 +124,13 @@ class OrganisationScopeTests(unittest.TestCase):
             }),
             {"$and": [
                 {"organisation_id": "org-a"},
-                {"$or": [{"customer_user_email": "customer@example.test"}]},
+                {"$or": [{"$or": [{"customer_user_email": "customer@example.test"}]}]},
             ]},
         )
 
     def test_claim_filter_always_includes_tenant_boundary(self):
         self.assertEqual(
-            scoped_claim_filter("CLM-2026-000001", {"organisation_id": "org-a"}),
+            scoped_claim_filter("CLM-2026-000001", {"organisation_id": "org-a", "roles": ["Claims Manager"]}),
             {"$and": [
                 {"claim_id": "CLM-2026-000001"},
                 {"organisation_id": "org-a"},
