@@ -116,6 +116,39 @@ class OrganisationScopeTests(unittest.TestCase):
             ]},
         )
 
+    def test_surveyor_visibility_is_limited_to_assigned_claims(self):
+        self.assertEqual(
+            claim_visibility_filter({
+                "email": "surveyor@example.test",
+                "roles": ["Insurance Surveyor"],
+                "organisation_id": "org-a",
+            }),
+            {
+                "$and": [
+                    {"organisation_id": "org-a"},
+                    {"$or": [{"assigned_surveyor_email": "surveyor@example.test"}]},
+                ]
+            },
+        )
+
+    def test_multi_role_surveyor_and_adjuster_sees_only_either_assignment(self):
+        self.assertEqual(
+            claim_visibility_filter({
+                "email": "field@example.test",
+                "roles": ["Insurance Surveyor", "Property Adjuster"],
+                "organisation_id": "org-a",
+            }),
+            {
+                "$and": [
+                    {"organisation_id": "org-a"},
+                    {"$or": [
+                        {"assigned_adjuster_email": "field@example.test"},
+                        {"assigned_surveyor_email": "field@example.test"},
+                    ]},
+                ]
+            },
+        )
+
     def test_claims_manager_retains_organisation_wide_visibility(self):
         self.assertEqual(
             claim_visibility_filter({
