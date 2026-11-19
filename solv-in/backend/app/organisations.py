@@ -127,5 +127,10 @@ def claim_visibility_filter(user: dict) -> dict:
         })
 
     if not visibility:
-        return base
+        # Fail closed: a role with claims.view but no explicit claim-visibility
+        # rule must not silently inherit organisation-wide access.
+        raise HTTPException(
+            status_code=403,
+            detail="Your assigned role does not have a configured claim-visibility scope."
+        )
     return {"$and": [base, {"$or": visibility}]}
