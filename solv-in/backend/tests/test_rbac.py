@@ -39,6 +39,24 @@ class RoleCompatibilityTests(unittest.TestCase):
         self.assertEqual(list(PREDEFINED_ROLES).count("Super Administrator"), 1)
         self.assertIn("Super Administrator", get_effective_permissions({"role": "Super Administrator"}))
 
+    def test_claims_manager_has_claim_and_financial_approval_permissions(self):
+        permissions = get_effective_permissions({"roles": ["Claims Manager"]})
+        self.assertIn("claims.approve", permissions)
+        self.assertIn("finance.approve", permissions)
+        self.assertIn("finance.edit", permissions)
+
+    def test_adjuster_can_create_estimates_but_not_approve_financials(self):
+        permissions = get_effective_permissions({"roles": ["Property Adjuster"]})
+        self.assertIn("finance.edit", permissions)
+        self.assertNotIn("finance.approve", permissions)
+
+    def test_custom_role_can_add_only_registered_permissions(self):
+        permissions = get_effective_permissions({"roles": ["Auditor"], "custom_roles": [
+            {"name": "Reviewer", "permissions": ["claims.approve", "not.a.permission"]}
+        ]})
+        self.assertIn("claims.approve", permissions)
+        self.assertNotIn("not.a.permission", permissions)
+
 
 if __name__ == "__main__":
     unittest.main()
