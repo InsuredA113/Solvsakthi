@@ -475,8 +475,11 @@ def list_adjusters(user: dict = Depends(require_permissions("claims.assign"))):
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     try:
         rows = list(get_database()["users"].find(
-            {"is_active": True, "role": {"$in": ["Property Adjuster", "Casualty Adjuster"]}},
-            {"_id": 0, "full_name": 1, "email": 1, "role": 1}
+            {"is_active": True, "$or": [
+                {"role": {"$in": ["Property Adjuster", "Casualty Adjuster"]}},
+                {"roles": {"$in": ["Property Adjuster", "Casualty Adjuster"]}}
+            ]},
+            {"_id": 0, "full_name": 1, "email": 1, "role": 1, "roles": 1}
         ).sort("full_name", 1))
         return {"items": rows, "count": len(rows)}
     except PyMongoError as exc:
@@ -497,10 +500,11 @@ def assign_claim_adjuster(
         raise HTTPException(status_code=404, detail="Claim not found.")
     adjuster_email = normalize_email(payload.adjuster_email)
     adjuster = db["users"].find_one({"email": adjuster_email, "is_active": True})
-    if not adjuster or adjuster.get("role") not in {"Property Adjuster", "Casualty Adjuster"}:
+    adjuster_roles = set(get_user_roles(adjuster or {}))
+    if not adjuster or not adjuster_roles.intersection({"Property Adjuster", "Casualty Adjuster"}):
         raise HTTPException(status_code=422, detail="Select an active Property or Casualty Adjuster.")
     expected_role = "Property Adjuster" if claim.get("claim_type") == "Property" else "Casualty Adjuster" if claim.get("claim_type") == "Casualty" else None
-    if expected_role and adjuster.get("role") != expected_role:
+    if expected_role and expected_role not in adjuster_roles:
         raise HTTPException(status_code=422, detail=f"This claim must be assigned to a {expected_role}.")
     now = datetime.now(timezone.utc).isoformat()
     try:
@@ -509,7 +513,7 @@ def assign_claim_adjuster(
             {"$set": {
                 "assigned_adjuster_email": adjuster_email,
                 "assigned_adjuster_name": adjuster.get("full_name") or adjuster_email,
-                "assigned_adjuster_role": adjuster["role"],
+                "assigned_adjuster_role": expected_role or next(iter(adjuster_roles.intersection({"Property Adjuster", "Casualty Adjuster"}))),
                 "assigned_at": now,
                 "assigned_by": user["email"],
                 "updated_at": now,
