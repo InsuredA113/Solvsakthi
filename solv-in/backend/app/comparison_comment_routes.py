@@ -5,7 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pymongo import DESCENDING
 from pymongo.errors import PyMongoError
 
-from .auth import require_roles
+from .auth import require_permissions, require_roles
 from .claims_analytics import is_in_scope_claim
 from .database import database_is_available, get_database
 
@@ -67,7 +67,7 @@ def _get_scoped_claim(claim_id: str):
 @router.get("/api/claims/{claim_id}/comparison-comments")
 def list_comparison_comments(
     claim_id: str,
-    user: dict = Depends(require_roles(*COMMENT_READ_ROLES))
+    user: dict = Depends(require_permissions("reports.view"))
 ):
     db = _get_scoped_claim(claim_id)
     try:
@@ -84,7 +84,7 @@ def list_comparison_comments(
 def create_comparison_comment(
     claim_id: str,
     payload: ComparisonCommentCreate,
-    user: dict = Depends(require_roles(*COMMENT_WRITE_ROLES))
+    user: dict = Depends(require_permissions("reports.comment"))
 ):
     db = _get_scoped_claim(claim_id)
     record = {
