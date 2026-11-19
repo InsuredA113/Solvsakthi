@@ -15,7 +15,7 @@ from .auth import (
     normalize_email, require_permissions, require_roles, verify_password
 )
 from .bootstrap import seed_initial_admin
-from .organisations import ensure_default_organisation, organisation_filter, scoped_claim_filter
+from .organisations import ensure_default_organisation, organisation_filter, scoped_claim_filter, resolve_write_organisation_id
 from .config import CORS_ORIGINS, ACCESS_TOKEN_MINUTES
 from .database import get_database, database_is_available
 from .models import ClaimCreate, ClaimStatusUpdate
@@ -529,7 +529,7 @@ def assign_claim_adjuster(
     if not claim or (not is_in_scope_claim(claim) and claim.get("auto_intake_status") != "Provisional"):
         raise HTTPException(status_code=404, detail="Claim not found.")
     adjuster_email = normalize_email(payload.adjuster_email)
-    adjuster = db["users"].find_one({"email": adjuster_email, "is_active": True})
+    adjuster = db["users"].find_one({"email": adjuster_email, "is_active": True, **organisation_filter(user)})
     adjuster_roles = set(get_user_roles(adjuster or {}))
     if not adjuster or not adjuster_roles.intersection({"Property Adjuster", "Casualty Adjuster"}):
         raise HTTPException(status_code=422, detail="Select an active Property or Casualty Adjuster.")
@@ -1305,13 +1305,17 @@ def review_damage_assessment(assessment_id: str, payload: DamageReviewUpdate, us
     now = datetime.now(timezone.utc).isoformat()
     review_entry = {"status": payload.status, "notes": payload.notes.strip(), "reviewed_at": now, "reviewed_by": user["email"], "reviewer_role": user["role"]}
     try:
-        updated = get_database()["damage_assessments"].find_one_and_update(
-            {"_id": object_id, "status": {"$nin": ["Approved", "Rejected"]}},
+        assessment_collection = get_database()["damage_assessments"]
+        assessment = assessment_collection.find_one({"_id": object_id})
+        if not assessment or not get_database()["claims"].find_one(scoped_claim_filter(assessment.get("claim_id", ""), user), {"_id": 1}):
+            raise HTTPException(status_code=404, detail="Damage assessment not found.")
+        updated = assessment_collection.find_one_and_update(
+            {"_id": object_id, "claim_id": assessment.get("claim_id"), "status": {"$nin": ["Approved", "Rejected"]}},
             {"$set": {"status": payload.status, "updated_at": now, "updated_by": user["email"]}, "$push": {"review_history": review_entry}},
             return_document=ReturnDocument.AFTER, projection={"_id": 0}
         )
         if not updated:
-            existing = get_database()["damage_assessments"].find_one({"_id": object_id}, {"status": 1})
+            existing = assessment_collection.find_one({"_id": object_id, "claim_id": assessment.get("claim_id")}, {"status": 1})
             if not existing:
                 raise HTTPException(status_code=404, detail="Damage assessment not found.")
             raise HTTPException(status_code=409, detail="This assessment has already been finalised.")
@@ -1549,6 +1553,8 @@ def review_financial_estimate(
         raise HTTPException(status_code=400, detail="Invalid financial estimate ID.") from exc
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    if not get_database()["claims"].find_one(scoped_claim_filter(claim_id, user), {"_id": 1}):
+        raise HTTPException(status_code=404, detail="Claim not found.")
     collection = get_database()["financial_estimates"]
     existing = collection.find_one({"_id": object_id, "claim_id": claim_id})
     if not existing:
@@ -1976,7 +1982,8 @@ def receive_email_intake(
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable. The email was not queued.")
     collection = get_database()["email_intake"]
-    org_scope = organisation_filter(user)
+    organisation_id = resolve_write_organisation_id(get_database(), user)
+    org_scope = {"organisation_id": organisation_id}
     try:
         collection.create_index([("provider", 1), ("provider_message_id", 1)], unique=True)
         existing = collection.find_one({
@@ -1998,7 +2005,7 @@ def receive_email_intake(
             "received_at": received_at,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "created_by": user["email"],
-            "organisation_id": user.get("organisation_id"),
+            "organisation_id": organisation_id,
             **parsed,
             "received_at": received_at,
             "review_status": parsed["intake_status"],
@@ -2051,7 +2058,7 @@ def get_email_intake(
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
-    record = get_database()["email_intake"].find_one({"intake_id": intake_id}, {"_id": 0})
+    record = get_database()["email_intake"].find_one({"$and": [{"intake_id": intake_id}, organisation_filter(user)]}, {"_id": 0})
     if not record:
         raise HTTPException(status_code=404, detail="Email intake record not found.")
     return record
@@ -2108,11 +2115,12 @@ def create_claim_from_email_intake(
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     db = get_database()
     collection = db["email_intake"]
+    org_scope = organisation_filter(user)
     try:
         db["claims"].create_index("source_intake_id", unique=True, sparse=True)
-        existing_claim = db["claims"].find_one({"source_intake_id": intake_id}, {"_id": 0})
+        existing_claim = db["claims"].find_one({"$and": [{"source_intake_id": intake_id}, org_scope]}, {"_id": 0})
         if existing_claim:
-            collection.update_one({"intake_id": intake_id}, {"$set": {
+            collection.update_one({"$and": [{"intake_id": intake_id}, org_scope]}, {"$set": {
                 "review_status": "Converted", "conversion_state": "Completed",
                 "claim_id": existing_claim["claim_id"]
             }})
@@ -2120,8 +2128,8 @@ def create_claim_from_email_intake(
     except PyMongoError as exc:
         raise HTTPException(status_code=503, detail="Unable to verify email-to-claim conversion state.") from exc
     record = collection.find_one_and_update(
-        {"intake_id": intake_id, "review_status": "Reviewed",
-         "claim_id": {"$exists": False}, "conversion_state": {"$ne": "Processing"}},
+        {"$and": [{"intake_id": intake_id, "review_status": "Reviewed",
+         "claim_id": {"$exists": False}, "conversion_state": {"$ne": "Processing"}}, org_scope]},
         {"$set": {"conversion_state": "Processing"}},
         return_document=ReturnDocument.AFTER
     )
@@ -2143,8 +2151,9 @@ def create_claim_from_email_intake(
         claim_id = f"CLM-{year}-{sequence['sequence']:06d}"
         now = datetime.now(timezone.utc).isoformat()
         claim_record = payload.model_dump(mode="json")
+        intake_organisation_id = record.get("organisation_id") or resolve_write_organisation_id(db, user)
         claim_record.update({
-            "claim_id": claim_id, "status": "FNOL Received",
+            "claim_id": claim_id, "organisation_id": intake_organisation_id, "status": "FNOL Received",
             "created_at": now, "updated_at": now,
             "created_by": user["email"],
             "created_by_name": user.get("full_name") or user["email"],
