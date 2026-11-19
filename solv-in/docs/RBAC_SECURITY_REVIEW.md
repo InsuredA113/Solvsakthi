@@ -152,15 +152,17 @@ Implemented on `feature/solvin-rbac-foundation`:
 - Adjuster reports, comparison comments and claim exports verify the parent claim's organisation; export audit records and related policy reads are tied to that claim.
 - Email connector state is associated with an organisation; webhook ingestion requires an organisation-bound connector state and stamps generated intake/claims with that organisation.
 - Added unit tests for organisation filtering, explicit global-admin bypass, assigned-adjuster visibility, assigned-surveyor visibility, combined adjuster/surveyor multi-role visibility, Claims Manager organisation-wide visibility, verified customer-link filtering and cross-organisation claim-ID isolation.
+- Added MongoDB-mock API integration tests for cross-organisation claim-ID reads, same-organisation surveyor assignment/history, rejection of cross-organisation surveyor assignment, and policyholder visibility limited to staff-verified claims.
+- Added Angular surveyor assignment in the Claims register, a staff identity-verification panel on Claim Details, and a policyholder-only My Claims page that calls the own-claims endpoint.
 
 ## Remaining release blockers
 
 This work is a foundation, not yet a production-ready multi-tenant security certification:
 
 1. Review and test every MongoDB query and every child-record / GridFS operation, including all connector retry and duplicate paths.
-2. Surveyor assignment workflow and assignment-based claim visibility are implemented with unit coverage. Customer own-claim list/detail APIs and a staff-attested verified customer-link endpoint are implemented; verify that the Angular workflow clearly communicates the manual verification responsibility and add endpoint-level integration tests. Unverified claim contact email must never grant access.
+2. Surveyor assignment and verified customer-link workflows now have API integration tests and Angular controls. The customer verification is a staff attestation based on the selected method and internal reference, not automated identity proof; the insurer must define and follow its approved verification procedure. Expand endpoint tests to cover unauthorised actors, inactive users, invalid customer roles, and customer-link reassignment. Unverified claim contact email must never grant access.
 3. Decide and implement multi-organisation mailbox configuration; current email connector settings are environment-configured per provider/mailbox and bind that mailbox to one organisation.
-4. Add two-organisation integration tests for read, write, update, delete, export, download, analytics, role administration and IDOR attempts.
+4. Expand two-organisation integration tests beyond the new claim-read, surveyor-assignment and customer-visibility cases to cover write/update/delete, evidence download, export, analytics, role administration, and IDOR attempts across all claim-linked collections.
 5. Review legacy-record migration. The user has stated the current database has no business/claim data, but any deployed database must still be inspected and backed up before migration.
 6. Run Python compileall, backend pytest and Angular production build against the latest branch head; confirm CI results before merge.
 7. Keep PR #7 in draft. No merge, production database migration, production deployment or live account changes are authorised by this implementation.
