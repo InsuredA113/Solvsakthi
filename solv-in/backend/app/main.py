@@ -1556,11 +1556,16 @@ def list_damage_assessments(
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
-    if not get_database()["claims"].find_one(scoped_claim_filter(claim_id, user), {"_id": 0}):
+    claim = get_database()["claims"].find_one(
+        scoped_claim_filter(claim_id, user),
+        {"_id": 0, "claim_id": 1, "organisation_id": 1}
+    )
+    if not claim:
         raise HTTPException(status_code=404, detail="Claim not found.")
-    rows = list(get_database()["damage_assessments"].find(
-        scoped_claim_filter(claim_id, user)
-    ).sort("created_at", DESCENDING).limit(100))
+    rows = list(get_database()["damage_assessments"].find({
+        "claim_id": claim_id,
+        "organisation_id": claim.get("organisation_id"),
+    }).sort("created_at", DESCENDING).limit(100))
     for row in rows:
         row["assessment_id"] = str(row.pop("_id"))
     return {"items": rows, "count": len(rows)}
@@ -1585,15 +1590,26 @@ def review_damage_assessment(assessment_id: str, payload: DamageReviewUpdate, us
     try:
         assessment_collection = get_database()["damage_assessments"]
         assessment = assessment_collection.find_one({"_id": object_id})
-        if not assessment or not get_database()["claims"].find_one(scoped_claim_filter(assessment.get("claim_id", ""), user), {"_id": 1}):
+        parent_claim = (
+            get_database()["claims"].find_one(
+                scoped_claim_filter(assessment.get("claim_id", ""), user),
+                {"_id": 0, "claim_id": 1, "organisation_id": 1}
+            ) if assessment else None
+        )
+        if not assessment or not parent_claim or assessment.get("organisation_id") != parent_claim.get("organisation_id"):
             raise HTTPException(status_code=404, detail="Damage assessment not found.")
+        child_scope = {
+            "_id": object_id,
+            "claim_id": assessment.get("claim_id"),
+            "organisation_id": parent_claim.get("organisation_id"),
+        }
         updated = assessment_collection.find_one_and_update(
-            {"_id": object_id, "claim_id": assessment.get("claim_id"), "status": {"$nin": ["Approved", "Rejected"]}},
+            {**child_scope, "status": {"$nin": ["Approved", "Rejected"]}},
             {"$set": {"status": payload.status, "updated_at": now, "updated_by": user["email"]}, "$push": {"review_history": review_entry}},
             return_document=ReturnDocument.AFTER, projection={"_id": 0}
         )
         if not updated:
-            existing = assessment_collection.find_one({"_id": object_id, "claim_id": assessment.get("claim_id")}, {"status": 1})
+            existing = assessment_collection.find_one(child_scope, {"status": 1})
             if not existing:
                 raise HTTPException(status_code=404, detail="Damage assessment not found.")
             raise HTTPException(status_code=409, detail="This assessment has already been finalised.")
@@ -1639,7 +1655,11 @@ def create_financial_estimate(
             damage_object_id = ObjectId(payload.source_damage_assessment_id)
         except InvalidId as exc:
             raise HTTPException(status_code=422, detail="Invalid source damage assessment ID.") from exc
-        source_damage_assessment = db["damage_assessments"].find_one({"_id": damage_object_id, "claim_id": claim_id})
+        source_damage_assessment = db["damage_assessments"].find_one({
+            "_id": damage_object_id,
+            "claim_id": claim_id,
+            "organisation_id": claim.get("organisation_id"),
+        })
         if not source_damage_assessment:
             raise HTTPException(status_code=404, detail="The selected damage assessment was not found for this claim.")
         if source_damage_assessment.get("status") not in {"Reviewed", "Approved"}:
@@ -1806,9 +1826,16 @@ def list_financial_estimates(
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
-    if not get_database()["claims"].find_one(scoped_claim_filter(claim_id, user), {"_id": 1}):
+    claim = get_database()["claims"].find_one(
+        scoped_claim_filter(claim_id, user),
+        {"_id": 0, "claim_id": 1, "organisation_id": 1}
+    )
+    if not claim:
         raise HTTPException(status_code=404, detail="Claim not found.")
-    rows = list(get_database()["financial_estimates"].find(scoped_claim_filter(claim_id, user)).sort("created_at", DESCENDING).limit(100))
+    rows = list(get_database()["financial_estimates"].find({
+        "claim_id": claim_id,
+        "organisation_id": claim.get("organisation_id"),
+    }).sort("created_at", DESCENDING).limit(100))
     for row in rows:
         row["estimate_id"] = str(row.pop("_id"))
     return {"items": rows, "count": len(rows)}
@@ -1832,10 +1859,19 @@ def review_financial_estimate(
         raise HTTPException(status_code=400, detail="Invalid financial estimate ID.") from exc
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
-    if not get_database()["claims"].find_one(scoped_claim_filter(claim_id, user), {"_id": 1}):
+    claim = get_database()["claims"].find_one(
+        scoped_claim_filter(claim_id, user),
+        {"_id": 0, "claim_id": 1, "organisation_id": 1}
+    )
+    if not claim:
         raise HTTPException(status_code=404, detail="Claim not found.")
+    child_scope = {
+        "_id": object_id,
+        "claim_id": claim_id,
+        "organisation_id": claim.get("organisation_id"),
+    }
     collection = get_database()["financial_estimates"]
-    existing = collection.find_one({"_id": object_id, "claim_id": claim_id})
+    existing = collection.find_one(child_scope)
     if not existing:
         raise HTTPException(status_code=404, detail="Financial estimate not found for this claim.")
     if existing.get("review_status") in {"Approved", "Rejected"}:
@@ -1846,7 +1882,7 @@ def review_financial_estimate(
         "reviewer_email": user["email"], "reviewer_role": user["role"], "reviewed_at": now
     }
     updated = collection.find_one_and_update(
-        {"_id": object_id, "claim_id": claim_id, "review_status": existing.get("review_status")},
+        {**child_scope, "review_status": existing.get("review_status")},
         {"$set": {"review_status": payload.status, "updated_at": now},
          "$push": {"review_history": event}},
         return_document=ReturnDocument.AFTER
@@ -1968,9 +2004,16 @@ def list_coverage_assessments(
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
-    if not get_database()["claims"].find_one(scoped_claim_filter(claim_id, user), {"_id": 1}):
+    claim = get_database()["claims"].find_one(
+        scoped_claim_filter(claim_id, user),
+        {"_id": 0, "claim_id": 1, "organisation_id": 1}
+    )
+    if not claim:
         raise HTTPException(status_code=404, detail="Claim not found.")
-    rows = list(get_database()["coverage_assessments"].find(scoped_claim_filter(claim_id, user)).sort("created_at", DESCENDING).limit(100))
+    rows = list(get_database()["coverage_assessments"].find({
+        "claim_id": claim_id,
+        "organisation_id": claim.get("organisation_id"),
+    }).sort("created_at", DESCENDING).limit(100))
     for row in rows:
         row["coverage_assessment_id"] = str(row.pop("_id"))
     return {"items": rows, "count": len(rows)}
