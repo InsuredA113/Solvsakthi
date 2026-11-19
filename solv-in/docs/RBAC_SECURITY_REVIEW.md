@@ -151,14 +151,14 @@ Implemented on `feature/solvin-rbac-foundation`:
 - Policies, tax rules, repair rates, custom roles, user administration and role audit records are organisation-scoped for tenant administrators.
 - Adjuster reports, comparison comments and claim exports verify the parent claim's organisation; export audit records and related policy reads are tied to that claim.
 - Email connector state is associated with an organisation; webhook ingestion requires an organisation-bound connector state and stamps generated intake/claims with that organisation.
-- Added unit tests for organisation filtering and explicit global-admin bypass.
+- Added unit tests for organisation filtering, explicit global-admin bypass, assigned-adjuster visibility, Claims Manager organisation-wide visibility and verified customer-link filtering.
 
 ## Remaining release blockers
 
 This work is a foundation, not yet a production-ready multi-tenant security certification:
 
 1. Review and test every MongoDB query and every child-record / GridFS operation, including all connector retry and duplicate paths.
-2. Implement and test role-specific object visibility: assigned-claim rules for adjusters/surveyors and verified own-claim rules for customers/policyholders.
+2. Adjuster assigned-claim visibility is now implemented in claim lookups, registers and analytics; newly created claims by adjusters are assigned to the creator. Still implement and test the surveyor assignment workflow and customer/policyholder own-claim APIs using an explicitly verified customer-to-claim link (do not infer ownership from an unverified contact email).
 3. Decide and implement multi-organisation mailbox configuration; current email connector settings are environment-configured per provider/mailbox and bind that mailbox to one organisation.
 4. Add two-organisation integration tests for read, write, update, delete, export, download, analytics, role administration and IDOR attempts.
 5. Review legacy-record migration. The user has stated the current database has no business/claim data, but any deployed database must still be inspected and backed up before migration.
