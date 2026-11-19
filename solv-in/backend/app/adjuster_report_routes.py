@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pymongo import DESCENDING
 from pymongo.errors import PyMongoError
 
-from .auth import require_roles
+from .auth import require_permissions, require_roles
 from .claims_analytics import is_in_scope_claim
 from .database import database_is_available, get_database
 
@@ -64,7 +64,7 @@ def _serialise_report(row: dict) -> dict:
 @router.get("/api/claims/{claim_id}/adjuster-reports")
 def list_adjuster_reports(
     claim_id: str,
-    user: dict = Depends(require_roles(*REPORT_READ_ROLES))
+    user: dict = Depends(require_permissions("reports.view"))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
@@ -85,7 +85,7 @@ def list_adjuster_reports(
 def create_adjuster_report(
     claim_id: str,
     payload: AdjusterReportCreate,
-    user: dict = Depends(require_roles(*REPORT_WRITE_ROLES))
+    user: dict = Depends(require_permissions("reports.compare"))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
