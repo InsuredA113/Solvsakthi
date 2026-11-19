@@ -482,8 +482,8 @@ def list_adjusters(user: dict = Depends(require_permissions("claims.assign"))):
     try:
         rows = list(get_database()["users"].find(
             {"is_active": True, "$or": [
-                {"role": {"$in": ["Property Adjuster", "Casualty Adjuster", "Surveyor"]}},
-                {"roles": {"$in": ["Property Adjuster", "Casualty Adjuster", "Insurance Surveyor", "Surveyor"]}}
+                {"role": {"$in": ["Property Adjuster", "Casualty Adjuster"]}},
+                {"roles": {"$in": ["Property Adjuster", "Casualty Adjuster"]}}
             ]},
             {"_id": 0, "full_name": 1, "email": 1, "role": 1, "roles": 1}
         ).sort("full_name", 1))
