@@ -1070,7 +1070,7 @@ async def upload_claim_document(
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
-    claim = get_database()["claims"].find_one(scoped_claim_filter(claim_id, user), {"_id": 0, "claim_id": 1})
+    claim = get_database()["claims"].find_one(scoped_claim_filter(claim_id, user), {"_id": 0, "claim_id": 1, "organisation_id": 1})
     if not claim:
         raise HTTPException(status_code=404, detail="Claim not found.")
     content_type = (file.content_type or "").lower()
@@ -1192,9 +1192,10 @@ async def analyse_damage_image(
         raise HTTPException(status_code=400, detail="The uploaded image is empty.")
     if len(image_bytes) > MAX_DAMAGE_IMAGE_BYTES:
         raise HTTPException(status_code=413, detail="Image size must not exceed 10 MB.")
+    claim = None
     if claim_id:
         claim = get_database()["claims"].find_one(scoped_claim_filter(claim_id, user), {
-            "_id": 0, "claim_id": 1, "claim_type": 1, "casualty_segment": 1
+            "_id": 0, "claim_id": 1, "claim_type": 1, "casualty_segment": 1, "organisation_id": 1
         })
         if not claim:
             raise HTTPException(status_code=404, detail="The selected claim ID was not found.")
