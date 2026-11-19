@@ -60,7 +60,7 @@ STATUS_ROLES = (
     "Property Adjuster", "Casualty Adjuster", "Approver"
 )
 ADMIN_ROLES = ("Super Administrator",)
-ROLE_ADMIN_ROLES = ("Super Administrator",)
+ROLE_ADMIN_ROLES = ("Super Administrator", "Insurance Company Administrator")
 
 DAMAGE_REVIEW_ROLES = ("Super Administrator", "Insurance Company Administrator", "Claims Manager", "Property Adjuster", "Casualty Adjuster", "Surveyor", "Actuarial Analyst", "Approver")
 DAMAGE_APPROVAL_ROLES = ("Super Administrator", "Insurance Company Administrator", "Claims Manager", "Approver")
@@ -136,7 +136,7 @@ def list_custom_roles(user: dict = Depends(require_roles(*ROLE_ADMIN_ROLES))):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     try:
-        items = list(get_database()["custom_roles"].find({}, {"_id": 0}).sort("name", 1))
+        items = list(get_database()["custom_roles"].find(organisation_filter(user), {"_id": 0}).sort("name", 1))
         return {"items": items, "count": len(items), "available_permissions": list(PERMISSIONS)}
     except PyMongoError as exc:
         raise HTTPException(status_code=503, detail="Unable to retrieve custom roles.") from exc
@@ -177,6 +177,7 @@ def _write_role_audit(action: str, role_name: str, actor: dict, details: dict | 
         "role_name": role_name,
         "actor_email": actor.get("email"),
         "details": details or {},
+        "organisation_id": resolve_write_organisation_id(get_database(), actor),
         "created_at": datetime.now(timezone.utc).isoformat()
     })
 
@@ -190,12 +191,14 @@ def create_custom_role(payload: CustomRoleCreate, actor: dict = Depends(require_
         raise HTTPException(status_code=409, detail="This name is reserved for a predefined role.")
     permissions = _validate_custom_role_permissions(payload.permissions, actor)
     roles = get_database()["custom_roles"]
-    if roles.find_one({"name_key": name.casefold()}):
+    organisation_id = resolve_write_organisation_id(get_database(), actor)
+    if roles.find_one({"name_key": name.casefold(), "organisation_id": organisation_id}):
         raise HTTPException(status_code=409, detail="A custom role with this name already exists.")
     now = datetime.now(timezone.utc).isoformat()
     record = {
         "name": name,
         "name_key": name.casefold(),
+        "organisation_id": organisation_id,
         "description": payload.description.strip(),
         "permissions": permissions,
         "is_active": True,
@@ -217,27 +220,27 @@ def create_custom_role(payload: CustomRoleCreate, actor: dict = Depends(require_
 def update_custom_role(role_name: str, payload: CustomRoleUpdate, actor: dict = Depends(require_roles(*ROLE_ADMIN_ROLES))):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
-    role = get_database()["custom_roles"].find_one({"name_key": role_name.strip().casefold()})
+    role = get_database()["custom_roles"].find_one({"name_key": role_name.strip().casefold(), **organisation_filter(actor)})
     if not role:
         raise HTTPException(status_code=404, detail="Custom role not found.")
     permissions = _validate_custom_role_permissions(payload.permissions if payload.permissions is not None else role.get("permissions", []), actor)
     description = payload.description.strip() if payload.description is not None else role.get("description", "")
     now = datetime.now(timezone.utc).isoformat()
     get_database()["custom_roles"].update_one(
-        {"_id": role["_id"]},
+        {"_id": role["_id"], **organisation_filter(actor)},
         {"$set": {"description": description, "permissions": permissions,
                   "updated_at": now, "updated_by": actor.get("email")}}
     )
     # Keep embedded user snapshots synchronized so permission edits take effect immediately.
     get_database()["users"].update_many(
-        {"custom_roles.name": role["name"]},
+        {"custom_roles.name": role["name"], **organisation_filter(actor)},
         {"$set": {"custom_roles.$[assigned].description": description,
                   "custom_roles.$[assigned].permissions": permissions,
                   "custom_roles.$[assigned].updated_at": now}},
         array_filters=[{"assigned.name": role["name"]}]
     )
     _write_role_audit("updated", role["name"], actor, {"permissions": permissions})
-    updated = get_database()["custom_roles"].find_one({"_id": role["_id"]}, {"_id": 0})
+    updated = get_database()["custom_roles"].find_one({"_id": role["_id"], **organisation_filter(actor)}, {"_id": 0})
     return updated
 
 
@@ -249,10 +252,10 @@ def delete_custom_role(role_name: str, actor: dict = Depends(require_roles(*ROLE
     role = roles.find_one({"name_key": role_name.strip().casefold()})
     if not role:
         raise HTTPException(status_code=404, detail="Custom role not found.")
-    users_using_role = get_database()["users"].count_documents({"custom_roles.name": role["name"]})
+    users_using_role = get_database()["users"].count_documents({"custom_roles.name": role["name"], **organisation_filter(actor)})
     if users_using_role:
         raise HTTPException(status_code=409, detail="This role is assigned to users. Reassign users before deleting it.")
-    roles.delete_one({"_id": role["_id"]})
+    roles.delete_one({"_id": role["_id"], **organisation_filter(actor)})
     _write_role_audit("deleted", role["name"], actor)
     return {"message": "Custom role deleted."}
 
@@ -268,7 +271,7 @@ def update_user_roles(email: str, payload: UserRoleUpdate, actor: dict = Depends
     if "Super Administrator" in assigned_roles and "Super Administrator" not in get_user_roles(actor):
         raise HTTPException(status_code=403, detail="Only a Super Administrator can grant Super Administrator access.")
     users = get_database()["users"]
-    target = users.find_one({"email": normalize_email(email)})
+    target = users.find_one({"email": normalize_email(email), **organisation_filter(actor)})
     if not target:
         raise HTTPException(status_code=404, detail="User not found.")
     if "Super Administrator" in get_user_roles(target) and "Super Administrator" not in assigned_roles:
@@ -276,19 +279,23 @@ def update_user_roles(email: str, payload: UserRoleUpdate, actor: dict = Depends
         if remaining <= 1:
             raise HTTPException(status_code=409, detail="The last Super Administrator cannot be removed.")
     custom_names = list(dict.fromkeys(payload.custom_roles))
-    custom_docs = list(get_database()["custom_roles"].find({"name": {"$in": custom_names}, "is_active": True}, {"_id": 0}))
+    custom_docs = list(get_database()["custom_roles"].find({"$and": [{"name": {"$in": custom_names}, "is_active": True}, organisation_filter(actor)]}, {"_id": 0}))
     found_names = {item["name"] for item in custom_docs}
     missing = sorted(set(custom_names) - found_names)
     if missing:
         raise HTTPException(status_code=422, detail={"message": "Unknown or inactive custom roles.", "roles": missing})
+    target_is_global = "Super Administrator" in assigned_roles
+    target_organisation_id = None if target_is_global else (target.get("organisation_id") or resolve_write_organisation_id(get_database(), actor))
     update = {
+        "is_global_admin": target_is_global,
+        "organisation_id": target_organisation_id,
         "roles": assigned_roles,
         "role": assigned_roles[0] if assigned_roles else None,
         "custom_roles": custom_docs,
         "roles_updated_at": datetime.now(timezone.utc).isoformat(),
         "roles_updated_by": actor.get("email")
     }
-    users.update_one({"_id": target["_id"]}, {"$set": update})
+    users.update_one({"_id": target["_id"], **organisation_filter(actor)}, {"$set": update})
     _write_role_audit("user_roles_updated", target["email"], actor, {"roles": assigned_roles, "custom_roles": custom_names})
     return {"email": target["email"], "roles": assigned_roles, "custom_roles": custom_names}
 
@@ -297,7 +304,7 @@ def update_user_roles(email: str, payload: UserRoleUpdate, actor: dict = Depends
 def list_role_audit(user: dict = Depends(require_roles(*ROLE_ADMIN_ROLES))):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
-    rows = list(get_database()["role_audit_logs"].find({}, {"_id": 0}).sort("created_at", DESCENDING).limit(200))
+    rows = list(get_database()["role_audit_logs"].find(organisation_filter(user), {"_id": 0}).sort("created_at", DESCENDING).limit(200))
     return {"items": rows, "count": len(rows)}
 
 
