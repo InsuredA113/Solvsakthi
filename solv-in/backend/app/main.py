@@ -20,7 +20,7 @@ from .database import get_database, database_is_available
 from .models import ClaimCreate, ClaimStatusUpdate
 from .claims_analytics import build_claims_analytics, is_in_scope_claim, safe_csv_cell
 from .user_models import LoginRequest, UserCreate
-from .rbac import get_effective_permissions
+from .rbac import get_effective_permissions, PERMISSIONS, PREDEFINED_ROLES, get_user_roles
 from .repair_rate_models import RepairRateCreate, RepairRateStatusUpdate
 from .email_intake import EmailIntakeCreate, EmailIntakeReview, extract_email_intake
 from .email_connector_routes import router as email_connector_router
@@ -59,6 +59,7 @@ STATUS_ROLES = (
     "Property Adjuster", "Casualty Adjuster", "Approver"
 )
 ADMIN_ROLES = ("Super Administrator",)
+ROLE_ADMIN_ROLES = ("Super Administrator",)
 
 DAMAGE_REVIEW_ROLES = ("Super Administrator", "Insurance Company Administrator", "Claims Manager", "Property Adjuster", "Casualty Adjuster", "Surveyor", "Actuarial Analyst", "Approver")
 DAMAGE_APPROVAL_ROLES = ("Super Administrator", "Insurance Company Administrator", "Claims Manager", "Approver")
@@ -97,10 +98,12 @@ def login(payload: LoginRequest):
     user = get_database()["users"].find_one({"email": email, "is_active": True})
     if not user or not verify_password(payload.password, user.get("password_hash", "")):
         raise HTTPException(status_code=401, detail="Email or password is incorrect.")
+    assigned_roles = get_user_roles(user)
     safe_user = {
         "full_name": user["full_name"],
         "email": user["email"],
-        "role": user["role"]
+        "role": assigned_roles[0] if assigned_roles else user.get("role"),
+        "roles": assigned_roles
     }
     return {
         "access_token": create_access_token(safe_user),
@@ -121,6 +124,126 @@ def current_user_permissions(user: dict = Depends(get_current_user)):
 @app.get("/api/users/roles")
 def list_roles(user: dict = Depends(require_roles(*ADMIN_ROLES))):
     return {"roles": list(ROLES)}
+
+@app.get("/api/roles/custom")
+def list_custom_roles(user: dict = Depends(require_roles(*ROLE_ADMIN_ROLES))):
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    try:
+        items = list(get_database()["custom_roles"].find({}, {"_id": 0}).sort("name", 1))
+        return {"items": items, "count": len(items), "available_permissions": list(PERMISSIONS)}
+    except PyMongoError as exc:
+        raise HTTPException(status_code=503, detail="Unable to retrieve custom roles.") from exc
+
+
+class CustomRoleCreate(BaseModel):
+    name: str = Field(..., min_length=3, max_length=80)
+    description: str = Field(default="", max_length=300)
+    permissions: list[str] = Field(default_factory=list, max_length=100)
+
+
+class CustomRoleUpdate(BaseModel):
+    description: str = Field(default="", max_length=300)
+    permissions: list[str] = Field(default_factory=list, max_length=100)
+
+
+def _validate_custom_role_permissions(permissions: list[str], actor: dict) -> list[str]:
+    selected = list(dict.fromkeys(permissions))
+    unknown = sorted(set(selected) - set(PERMISSIONS))
+    if unknown:
+        raise HTTPException(status_code=422, detail={"message": "Unknown permission identifiers.", "permissions": unknown})
+    if "Super Administrator" not in get_user_roles(actor):
+        allowed = get_effective_permissions(actor)
+        denied = sorted(set(selected) - allowed)
+        if denied:
+            raise HTTPException(status_code=403, detail={"message": "You cannot grant permissions you do not hold.", "permissions": denied})
+    return selected
+
+
+def _write_role_audit(action: str, role_name: str, actor: dict, details: dict | None = None):
+    get_database()["role_audit_logs"].insert_one({
+        "action": action,
+        "role_name": role_name,
+        "actor_email": actor.get("email"),
+        "details": details or {},
+        "created_at": datetime.now(timezone.utc).isoformat()
+    })
+
+
+@app.post("/api/roles/custom", status_code=201)
+def create_custom_role(payload: CustomRoleCreate, actor: dict = Depends(require_roles(*ROLE_ADMIN_ROLES))):
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    name = " ".join(payload.name.split())
+    if name.casefold() in {role.casefold() for role in PREDEFINED_ROLES}:
+        raise HTTPException(status_code=409, detail="This name is reserved for a predefined role.")
+    permissions = _validate_custom_role_permissions(payload.permissions, actor)
+    roles = get_database()["custom_roles"]
+    if roles.find_one({"name_key": name.casefold()}):
+        raise HTTPException(status_code=409, detail="A custom role with this name already exists.")
+    now = datetime.now(timezone.utc).isoformat()
+    record = {
+        "name": name,
+        "name_key": name.casefold(),
+        "description": payload.description.strip(),
+        "permissions": permissions,
+        "is_active": True,
+        "created_at": now,
+        "updated_at": now,
+        "created_by": actor.get("email"),
+        "updated_by": actor.get("email")
+    }
+    try:
+        roles.insert_one(record)
+        _write_role_audit("created", name, actor, {"permissions": permissions})
+    except PyMongoError as exc:
+        raise HTTPException(status_code=503, detail="Unable to create custom role.") from exc
+    record.pop("_id", None)
+    return record
+
+
+@app.patch("/api/roles/custom/{role_name}")
+def update_custom_role(role_name: str, payload: CustomRoleUpdate, actor: dict = Depends(require_roles(*ROLE_ADMIN_ROLES))):
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    role = get_database()["custom_roles"].find_one({"name_key": role_name.strip().casefold()})
+    if not role:
+        raise HTTPException(status_code=404, detail="Custom role not found.")
+    permissions = _validate_custom_role_permissions(payload.permissions, actor)
+    now = datetime.now(timezone.utc).isoformat()
+    get_database()["custom_roles"].update_one(
+        {"_id": role["_id"]},
+        {"$set": {"description": payload.description.strip(), "permissions": permissions,
+                  "updated_at": now, "updated_by": actor.get("email")}}
+    )
+    _write_role_audit("updated", role["name"], actor, {"permissions": permissions})
+    updated = get_database()["custom_roles"].find_one({"_id": role["_id"]}, {"_id": 0})
+    return updated
+
+
+@app.delete("/api/roles/custom/{role_name}")
+def delete_custom_role(role_name: str, actor: dict = Depends(require_roles(*ROLE_ADMIN_ROLES))):
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    roles = get_database()["custom_roles"]
+    role = roles.find_one({"name_key": role_name.strip().casefold()})
+    if not role:
+        raise HTTPException(status_code=404, detail="Custom role not found.")
+    users_using_role = get_database()["users"].count_documents({"custom_roles.name": role["name"]})
+    if users_using_role:
+        raise HTTPException(status_code=409, detail="This role is assigned to users. Reassign users before deleting it.")
+    roles.delete_one({"_id": role["_id"]})
+    _write_role_audit("deleted", role["name"], actor)
+    return {"message": "Custom role deleted."}
+
+
+@app.get("/api/roles/audit")
+def list_role_audit(user: dict = Depends(require_roles(*ROLE_ADMIN_ROLES))):
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    rows = list(get_database()["role_audit_logs"].find({}, {"_id": 0}).sort("created_at", DESCENDING).limit(200))
+    return {"items": rows, "count": len(rows)}
+
 
 @app.get("/api/users")
 def list_users(user: dict = Depends(require_roles(*ADMIN_ROLES))):
