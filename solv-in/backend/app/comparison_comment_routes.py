@@ -56,7 +56,7 @@ def _get_scoped_claim(claim_id: str, user: dict):
     db = get_database()
     claim = db["claims"].find_one(
         scoped_claim_filter(claim_id, user),
-        {"_id": 0, "claim_id": 1, "claim_type": 1, "casualty_segment": 1}
+        {"_id": 0, "claim_id": 1, "claim_type": 1, "casualty_segment": 1, "organisation_id": 1}
     )
     if not claim:
         raise HTTPException(status_code=404, detail="Claim not found.")
