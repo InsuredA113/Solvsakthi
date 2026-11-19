@@ -99,7 +99,7 @@ def create_adjuster_report(
     now = datetime.now(timezone.utc).isoformat()
     record = {
         "claim_id": claim_id,
-        "organisation_id": user.get("organisation_id"),
+        "organisation_id": claim.get("organisation_id"),
         "report_title": payload.report_title,
         "report_reference": payload.report_reference,
         "report_date": payload.report_date,
