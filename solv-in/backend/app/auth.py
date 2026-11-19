@@ -57,6 +57,21 @@ def get_current_user(credentials: HTTPAuthorizationCredentials | None = Depends(
         user = get_database()["users"].find_one({"email": email, "is_active": True}, {"_id": 0, "password_hash": 0})
         if not user:
             raise unauthorized
+        # Enforce an active organisation for every non-global account.
+        # Global access is granted only by the explicit is_global_admin flag.
+        if user.get("is_global_admin") is True:
+            user["organisation_id"] = None
+        else:
+            organisation_id = user.get("organisation_id")
+            if not organisation_id:
+                raise HTTPException(status_code=403, detail="Your account is not assigned to an organisation.")
+            organisation = get_database()["organisations"].find_one(
+                {"organisation_id": organisation_id, "status": "active"},
+                {"_id": 1}
+            )
+            if not organisation:
+                raise HTTPException(status_code=403, detail="Your organisation is inactive or unavailable.")
+
         # Backward-compatible normalization: legacy single-role users keep working.
         roles = get_user_roles(user)
         if roles:
