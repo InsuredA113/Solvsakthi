@@ -15,7 +15,7 @@ from .auth import (
     normalize_email, require_permissions, require_roles, verify_password
 )
 from .bootstrap import seed_initial_admin
-from .organisations import ensure_default_organisation, organisation_filter, scoped_claim_filter, resolve_write_organisation_id
+from .organisations import ensure_default_organisation, organisation_filter, claim_visibility_filter, scoped_claim_filter, resolve_write_organisation_id
 from .config import CORS_ORIGINS, ACCESS_TOKEN_MINUTES
 from .database import get_database, database_is_available
 from .models import ClaimCreate, ClaimStatusUpdate
@@ -400,7 +400,7 @@ def _load_claims_analytics(
     elif portfolio == "Commercial Casualty":
         scope_filter = {"claim_type": "Casualty", "casualty_segment": "Commercial"}
 
-    query_parts = [scope_filter, *common_filters, organisation_filter(user)]
+    query_parts = [scope_filter, *common_filters, claim_visibility_filter(user)]
     query = {"$and": query_parts}
     db = get_database()
     try:
@@ -424,7 +424,7 @@ def _load_claims_analytics(
 
         result = build_claims_analytics(claims, estimates)
         unclassified_query_parts = [
-            organisation_filter(user),
+            claim_visibility_filter(user),
             {"claim_type": "Casualty", "casualty_segment": {"$ne": "Commercial"}},
             *common_filters
         ]
@@ -577,7 +577,7 @@ def dashboard_analytics(
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     now = datetime.now(timezone.utc)
-    query_parts = [organisation_filter(user), {"$or": [
+    query_parts = [claim_visibility_filter(user), {"$or": [
         {"claim_type": "Property"},
         {"claim_type": "Casualty", "casualty_segment": "Commercial"}
     ]}]
@@ -668,7 +668,7 @@ def dashboard_analytics(
             adjuster_rows.append(row)
         adjuster_rows.sort(key=lambda item: (item["adjuster_name"] == "Unassigned", item["adjuster_name"].casefold()))
         year_rows = get_database()["claims"].find(
-            {"$and": [organisation_filter(user), {"$or": [{"claim_type": "Property"}, {"claim_type": "Casualty", "casualty_segment": "Commercial"}]}]},
+            {"$and": [claim_visibility_filter(user), {"$or": [{"claim_type": "Property"}, {"claim_type": "Casualty", "casualty_segment": "Commercial"}]}]},
             {"_id": 0, "created_at": 1}
         )
         for year_row in year_rows:
@@ -702,7 +702,7 @@ def dashboard_summary(user: dict = Depends(require_permissions("dashboard.view")
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     try:
         claims = get_database()["claims"]
-        scope_query = {"$and": [organisation_filter(user), {"$or": [
+        scope_query = {"$and": [claim_visibility_filter(user), {"$or": [
             {"claim_type": "Property"},
             {"claim_type": "Casualty", "casualty_segment": "Commercial"}
         ]}]}
@@ -718,7 +718,7 @@ def dashboard_summary(user: dict = Depends(require_permissions("dashboard.view")
             "under_investigation": scoped_count({"status": {"$in": ["Under Review", "Investigation", "Assessment"]}}),
             "pending_approval": scoped_count({"status": "Pending Approval"}),
             "settled_claims": scoped_count({"status": "Closed"}),
-            "unclassified_legacy_casualty_claims": claims.count_documents({"$and": [organisation_filter(user), {
+            "unclassified_legacy_casualty_claims": claims.count_documents({"$and": [claim_visibility_filter(user), {
                 "claim_type": "Casualty", "casualty_segment": {"$ne": "Commercial"}
             }]})
         }
@@ -741,7 +741,7 @@ def list_claims(
         {"claim_type": "Casualty", "casualty_segment": "Commercial"},
         {"auto_intake_status": "Provisional"}
     ]}]}
-    query["$and"].append(organisation_filter(user))
+    query["$and"].append(claim_visibility_filter(user))
     if claim_type:
         query["$and"].append({"claim_type": claim_type})
     if status:
@@ -826,9 +826,16 @@ def create_claim(payload: ClaimCreate, user: dict = Depends(require_permissions(
         if not organisation_id:
             raise HTTPException(status_code=403, detail="Your account is not assigned to an active organisation.")
 
+        creator_roles = set(get_user_roles(user))
+        assignment = {}
+        if "Property Adjuster" in creator_roles and record.get("claim_type") == "Property":
+            assignment = {"assigned_adjuster_email": user["email"], "assigned_adjuster_name": user.get("full_name")}
+        elif "Casualty Adjuster" in creator_roles and record.get("claim_type") == "Casualty":
+            assignment = {"assigned_adjuster_email": user["email"], "assigned_adjuster_name": user.get("full_name")}
         record.update({
             "claim_id": claim_id,
             "organisation_id": organisation_id,
+            **assignment,
             "status": "FNOL Received",
             "created_at": now,
             "updated_at": now,
