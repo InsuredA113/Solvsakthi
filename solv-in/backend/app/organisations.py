@@ -121,7 +121,6 @@ def claim_visibility_filter(user: dict) -> dict:
     if roles.intersection({"Customer / Policyholder", "Customer"}):
         visibility.append({"$or": [
             {"customer_user_email": email},
-            {"email": email},
         ]})
 
     if not visibility:
