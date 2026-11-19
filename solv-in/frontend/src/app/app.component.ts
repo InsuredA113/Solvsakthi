@@ -1343,7 +1343,8 @@ export class AppComponent implements OnInit {
   closeAIProviderSetup(): void { this.selectedAIProvider = ''; }
 
   canManageEmailConnectors(): boolean {
-    return ['Super Administrator', 'Insurance Company Administrator'].includes(this.currentUser?.role || '');
+    const roles = this.currentUser?.roles?.length ? this.currentUser.roles : [this.currentUser?.role || ''];
+    return roles.includes('Super Administrator') || roles.includes('Insurance Company Administrator');
   }
 
   loadEmailConnectorStatus(): void {
