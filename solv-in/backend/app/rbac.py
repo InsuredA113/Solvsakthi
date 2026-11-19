@@ -75,7 +75,7 @@ ROLE_PERMISSIONS = {
     }),
     "Casualty Adjuster": frozenset({
         "dashboard.view", "claims.view", "claims.edit", "evidence.view", "evidence.upload", "finance.edit",
-        "coverage.view", "reports.view", "reports.compare", "reports.comment",
+        "damage.view", "damage.analyse", "damage.review", "coverage.view", "reports.view", "reports.compare", "reports.comment",
     }),
     "Claims Approver": frozenset({
         "dashboard.view", "claims.view", "claims.approve", "claims.export", "damage.view",
@@ -87,7 +87,7 @@ ROLE_PERMISSIONS = {
         "damage.review", "reports.view", "reports.comment",
     }),
     "Actuarial Analyst": frozenset({
-        "dashboard.view", "claims.view", "damage.view", "coverage.view", "finance.view", "finance.edit",
+        "dashboard.view", "claims.view", "damage.view", "damage.analyse", "coverage.view", "finance.view", "finance.edit",
         "reports.view", "reports.compare", "reports.export", "analytics.view",
     }),
     "Auditor": frozenset({
