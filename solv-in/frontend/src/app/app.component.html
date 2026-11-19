@@ -3,7 +3,7 @@
   <aside class="sidebar">
     <div class="brand"><img class="brand-logo" src="https://raw.githubusercontent.com/InsuredA113/Solvsakthi/main/Solv-in-logo.png.png" alt="Solv-In logo"><div class="brand-copy"><strong>Solv-In</strong><small>File • Track • Resolve</small></div><button class="sidebar-toggle" type="button" (click)="toggleSidebar()" [attr.aria-label]="isSidebarCollapsed ? 'Expand navigation' : 'Collapse navigation'" [attr.title]="isSidebarCollapsed ? 'Expand navigation' : 'Collapse navigation'"><span aria-hidden="true">{{ isSidebarCollapsed ? '☰' : '‹' }}</span></button></div>
     <nav aria-label="Main navigation">
-      <ng-container *ngFor="let item of navigation"><button *ngIf="(item !== 'Users' || isAdmin()) && (item !== 'AI Damage Analysis' || canAnalyseDamage()) && (item !== 'Tax Rules' || canManageTaxRules()) && (item !== 'Repair Rates' || canManageTaxRules()) && (item !== 'Policy Coverage' || canViewPolicyCoverage())" (click)="selectPage(item)" [class.active]="activePage === item">
+      <ng-container *ngFor="let item of navigation"><button *ngIf="canAccessPage(item)" (click)="selectPage(item)" [class.active]="activePage === item">
         <span class="nav-icon">{{ item === 'Dashboard' ? '⌂' : item === 'Claims' ? '▤' : item === 'New FNOL' ? '+' : item === 'Email FNOL' ? '✉' : item === 'AI Damage Analysis' ? '◈' : item === 'Tax Rules' ? '⌁' : item === 'Repair Rates' ? '⌖' : item === 'Policy Coverage' ? '▣' : item === 'Reports' ? '▥' : item === 'Users' ? '♙' : '⚙' }}</span>{{ item }}
       </button></ng-container>
       <button *ngIf="activePage === 'Claim Details'" type="button" (click)="selectPage('Reports')"><span class="nav-icon">▥</span>Reports</button>
