@@ -22,6 +22,9 @@ class RoleCompatibilityTests(unittest.TestCase):
         self.assertEqual(get_user_roles(user), ["Claims Approver"])
         self.assertTrue(user_has_any_role(user, ("Claims Approver",)))
 
+    def test_empty_roles_array_falls_back_to_legacy_role(self):
+        self.assertEqual(get_user_roles({"roles": [], "role": "Auditor"}), ["Auditor"])
+
     def test_multiple_predefined_roles_are_combined(self):
         user = {"roles": ["Property Adjuster", "Actuarial Analyst"]}
         permissions = get_effective_permissions(user)
