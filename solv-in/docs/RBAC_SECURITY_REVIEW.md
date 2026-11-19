@@ -152,16 +152,21 @@ Implemented on `feature/solvin-rbac-foundation`:
 - Adjuster reports, comparison comments and claim exports verify the parent claim's organisation; export audit records and related policy reads are tied to that claim.
 - Email connector state is associated with an organisation; webhook ingestion requires an organisation-bound connector state and stamps generated intake/claims with that organisation.
 - Added unit tests for organisation filtering, explicit global-admin bypass, assigned-adjuster visibility, assigned-surveyor visibility, combined adjuster/surveyor multi-role visibility, Claims Manager organisation-wide visibility, verified customer-link filtering and cross-organisation claim-ID isolation.
-- Added MongoDB-mock API integration tests for cross-organisation claim-ID reads, same-organisation surveyor assignment/history, rejection of cross-organisation surveyor assignment, and policyholder visibility limited to staff-verified claims.
+- Added MongoDB-mock API integration tests for cross-organisation claim-ID reads, same-organisation surveyor assignment/history, rejection of cross-organisation surveyor assignment, policyholder visibility limited to staff-verified claims, assigned-adjuster damage-assessment review, and tenant-scoped comparison comments.
+- Claim visibility now fails closed for roles without an explicit access scope; an unknown/custom role cannot silently inherit organisation-wide claim access.
+- Hardened evidence listing, download and claim deletion by validating the parent claim and organisation metadata. Claim deletion now removes organisation-matched GridFS files and linked estimate, damage, coverage, report, comment and email-intake records while retaining export audit records.
+- Hardened damage, financial and coverage child-record reads/reviews to validate the parent claim and organisation, so assigned adjusters can see permitted child records without querying those records using parent-claim assignment fields.
+- Scoped report/comment/export child queries and analytics estimate aggregation to exact claim/organisation pairs.
+- Email-generated evidence now carries organisation metadata; connector intake status and email-to-claim conversion updates are tenant-scoped.
 - Added Angular surveyor assignment in the Claims register, a staff identity-verification panel on Claim Details, and a policyholder-only My Claims page that calls the own-claims endpoint.
 
 ## Validation evidence
 
-Latest code validation: commit `17565e8f75a0f3a842c19c6906e871b343902e21` (2026-11-19).
+Latest code validation: commit `ab36ae0ca04df7995eb2f14df09f60e0a40b7af5` (2026-11-19).
 
-- Backend: Python compileall passed; pytest passed with **78 tests**.
+- Backend: Python compileall passed; pytest passed with **81 tests**.
 - Frontend: Angular production build passed.
-- GitHub Actions run: https://github.com/InsuredA113/Solvsakthi/actions/runs/44503446230
+- GitHub Actions run: https://github.com/InsuredA113/Solvsakthi/actions/runs/44505129598
 
 The validation run covers the new MongoDB-mock tenant API integration tests. It does not constitute a production Atlas migration or a full independent security review.
 
@@ -169,12 +174,13 @@ The validation run covers the new MongoDB-mock tenant API integration tests. It 
 
 This work is a foundation, not yet a production-ready multi-tenant security certification:
 
-1. Review and test every MongoDB query and every child-record / GridFS operation, including all connector retry and duplicate paths.
+1. Complete an independent pass over remaining MongoDB queries and GridFS operations, especially evidence-download authorization and connector webhook retry/duplicate handling; add endpoint-level tests for evidence list/download/delete.
 2. Surveyor assignment and verified customer-link workflows now have API integration tests and Angular controls. The customer verification is a staff attestation based on the selected method and internal reference, not automated identity proof; the insurer must define and follow its approved verification procedure. Expand endpoint tests to cover unauthorised actors, inactive users, invalid customer roles, and customer-link reassignment. Unverified claim contact email must never grant access.
 3. Decide and implement multi-organisation mailbox configuration; current email connector settings are environment-configured per provider/mailbox and bind that mailbox to one organisation.
-4. Expand two-organisation integration tests beyond the new claim-read, surveyor-assignment and customer-visibility cases to cover write/update/delete, evidence download, export, analytics, role administration, and IDOR attempts across all claim-linked collections.
+4. Expand two-organisation integration tests beyond claim reads, surveyor assignment, customer visibility, adjuster assessment review and comparison comments to cover write/update/delete, evidence download, export, analytics, role administration and IDOR attempts across every claim-linked collection.
 5. Review legacy-record migration. The user has stated the current database has no business/claim data, but any deployed database must still be inspected and backed up before migration.
-6. Run Python compileall, backend pytest and Angular production build against the latest branch head; confirm CI results before merge.
-7. Keep PR #7 in draft. No merge, production database migration, production deployment or live account changes are authorised by this implementation.
+6. Define an explicit claim-visibility scope for custom roles (organisation-wide, assigned-only, or own-claim); until that design is implemented, custom roles without a recognised predefined claim-visibility role are intentionally denied claim access.
+7. Re-run Python compileall, backend pytest and Angular production build against the latest branch head before merge.
+8. Keep PR #7 in draft. No merge, production database migration, production deployment or live account changes are authorised by this implementation.
 
 Do not remove these blockers until evidence from tests and review is recorded.
