@@ -326,15 +326,30 @@ def create_user(payload: UserCreate, actor: dict = Depends(require_roles(*ADMIN_
         raise HTTPException(status_code=422, detail="At least one role must be selected.")
     if "Super Administrator" in assigned_roles and "Super Administrator" not in get_user_roles(actor):
         raise HTTPException(status_code=403, detail="Only a Super Administrator can create another Super Administrator.")
-    users = get_database()["users"]
+    db = get_database()
+    users = db["users"]
     if users.find_one({"email": email}):
         raise HTTPException(status_code=409, detail="A user with this email already exists.")
+
+    is_global_admin = "Super Administrator" in assigned_roles
+    if is_global_admin:
+        organisation_id = None
+    else:
+        organisation_id = actor.get("organisation_id")
+        if not organisation_id and actor.get("is_global_admin"):
+            default_org = db["organisations"].find_one({"key": "solv-in-default", "status": "active"})
+            organisation_id = default_org.get("organisation_id") if default_org else None
+        if not organisation_id:
+            raise HTTPException(status_code=403, detail="Your account is not assigned to an active organisation.")
+
     record = {
         "full_name": payload.full_name,
         "email": email,
         "password_hash": hash_password(payload.password),
         "role": assigned_roles[0],
         "roles": assigned_roles,
+        "is_global_admin": is_global_admin,
+        "organisation_id": organisation_id,
         "is_active": True,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "created_by": actor["email"]
@@ -794,8 +809,16 @@ def create_claim(payload: ClaimCreate, user: dict = Depends(require_permissions(
         claim_id = f"CLM-{year}-{sequence['sequence']:06d}"
         record = payload.model_dump(mode="json")
         now = datetime.now(timezone.utc).isoformat()
+        organisation_id = user.get("organisation_id")
+        if not organisation_id and user.get("is_global_admin"):
+            default_org = db["organisations"].find_one({"key": "solv-in-default", "status": "active"})
+            organisation_id = default_org.get("organisation_id") if default_org else None
+        if not organisation_id:
+            raise HTTPException(status_code=403, detail="Your account is not assigned to an active organisation.")
+
         record.update({
             "claim_id": claim_id,
+            "organisation_id": organisation_id,
             "status": "FNOL Received",
             "created_at": now,
             "updated_at": now,
