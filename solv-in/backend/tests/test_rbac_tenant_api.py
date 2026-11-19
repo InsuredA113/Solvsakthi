@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from app import main, adjuster_report_routes, comparison_comment_routes, claim_export_routes, email_connector_routes
 from app.auth import get_current_user
+from app import bootstrap
 
 
 
@@ -366,3 +367,28 @@ def test_email_connector_rejects_provider_message_owned_by_another_organisation(
         )
 
     assert getattr(error.value, "status_code", None) == 409
+
+
+
+def test_bootstrap_preserves_existing_super_admin_deactivation_and_password(tenant_api, monkeypatch):
+    _, db, _ = tenant_api
+    original_hash = "existing-password-hash"
+    db["users"].insert_one({
+        "email": "root@example.com",
+        "full_name": "Existing Super Admin",
+        "password_hash": original_hash,
+        "role": "Claims Manager",
+        "roles": ["Claims Manager"],
+        "is_active": False,
+    })
+    monkeypatch.setattr(bootstrap, "get_database", lambda: db)
+    monkeypatch.setattr(bootstrap, "database_is_available", lambda: True)
+    monkeypatch.setattr(bootstrap, "INITIAL_ADMIN_EMAIL", "root@example.com")
+
+    bootstrap.seed_initial_admin()
+
+    updated = db["users"].find_one({"email": "root@example.com"})
+    assert updated["is_active"] is False
+    assert updated["password_hash"] == original_hash
+    assert updated["roles"] == ["Super Administrator"]
+    assert updated["is_global_admin"] is True
