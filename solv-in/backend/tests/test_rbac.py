@@ -2,7 +2,7 @@ import unittest
 
 from fastapi import HTTPException
 from app.auth import require_permissions
-from app.organisations import organisation_filter, scoped_claim_filter
+from app.organisations import organisation_filter, claim_visibility_filter, scoped_claim_filter
 from app.rbac import (
     PREDEFINED_ROLES,
     get_effective_permissions,
@@ -92,6 +92,41 @@ class OrganisationScopeTests(unittest.TestCase):
         with self.assertRaises(HTTPException) as error:
             organisation_filter({"roles": ["Claims Manager"]})
         self.assertEqual(error.exception.status_code, 403)
+
+    def test_adjuster_visibility_is_limited_to_assigned_claims(self):
+        self.assertEqual(
+            claim_visibility_filter({
+                "email": "adjuster@example.test",
+                "roles": ["Property Adjuster"],
+                "organisation_id": "org-a",
+            }),
+            {"$and": [
+                {"organisation_id": "org-a"},
+                {"$or": [{"assigned_adjuster_email": "adjuster@example.test"}]},
+            ]},
+        )
+
+    def test_claims_manager_retains_organisation_wide_visibility(self):
+        self.assertEqual(
+            claim_visibility_filter({
+                "roles": ["Claims Manager"],
+                "organisation_id": "org-a",
+            }),
+            {"organisation_id": "org-a"},
+        )
+
+    def test_customer_visibility_requires_verified_customer_link(self):
+        self.assertEqual(
+            claim_visibility_filter({
+                "email": "customer@example.test",
+                "roles": ["Customer / Policyholder"],
+                "organisation_id": "org-a",
+            }),
+            {"$and": [
+                {"organisation_id": "org-a"},
+                {"$or": [{"customer_user_email": "customer@example.test"}]},
+            ]},
+        )
 
     def test_claim_filter_always_includes_tenant_boundary(self):
         self.assertEqual(
