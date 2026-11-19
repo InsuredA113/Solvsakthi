@@ -937,14 +937,14 @@
                       </label>
                     </div>
                   </div>
-                  <div class="form-actions"><span class="muted">{{ customRoleDraft.permissions.length }} permissions selected</span><button class="primary-action" type="submit" [disabled]="customRoleBusy">{{ customRoleBusy ? 'Saving…' : 'Create custom role' }}</button></div>
+                  <div class="form-actions"><span class="muted">{{ customRoleDraft.permissions.length }} permissions selected</span><button class="primary-action" type="submit" [disabled]="customRoleBusy">{{ customRoleBusy ? 'Saving…' : (editingCustomRoleName ? 'Save changes' : 'Create custom role') }}</button><button *ngIf="editingCustomRoleName" type="button" class="secondary-action" (click)="cancelCustomRoleEdit()">Cancel</button></div>
                 </form>
               </section>
               <section class="panel claims-panel" style="margin-top:14px">
                 <div class="panel-heading"><h2>Custom role library</h2><span class="subtle">{{ customRoles.length }} custom roles</span></div>
-                <div class="table-scroll"><table><thead><tr><th>Role</th><th>Description</th><th>Permissions</th><th>Status</th></tr></thead>
-                  <tbody><tr *ngFor="let customRole of customRoles"><td>{{ customRole.name }}</td><td>{{ customRole.description || '—' }}</td><td>{{ customRole.permissions?.length || 0 }}</td><td><span class="status">{{ customRole.is_active ? 'Active' : 'Inactive' }}</span></td></tr>
-                    <tr *ngIf="customRoles.length === 0"><td colspan="4" class="empty">No custom roles created yet.</td></tr></tbody></table></div>
+                <div class="table-scroll"><table><thead><tr><th>Role</th><th>Description</th><th>Permissions</th><th>Status</th><th>Actions</th></tr></thead>
+                  <tbody><tr *ngFor="let customRole of customRoles"><td>{{ customRole.name }}</td><td>{{ customRole.description || '—' }}</td><td>{{ customRole.permissions?.length || 0 }}</td><td><span class="status">{{ customRole.is_active ? 'Active' : 'Inactive' }}</span></td><td><button type="button" class="secondary-action" (click)="editCustomRole(customRole)">Edit</button> <button type="button" class="secondary-action" (click)="deleteCustomRole(customRole)">Delete</button></td></tr>
+                    <tr *ngIf="customRoles.length === 0"><td colspan="5" class="empty">No custom roles created yet.</td></tr></tbody></table></div>
               </section>
             </ng-container>
 
