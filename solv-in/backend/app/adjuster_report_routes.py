@@ -115,6 +115,7 @@ def create_adjuster_report(
     try:
         saved = db["adjuster_reports"].insert_one(record)
         record["report_id"] = str(saved.inserted_id)
+        record.pop("_id", None)
         return record
     except PyMongoError as exc:
         raise HTTPException(status_code=503, detail="Unable to save adjuster report.") from exc
