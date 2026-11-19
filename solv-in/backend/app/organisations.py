@@ -119,9 +119,12 @@ def claim_visibility_filter(user: dict) -> dict:
     if roles.intersection({"Insurance Surveyor", "Surveyor"}):
         visibility.append({"assigned_surveyor_email": email})
     if roles.intersection({"Customer / Policyholder", "Customer"}):
-        visibility.append({"$or": [
-            {"customer_user_email": email},
-        ]})
+        # A claim contact email is not proof of ownership. Only an explicit,
+        # audited staff verification can establish this relationship.
+        visibility.append({
+            "customer_user_email": email,
+            "customer_identity_verified": True
+        })
 
     if not visibility:
         return base
