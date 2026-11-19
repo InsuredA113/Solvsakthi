@@ -279,7 +279,7 @@ def update_user_roles(email: str, payload: UserRoleUpdate, actor: dict = Depends
         if remaining <= 1:
             raise HTTPException(status_code=409, detail="The last Super Administrator cannot be removed.")
     custom_names = list(dict.fromkeys(payload.custom_roles))
-    custom_docs = list(get_database()["custom_roles"].find({"$and": [{"name": {"$in": custom_names}, "is_active": True}, organisation_filter(actor)]}, {"_id": 0}))
+    custom_docs = list(get_database()["custom_roles"].find({"name": {"$in": custom_names}, "is_active": True, "organisation_id": target.get("organisation_id")}, {"_id": 0}))
     found_names = {item["name"] for item in custom_docs}
     missing = sorted(set(custom_names) - found_names)
     if missing:
