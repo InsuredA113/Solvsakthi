@@ -135,3 +135,34 @@ A global Super Administrator bypass must be explicit and narrowly implemented; d
 - Role changes and deactivation take effect on the next request; stale JWT role claims must not be trusted as the source of current permissions.
 - Migration is reversible and preserves existing password hashes.
 - Production remains unchanged until explicit approval.
+
+
+## Organisation-isolation implementation status (2026-11-19)
+
+Implemented on `feature/solvin-rbac-foundation`:
+
+- Added reusable organisation and claim-scope helpers in `app/organisations.py`.
+- Backend startup creates or retrieves the default organisation before seeding the configured administrator.
+- The configured bootstrap administrator is explicitly marked `is_global_admin=true`; a Super Administrator role label alone is not a global-access bypass.
+- Authentication rejects non-global users without an active organisation membership.
+- New users and manually created claims receive an organisation ID; email-created claims inherit the organisation from their intake record.
+- Claim reads and mutations in the main API now include the authenticated organisation scope, including claim details, edits, status changes, deletion, evidence, damage assessments, estimates and coverage assessments.
+- Claim register, dashboard metrics, dashboard analytics, claims analytics and CSV reporting apply organisation filters.
+- Policies, tax rules, repair rates, custom roles, user administration and role audit records are organisation-scoped for tenant administrators.
+- Adjuster reports, comparison comments and claim exports verify the parent claim's organisation; export audit records and related policy reads are tied to that claim.
+- Email connector state is associated with an organisation; webhook ingestion requires an organisation-bound connector state and stamps generated intake/claims with that organisation.
+- Added unit tests for organisation filtering and explicit global-admin bypass.
+
+## Remaining release blockers
+
+This work is a foundation, not yet a production-ready multi-tenant security certification:
+
+1. Review and test every MongoDB query and every child-record / GridFS operation, including all connector retry and duplicate paths.
+2. Implement and test role-specific object visibility: assigned-claim rules for adjusters/surveyors and verified own-claim rules for customers/policyholders.
+3. Decide and implement multi-organisation mailbox configuration; current email connector settings are environment-configured per provider/mailbox and bind that mailbox to one organisation.
+4. Add two-organisation integration tests for read, write, update, delete, export, download, analytics, role administration and IDOR attempts.
+5. Review legacy-record migration. The user has stated the current database has no business/claim data, but any deployed database must still be inspected and backed up before migration.
+6. Run Python compileall, backend pytest and Angular production build against the latest branch head; confirm CI results before merge.
+7. Keep PR #7 in draft. No merge, production database migration, production deployment or live account changes are authorised by this implementation.
+
+Do not remove these blockers until evidence from tests and review is recorded.
