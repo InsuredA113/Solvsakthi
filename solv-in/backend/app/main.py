@@ -148,7 +148,7 @@ class CustomRoleUpdate(BaseModel):
 
 
 class UserRoleUpdate(BaseModel):
-    roles: list[str] = Field(default_factory=list, max_length=10)
+    roles: list[str] = Field(..., min_length=1, max_length=10)
     custom_roles: list[str] = Field(default_factory=list, max_length=20)
 
 
