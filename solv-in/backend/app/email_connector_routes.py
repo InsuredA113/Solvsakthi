@@ -16,6 +16,7 @@ import httpx
 
 from .auth import require_roles
 from .database import database_is_available, get_database
+from .organisations import resolve_write_organisation_id
 from .email_intake import EmailIntakeCreate, extract_email_intake, extract_pdf_text, ocr_pdf_text, extract_structured_claim_fields
 from .email_connectors import (
     setting, gmail_configured, microsoft_configured, gmail_access_token,
@@ -91,7 +92,7 @@ def _suggestions_for_missing(missing_fields: list[str]) -> dict[str, str]:
 
 
 def _create_provisional_claim(db, intake_id: str, sender_email: str, parsed: dict,
-                              received_at: str) -> dict | None:
+                              received_at: str, organisation_id: str) -> dict | None:
     classification = parsed.get("suggested_claim_type")
     if classification == "Out of Scope":
         return None
@@ -137,6 +138,7 @@ def _create_provisional_claim(db, intake_id: str, sender_email: str, parsed: dic
     claim_id = f"CLM-{datetime.now(timezone.utc).year}-{sequence['sequence']:06d}"
     claim = {
         "claim_id": claim_id,
+        "organisation_id": organisation_id,
         "customer_name": clean("customer_name"),
         "loss_cause": clean("loss_cause"),
         "email": clean("email") or sender_email,
@@ -175,14 +177,17 @@ def _create_provisional_claim(db, intake_id: str, sender_email: str, parsed: dic
 
 def _save_email(provider: str, provider_message_id: str, sender_email: str,
                 subject: str, body_text: str, received_at: datetime | None,
-                attachments: list[dict] | None = None):
+                attachments: list[dict] | None = None,
+                organisation_id: str | None = None):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     db = get_database()
+    if not organisation_id:
+        raise HTTPException(status_code=409, detail="Email connector is not linked to an organisation. Reconnect it from an organisation administrator account.")
     collection = db["email_intake"]
     collection.create_index([("provider", 1), ("provider_message_id", 1)], unique=True)
     existing = collection.find_one(
-        {"provider": provider, "provider_message_id": provider_message_id},
+        {"provider": provider, "provider_message_id": provider_message_id, "organisation_id": organisation_id},
         {"_id": 0, "body_text": 0}
     )
     if existing:
@@ -249,7 +254,7 @@ def _save_email(provider: str, provider_message_id: str, sender_email: str,
         "document_extracted_text": "".join(pdf_text_parts)[:30000],
         "pdf_processing": pdf_processing, "received_at": received,
         "created_at": datetime.now(timezone.utc).isoformat(),
-        "created_by": provider + "_connector", **parsed,
+        "created_by": provider + "_connector", "organisation_id": organisation_id, **parsed,
         "review_status": parsed["intake_status"], "review_history": [],
         "auto_creation_status": "Pending",
     }
@@ -264,7 +269,7 @@ def _save_email(provider: str, provider_message_id: str, sender_email: str,
 
     claim = None
     try:
-        claim = _create_provisional_claim(db, intake_id, str(payload.sender_email), parsed, received)
+        claim = _create_provisional_claim(db, intake_id, str(payload.sender_email), parsed, received, organisation_id)
         if claim:
             collection.update_one({"intake_id": intake_id}, {"$set": {
                 "claim_id": claim["claim_id"], "review_status": "Converted",
@@ -374,6 +379,7 @@ def start_gmail_watch(user: dict = Depends(require_roles(*ADMIN_ROLES))):
         get_database()["email_connector_state"].update_one(
             {"_id": "gmail:" + mailbox},
             {"$set": {"provider": "gmail", "mailbox": mailbox,
+                      "organisation_id": resolve_write_organisation_id(get_database(), user),
                       "last_history_id": str(result["historyId"]),
                       "watch_expiration": datetime.fromtimestamp(int(result["expiration"]) / 1000, timezone.utc).isoformat(),
                       "updated_at": datetime.now(timezone.utc).isoformat()}},
@@ -399,7 +405,7 @@ def gmail_pubsub(payload: dict, authorization: str | None = Header(default=None)
         raise HTTPException(status_code=503, detail="MongoDB unavailable; Pub/Sub should retry.")
     states = get_database()["email_connector_state"]
     state = states.find_one({"_id": "gmail:" + mailbox})
-    if not state or not state.get("last_history_id"):
+    if not state or not state.get("last_history_id") or not state.get("organisation_id"):
         raise HTTPException(status_code=409, detail="Gmail watch cursor missing. Start Gmail watch from connector settings.")
     try:
         token = gmail_access_token()
@@ -432,7 +438,7 @@ def gmail_pubsub(payload: dict, authorization: str | None = Header(default=None)
                         received = received.replace(tzinfo=timezone.utc)
                 except (TypeError, ValueError, OverflowError):
                     pass
-            _save_email("gmail", mailbox + ":" + message_id, sender, headers.get("subject", ""), gmail_body(message), received, _fetch_gmail_attachments(message, message_id, token))
+            _save_email("gmail", mailbox + ":" + message_id, sender, headers.get("subject", ""), gmail_body(message), received, _fetch_gmail_attachments(message, message_id, token), state["organisation_id"])
         states.update_one({"_id": "gmail:" + mailbox}, {"$set": {
             "last_history_id": latest_history_id,
             "last_notification_history_id": str(notified_history_id),
@@ -469,6 +475,7 @@ def create_microsoft_subscription(user: dict = Depends(require_roles(*ADMIN_ROLE
         states.update_one(
             {"_id": "microsoft365:" + mailbox},
             {"$set": {"provider": "microsoft365", "mailbox": mailbox,
+                      "organisation_id": resolve_write_organisation_id(get_database(), user),
                       "subscription_id": result.get("id"),
                       "subscription_expiration": result.get("expirationDateTime"),
                       "updated_at": datetime.now(timezone.utc).isoformat()}},
@@ -498,8 +505,8 @@ def graph_notifications(payload: dict | None = None, validationToken: str | None
         raise HTTPException(status_code=503, detail="Microsoft connector or MongoDB unavailable; Graph should retry.")
     mailbox = setting("MS365_MAILBOX").lower()
     state = get_database()["email_connector_state"].find_one({"_id": "microsoft365:" + mailbox})
-    if not state:
-        raise HTTPException(status_code=409, detail="No active Microsoft Graph subscription is registered.")
+    if not state or not state.get("organisation_id"):
+        raise HTTPException(status_code=409, detail="No organisation-linked Microsoft Graph subscription is registered.")
     for item in notifications:
         if not hmac.compare_digest(str(item.get("clientState", "")), setting("MS365_CLIENT_STATE")):
             raise HTTPException(status_code=401, detail="Microsoft Graph clientState is invalid.")
@@ -517,7 +524,7 @@ def graph_notifications(payload: dict | None = None, validationToken: str | None
             )
             sender = (((message.get("from") or {}).get("emailAddress") or {}).get("address") or "")
             _save_email("microsoft365", mailbox + ":" + message.get("id", message_id), sender,
-                        message.get("subject", ""), microsoft_body(message), parse_datetime(message.get("receivedDateTime")))
+                        message.get("subject", ""), microsoft_body(message), parse_datetime(message.get("receivedDateTime")), organisation_id=state["organisation_id"])
             processed += 1
         get_database()["email_connector_state"].update_one(
             {"_id": "microsoft365:" + mailbox},
