@@ -11,7 +11,19 @@ def seed_initial_admin():
         return
     users = get_database()["users"]
     email = INITIAL_ADMIN_EMAIL.strip().lower()
-    if users.find_one({"email": email}):
+    existing = users.find_one({"email": email})
+    if existing:
+        # The configured bootstrap account is the only account promoted here.
+        users.update_one(
+            {"_id": existing["_id"]},
+            {"$set": {
+                "role": "Super Administrator",
+                "roles": ["Super Administrator"],
+                "is_global_admin": True,
+                "organisation_id": None,
+                "is_active": True,
+            }}
+        )
         return
     users.insert_one({
         "full_name": INITIAL_ADMIN_NAME,
