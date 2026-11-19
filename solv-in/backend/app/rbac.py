@@ -55,7 +55,7 @@ ROLE_PERMISSIONS = {
     "Super Administrator": frozenset(PERMISSIONS),
     "Insurance Company Administrator": frozenset({
         "dashboard.view", "claims.view", "claims.create", "claims.edit", "claims.assign",
-        "claims.export", "evidence.view", "evidence.upload", "damage.view", "damage.analyse",
+        "claims.export", "evidence.view", "evidence.upload", "evidence.delete", "damage.view", "damage.analyse",
         "damage.review", "coverage.view", "coverage.review", "finance.view", "finance.edit", "finance.approve", "claims.approve", "reports.view",
         "reports.compare", "reports.export", "reports.comment", "analytics.view",
         "users.view", "users.create", "users.edit", "users.deactivate", "roles.view",
