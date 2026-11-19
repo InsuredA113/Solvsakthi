@@ -271,7 +271,7 @@ def _save_email(provider: str, provider_message_id: str, sender_email: str,
     try:
         claim = _create_provisional_claim(db, intake_id, str(payload.sender_email), parsed, received, organisation_id)
         if claim:
-            collection.update_one({"intake_id": intake_id}, {"$set": {
+            collection.update_one({"intake_id": intake_id, "organisation_id": organisation_id}, {"$set": {
                 "claim_id": claim["claim_id"], "review_status": "Converted",
                 "conversion_state": "Completed", "auto_creation_status": claim["auto_intake_status"],
                 "missing_fields": claim["missing_fields"],
@@ -279,13 +279,13 @@ def _save_email(provider: str, provider_message_id: str, sender_email: str,
                 "converted_at": datetime.now(timezone.utc).isoformat(),
             }})
         else:
-            collection.update_one({"intake_id": intake_id}, {"$set": {
+            collection.update_one({"intake_id": intake_id, "organisation_id": organisation_id}, {"$set": {
                 "auto_creation_status": "Out of Scope",
                 "auto_creation_note": "Personal-lines or unsupported claim indicators were detected; no in-scope claim record was created."
             }})
     except Exception:
         logger.exception("Automatic claim creation failed for email intake %s", intake_id)
-        collection.update_one({"intake_id": intake_id}, {"$set": {"auto_creation_status": "Failed"}})
+        collection.update_one({"intake_id": intake_id, "organisation_id": organisation_id}, {"$set": {"auto_creation_status": "Failed"}})
         raise
 
     saved_documents = []
@@ -305,15 +305,15 @@ def _save_email(provider: str, provider_message_id: str, sender_email: str,
                 continue
             file_id = GridFSBucket(db, bucket_name="claim_documents").upload_from_stream(
                 filename, io.BytesIO(content),
-                metadata={"claim_id": claim["claim_id"], "content_type": content_type,
-                          "size": len(content), "uploaded_at": datetime.now(timezone.utc).isoformat(),
+                metadata={"claim_id": claim["claim_id"], "organisation_id": organisation_id,
+                          "content_type": content_type, "size": len(content), "uploaded_at": datetime.now(timezone.utc).isoformat(),
                           "uploaded_by": "system:email-attachment", "source": "email_attachment",
                           "source_intake_id": intake_id}
             )
             saved_documents.append({"file_id": str(file_id), "filename": filename})
         except Exception:
             logger.exception("Unable to store an email attachment for intake %s", intake_id)
-    collection.update_one({"intake_id": intake_id}, {"$set": {
+    collection.update_one({"intake_id": intake_id, "organisation_id": organisation_id}, {"$set": {
         "attachment_count": len(saved_documents), "attachments_saved": saved_documents
     }})
     return {"duplicate": False, "intake_id": intake_id,
