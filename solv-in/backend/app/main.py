@@ -364,8 +364,9 @@ def create_user(payload: UserCreate, actor: dict = Depends(require_roles(*ADMIN_
     assigned_roles = list(dict.fromkeys(normalize_role(role) for role in (payload.roles or ([payload.role] if payload.role else [])) if role))
     if not assigned_roles:
         raise HTTPException(status_code=422, detail="At least one role must be selected.")
-    if "Super Administrator" in assigned_roles and "Super Administrator" not in get_user_roles(actor):
-        raise HTTPException(status_code=403, detail="Only a Super Administrator can create another Super Administrator.")
+    if "Super Administrator" in assigned_roles and actor.get("is_global_admin") is not True:
+        raise HTTPException(status_code=403, detail="Only a global Super Administrator can create another Super Administrator.")
+    _validate_predefined_role_grants(assigned_roles, actor)
     db = get_database()
     users = db["users"]
     if users.find_one({"email": email}):
