@@ -199,7 +199,7 @@ export class AppComponent implements OnInit {
   analyticsCountry = '';
   analyticsCurrency = '';
   analyticsPortfolio = 'All';
-  readonly navigation = ['Dashboard', 'Claims', 'AI Damage Analysis', 'Policy Coverage', 'Financial Estimate', 'Settings'];
+  readonly navigation = ['Dashboard', 'Claims', 'My Claims', 'AI Damage Analysis', 'Policy Coverage', 'Financial Estimate', 'Settings'];
   readonly statuses = ['FNOL Received', 'Under Review', 'Investigation', 'Assessment', 'Pending Approval', 'Approved', 'Closed'];
   draft: ClaimDraft = this.emptyDraft();
 
@@ -254,7 +254,7 @@ export class AppComponent implements OnInit {
       if (this.hasPermission('dashboard.view')) this.loadDashboard();
       if (this.hasPermission('analytics.view')) this.loadDashboardAnalytics();
       if (this.hasPermission('claims.assign')) { this.loadAdjusters(); this.loadSurveyors(); }
-      if (this.hasPermission('claims.view')) this.loadClaims();
+      if (this.hasPermission('claims.view') || this.hasPermission('own_claims.view')) this.loadClaims();
       if (this.isAdmin()) this.loadUsers();
     });
   }
@@ -280,6 +280,7 @@ export class AppComponent implements OnInit {
     const required: Record<string, string[]> = {
       'Dashboard': ['dashboard.view'],
       'Claims': ['claims.view'],
+      'My Claims': ['own_claims.view'],
       'AI Damage Analysis': ['damage.analyse'],
       'Policy Coverage': ['coverage.view'],
       'Financial Estimate': ['finance.view', 'finance.edit', 'finance.approve'],
@@ -573,7 +574,7 @@ export class AppComponent implements OnInit {
     }
     this.errorMessage = '';
     this.successMessage = '';
-    if (page === 'Claims') this.loadClaims();
+    if (page === 'Claims' || page === 'My Claims') this.loadClaims();
     if (page === 'AI Damage Analysis' && this.damageClaimId.trim()) this.loadDamageAssessments();
     if (page === 'Financial Estimate' && this.canManageTaxRules()) { this.loadTaxRules(); this.loadUsTaxResearchMatrix(); }
     if (page === 'Repair Rates' && this.canManageTaxRules()) this.loadRepairRates();
@@ -725,7 +726,11 @@ export class AppComponent implements OnInit {
     if (this.searchTerm.trim()) params = params.set('search', this.searchTerm.trim());
     if (this.lossCauseFilter) params = params.set('loss_cause', this.lossCauseFilter);
     if (this.statusFilter) params = params.set('status', this.statusFilter);
-    this.http.get<{items: Claim[]; count: number}>(`${environment.apiBaseUrl}/claims`, { params, headers: this.authHeaders() }).subscribe({
+    const endpoint = this.hasPermission('claims.view') ? '/claims' : '/customer/claims';
+    this.http.get<{items: Claim[]; count: number}>(`${environment.apiBaseUrl}${endpoint}`, {
+      params: this.hasPermission('claims.view') ? params : new HttpParams(),
+      headers: this.authHeaders()
+    }).subscribe({
       next: result => { this.claims = result.items; this.loadingClaims = false; this.loadLossCauseOptions(); },
       error: error => { this.loadingClaims = false; this.handleApiError(error); this.claims = []; }
     });
