@@ -361,25 +361,26 @@
               </div>
             </form>
           </section>
-          <section class="panel form-panel" *ngIf="selectedClaim" style="margin-top:14px">
+          <section class="panel form-panel" *ngIf="selectedClaim && (hasPermission('evidence.view') || hasPermission('evidence.upload'))" style="margin-top:14px">
             <div class="panel-heading"><div><h2>Evidence &amp; documents</h2><p class="muted">Upload and keep claim evidence securely linked to {{ selectedClaim.claim_id }}.</p></div><span class="subtle">{{ claimDocuments.length }} files</span></div>
-            <div class="form-grid">
+            <div class="form-grid" *ngIf="hasPermission('evidence.upload')">
               <label class="full">Choose a file
                 <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp" (change)="onClaimDocumentSelected($event)" aria-label="Choose a claim evidence document">
                 <span class="muted">PDF, JPG, JPEG, PNG or WEBP · Maximum 15 MB per file</span>
               </label>
             </div>
-            <div class="form-actions">
+            <div class="form-actions" *ngIf="hasPermission('evidence.upload')">
               <span class="muted">{{ selectedClaimDocument?.name || 'No file selected' }}</span>
               <button class="primary-action" type="button" (click)="uploadClaimDocument()" [disabled]="documentUploadBusy || !selectedClaimDocument">{{ documentUploadBusy ? 'Uploading…' : 'Upload document' }}</button>
             </div>
             <p class="muted" *ngIf="documentsLoading">Loading uploaded documents…</p>
-            <div class="table-scroll" *ngIf="!documentsLoading">
+            <p class="muted" *ngIf="!hasPermission('evidence.view')">You do not have permission to view evidence files.</p>
+            <div class="table-scroll" *ngIf="!documentsLoading && hasPermission('evidence.view')">
               <table><thead><tr><th>File name</th><th>Type</th><th>Size</th><th>Uploaded</th><th>Action</th></tr></thead>
                 <tbody>
                   <tr *ngFor="let document of claimDocuments">
                     <td>{{ document.filename }}</td><td>{{ document.content_type }}</td><td>{{ (document.size / 1024) | number:'1.0-0' }} KB</td><td>{{ document.uploaded_at | date:'medium' }}</td>
-                    <td><button class="text-button" type="button" (click)="downloadClaimDocument(document)">Download</button></td>
+                    <td><button *ngIf="hasPermission('evidence.view')" class="text-button" type="button" (click)="downloadClaimDocument(document)">Download</button><button *ngIf="canDeleteEvidence()" class="text-button danger-text" type="button" (click)="deleteClaimDocument(document)" [disabled]="documentDeleteBusyId !== null">{{ documentDeleteBusyId === document.file_id ? 'Deleting…' : 'Delete' }}</button></td>
                   </tr>
                   <tr *ngIf="claimDocuments.length === 0"><td colspan="5" class="empty">No evidence files uploaded for this claim yet.</td></tr>
                 </tbody>
