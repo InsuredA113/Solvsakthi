@@ -84,14 +84,9 @@ class OrganisationScopeTests(unittest.TestCase):
         self.assertEqual(organisation_filter(user), {"organisation_id": "org-a"})
 
     def test_only_explicit_global_admin_bypasses_organisation_filter(self):
-        self.assertEqual(
-            organisation_filter({"role": "Super Administrator"}),
-            {"organisation_id": None},
-        )
-        self.assertEqual(
-            organisation_filter({"is_global_admin": True}),
-            {},
-        )
+        with self.assertRaises(HTTPException):
+            organisation_filter({"role": "Super Administrator"})
+        self.assertEqual(organisation_filter({"is_global_admin": True}), {})
 
     def test_unassigned_non_global_user_is_denied(self):
         with self.assertRaises(HTTPException) as error:
