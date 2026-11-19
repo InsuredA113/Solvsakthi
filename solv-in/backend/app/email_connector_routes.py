@@ -265,6 +265,13 @@ def _save_email(provider: str, provider_message_id: str, sender_email: str,
             {"provider": provider, "provider_message_id": provider_message_id, "organisation_id": organisation_id},
             {"_id": 0, "body_text": 0}
         )
+        if not existing:
+            # The provider/message pair is globally unique. Never treat a
+            # message already bound to another organisation as this tenant's duplicate.
+            raise HTTPException(
+                status_code=409,
+                detail="This provider message is already registered under another organisation. Verify the mailbox-to-organisation binding."
+            )
         return {"duplicate": True, "intake_id": existing["intake_id"], "claim_id": existing.get("claim_id")}
 
     claim = None
