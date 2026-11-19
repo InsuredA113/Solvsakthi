@@ -145,6 +145,44 @@
             </div>
           </div>
 
+          <section class="panel customer-verification-panel" *ngIf="selectedClaim && canAssignClaims()">
+            <div class="panel-heading">
+              <div>
+                <h3>Policyholder identity verification</h3>
+                <p class="muted">Link a customer account only after completing your organisation's identity checks.</p>
+              </div>
+              <span class="claim-status-pill" *ngIf="selectedClaim.customer_identity_verified">Verified link recorded</span>
+            </div>
+            <p class="muted" *ngIf="selectedClaim.customer_identity_verified">
+              Current linked account: {{ selectedClaim.customer_user_email }} ·
+              {{ selectedClaim.customer_identity_verification_method }} ·
+              Reference: {{ selectedClaim.customer_identity_verification_reference }}
+            </p>
+            <div class="form-grid">
+              <label>Customer account email
+                <input type="email" [(ngModel)]="customerLinkDraft.customer_email" placeholder="customer@company.com">
+              </label>
+              <label>Verification method
+                <select [(ngModel)]="customerLinkDraft.verification_method">
+                  <option value="Policyholder document review">Policyholder document review</option>
+                  <option value="Registered contact confirmation">Registered contact confirmation</option>
+                  <option value="Insurer identity check">Insurer identity check</option>
+                </select>
+              </label>
+              <label>Internal verification reference
+                <input [(ngModel)]="customerLinkDraft.verification_reference" maxlength="120" placeholder="Verification case / ticket reference">
+              </label>
+            </div>
+            <label class="checkbox-row">
+              <input type="checkbox" [(ngModel)]="customerLinkDraft.identity_verified">
+              I confirm that the policyholder's identity has been verified using the selected method.
+            </label>
+            <p class="muted">A claim contact email alone does not establish ownership. This action records your verification attestation and audit history.</p>
+            <button class="primary-action" type="button" (click)="linkVerifiedCustomerClaim(selectedClaim)" [disabled]="customerLinkBusy">
+              {{ customerLinkBusy ? 'Saving verification…' : 'Verify and link customer' }}
+            </button>
+          </section>
+
           <div class="claim-detail-workspace" *ngIf="selectedClaim">
           <section class="claim-management-summary">
             <div class="claim-management-summary-head"><div><span class="claim-detail-kicker">CLAIM MANAGEMENT</span><strong>Review sections</strong></div><span class="claim-management-count">{{ claimOverallProgress().complete }} / {{ claimOverallProgress().total }} fields</span></div>
