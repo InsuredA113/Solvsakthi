@@ -266,6 +266,7 @@ export class AppComponent implements OnInit {
   logout(showMessage = true): void {
     sessionStorage.removeItem('solvin_access_token');
     this.currentUser = null;
+    this.effectivePermissions = [];
     this.isAuthenticated = false;
     this.activePage = 'Dashboard';
     this.claims = [];
