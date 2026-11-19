@@ -167,8 +167,41 @@ class OrganisationScopeTests(unittest.TestCase):
             }),
             {"$and": [
                 {"organisation_id": "org-a"},
-                {"$or": [{"$or": [{"customer_user_email": "customer@example.test"}]}]},
+                {"$or": [{
+                    "customer_user_email": "customer@example.test",
+                    "customer_identity_verified": True,
+                }]},
             ]},
+        )
+
+    def test_customer_claim_access_requires_verified_flag_not_contact_email(self):
+        query = claim_visibility_filter({
+            "email": "policyholder@example.test",
+            "roles": ["Customer / Policyholder"],
+            "organisation_id": "org-b",
+        })
+        self.assertEqual(query["$and"][0], {"organisation_id": "org-b"})
+        self.assertEqual(
+            query["$and"][1]["$or"][0],
+            {
+                "customer_user_email": "policyholder@example.test",
+                "customer_identity_verified": True,
+            },
+        )
+
+    def test_claim_filter_prevents_cross_organisation_idor(self):
+        query = scoped_claim_filter(
+            "CLM-2026-000001",
+            {"organisation_id": "org-b", "roles": ["Claims Manager"]},
+        )
+        self.assertEqual(
+            query,
+            {
+                "$and": [
+                    {"claim_id": "CLM-2026-000001"},
+                    {"organisation_id": "org-b"},
+                ]
+            },
         )
 
     def test_claim_filter_always_includes_tenant_boundary(self):
