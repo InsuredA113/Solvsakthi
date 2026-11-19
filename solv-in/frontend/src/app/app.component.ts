@@ -252,6 +252,7 @@ export class AppComponent implements OnInit {
     this.apiStatus = 'Signed in';
     this.loadEffectivePermissions(() => {
       if (this.hasPermission('dashboard.view')) this.loadDashboard();
+      if (!this.hasPermission('dashboard.view') && this.hasPermission('own_claims.view')) this.activePage = 'My Claims';
       if (this.hasPermission('analytics.view')) this.loadDashboardAnalytics();
       if (this.hasPermission('claims.assign')) { this.loadAdjusters(); this.loadSurveyors(); }
       if (this.hasPermission('claims.view') || this.hasPermission('own_claims.view')) this.loadClaims();
