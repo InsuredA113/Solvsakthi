@@ -463,8 +463,12 @@ def _load_claims_analytics(
         claim_ids = [claim.get("claim_id") for claim in claims if claim.get("claim_id")]
         estimates = []
         if claim_ids:
+            claim_scope_pairs = [
+                {"claim_id": item.get("claim_id"), "organisation_id": item.get("organisation_id")}
+                for item in claims if item.get("claim_id")
+            ]
             estimates = list(db["financial_estimates"].aggregate([
-                {"$match": {"claim_id": {"$in": claim_ids}}},
+                {"$match": {"$or": claim_scope_pairs}},
                 {"$sort": {"created_at": -1}},
                 {"$group": {"_id": "$claim_id", "latest": {"$first": "$$ROOT"}}},
                 {"$replaceRoot": {"newRoot": "$latest"}}
