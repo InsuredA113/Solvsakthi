@@ -124,5 +124,9 @@ def test_customer_sees_only_staff_verified_claims_in_own_organisation(tenant_api
     assert result.status_code == 200
     returned_ids = {claim["claim_id"] for claim in result.json()["items"]}
     assert returned_ids == {"CLM-A-000001"}
+    assert "customer_identity_verification_reference" not in result.json()["items"][0]
+    own_detail = client.get("/api/customer/claims/CLM-A-000001")
+    assert own_detail.status_code == 200
+    assert "customer_identity_verification_reference" not in own_detail.json()
     assert client.get("/api/customer/claims/CLM-B-000001").status_code == 404
     assert db["claims"].find_one({"claim_id": "CLM-A-000001"})["customer_identity_verification_reference"] == "VERIFY-CASE-1001"
