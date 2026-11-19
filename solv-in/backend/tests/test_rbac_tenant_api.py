@@ -335,3 +335,32 @@ def test_company_admin_cannot_change_roles_for_another_organisation_user(tenant_
 
     assert response.status_code == 404
     assert db["users"].find_one({"email": "target-b@example.test"})["roles"] == ["Claims Manager"]
+
+
+
+def test_email_connector_rejects_provider_message_owned_by_another_organisation(tenant_api, monkeypatch):
+    _, db, _ = tenant_api
+    db["email_intake"].insert_one({
+        "intake_id": "intake-org-b",
+        "provider": "gmail",
+        "provider_message_id": "provider-message-unique",
+        "organisation_id": "org-b",
+    })
+    monkeypatch.setattr(
+        email_connector_routes,
+        "extract_email_intake",
+        lambda subject, body: {
+            "suggested_claim_type": "Out of Scope",
+            "extracted_fields": {},
+            "intake_status": "Needs Review",
+            "missing_fields": [],
+        },
+    )
+
+    with pytest.raises(Exception) as error:
+        email_connector_routes._save_email(
+            "gmail", "provider-message-unique", "sender@example.test",
+            "Subject", "Body", None, organisation_id="org-a",
+        )
+
+    assert getattr(error.value, "status_code", None) == 409
