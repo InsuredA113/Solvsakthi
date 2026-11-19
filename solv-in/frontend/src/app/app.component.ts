@@ -104,6 +104,10 @@ export class AppComponent implements OnInit {
   documentsLoading = false;
   users: User[] = [];
   roles: string[] = [];
+  customRoles: any[] = [];
+  availablePermissions: string[] = [];
+  customRoleDraft = { name: '', description: '', permissions: [] as string[] };
+  customRoleBusy = false;
   userBusy = false;
   selectedDamageImage: File | null = null;
   damageImagePreview = '';
@@ -1801,6 +1805,39 @@ export class AppComponent implements OnInit {
     this.http.get<{roles: string[]}>(`${environment.apiBaseUrl}/users/roles`, { headers: this.authHeaders() }).subscribe({
       next: result => this.roles = result.roles,
       error: error => this.handleApiError(error)
+    });
+  }
+
+  loadCustomRoles(): void {
+    if (!this.isAdmin()) return;
+    this.http.get<{items: any[]; available_permissions: string[]}>(`${environment.apiBaseUrl}/roles/custom`, { headers: this.authHeaders() }).subscribe({
+      next: result => { this.customRoles = result.items || []; this.availablePermissions = result.available_permissions || []; },
+      error: error => this.handleApiError(error)
+    });
+  }
+
+  toggleCustomRolePermission(permission: string, checked: boolean): void {
+    const selected = new Set(this.customRoleDraft.permissions);
+    if (checked) selected.add(permission); else selected.delete(permission);
+    this.customRoleDraft.permissions = Array.from(selected);
+  }
+
+  createCustomRole(): void {
+    if (!this.customRoleDraft.name.trim() || this.customRoleDraft.permissions.length === 0) {
+      this.errorMessage = 'Enter a role name and select at least one permission.';
+      return;
+    }
+    this.customRoleBusy = true;
+    this.errorMessage = '';
+    this.successMessage = '';
+    this.http.post(`${environment.apiBaseUrl}/roles/custom`, this.customRoleDraft, { headers: this.authHeaders() }).subscribe({
+      next: () => {
+        this.customRoleBusy = false;
+        this.successMessage = 'Custom role created successfully.';
+        this.customRoleDraft = { name: '', description: '', permissions: [] };
+        this.loadCustomRoles();
+      },
+      error: error => { this.customRoleBusy = false; this.handleApiError(error); }
     });
   }
 
