@@ -115,6 +115,13 @@ export class AppComponent implements OnInit {
   selectedUserForRoles: User | null = null;
   roleAssignmentDraft = { roles: [] as string[], custom_roles: [] as string[] };
   roleAssignmentBusy = false;
+  customerLinkDraft = {
+    customer_email: '',
+    verification_method: 'Policyholder document review',
+    verification_reference: '',
+    identity_verified: false
+  };
+  customerLinkBusy = false;
   userBusy = false;
   selectedDamageImage: File | null = null;
   damageImagePreview = '';
@@ -624,6 +631,38 @@ export class AppComponent implements OnInit {
         this.successMessage = `Assigned ${updated.claim_id} to surveyor ${updated.assigned_surveyor_name}.`;
       },
       error: error => this.handleApiError(error)
+    });
+  }
+
+  linkVerifiedCustomerClaim(claim: Claim): void {
+    if (!this.canAssignClaims() || !this.customerLinkDraft.customer_email.trim()
+      || !this.customerLinkDraft.verification_reference.trim() || !this.customerLinkDraft.identity_verified) {
+      this.errorMessage = 'Enter the customer account email, verification reference, and confirm that identity checks are complete.';
+      return;
+    }
+    this.customerLinkBusy = true;
+    this.errorMessage = '';
+    this.http.post<Claim>(
+      `${environment.apiBaseUrl}/claims/${encodeURIComponent(claim.claim_id)}/customer-link`,
+      this.customerLinkDraft,
+      { headers: this.authHeaders() }
+    ).subscribe({
+      next: updated => {
+        this.customerLinkBusy = false;
+        this.claims = this.claims.map(item => item.claim_id === updated.claim_id ? updated : item);
+        this.selectedClaim = updated;
+        this.successMessage = `Verified customer account linked to ${updated.claim_id}.`;
+        this.customerLinkDraft = {
+          customer_email: '',
+          verification_method: 'Policyholder document review',
+          verification_reference: '',
+          identity_verified: false
+        };
+      },
+      error: error => {
+        this.customerLinkBusy = false;
+        this.handleApiError(error);
+      }
     });
   }
 
