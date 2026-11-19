@@ -171,13 +171,13 @@ def _validate_custom_role_permissions(permissions: list[str], actor: dict) -> li
     return selected
 
 
-def _write_role_audit(action: str, role_name: str, actor: dict, details: dict | None = None):
+def _write_role_audit(action: str, role_name: str, actor: dict, details: dict | None = None, organisation_id: str | None = None):
     get_database()["role_audit_logs"].insert_one({
         "action": action,
         "role_name": role_name,
         "actor_email": actor.get("email"),
         "details": details or {},
-        "organisation_id": resolve_write_organisation_id(get_database(), actor),
+        "organisation_id": organisation_id or resolve_write_organisation_id(get_database(), actor),
         "created_at": datetime.now(timezone.utc).isoformat()
     })
 
@@ -209,7 +209,7 @@ def create_custom_role(payload: CustomRoleCreate, actor: dict = Depends(require_
     }
     try:
         roles.insert_one(record)
-        _write_role_audit("created", name, actor, {"permissions": permissions})
+        _write_role_audit("created", name, actor, {"permissions": permissions}, organisation_id)
     except PyMongoError as exc:
         raise HTTPException(status_code=503, detail="Unable to create custom role.") from exc
     record.pop("_id", None)
@@ -239,7 +239,7 @@ def update_custom_role(role_name: str, payload: CustomRoleUpdate, actor: dict = 
                   "custom_roles.$[assigned].updated_at": now}},
         array_filters=[{"assigned.name": role["name"]}]
     )
-    _write_role_audit("updated", role["name"], actor, {"permissions": permissions})
+    _write_role_audit("updated", role["name"], actor, {"permissions": permissions}, role.get("organisation_id"))
     updated = get_database()["custom_roles"].find_one({"_id": role["_id"], **organisation_filter(actor)}, {"_id": 0})
     return updated
 
@@ -249,14 +249,14 @@ def delete_custom_role(role_name: str, actor: dict = Depends(require_roles(*ROLE
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     roles = get_database()["custom_roles"]
-    role = roles.find_one({"name_key": role_name.strip().casefold()})
+    role = roles.find_one({"name_key": role_name.strip().casefold(), **organisation_filter(actor)})
     if not role:
         raise HTTPException(status_code=404, detail="Custom role not found.")
     users_using_role = get_database()["users"].count_documents({"custom_roles.name": role["name"], **organisation_filter(actor)})
     if users_using_role:
         raise HTTPException(status_code=409, detail="This role is assigned to users. Reassign users before deleting it.")
     roles.delete_one({"_id": role["_id"], **organisation_filter(actor)})
-    _write_role_audit("deleted", role["name"], actor)
+    _write_role_audit("deleted", role["name"], actor, organisation_id=role.get("organisation_id"))
     return {"message": "Custom role deleted."}
 
 
@@ -296,7 +296,7 @@ def update_user_roles(email: str, payload: UserRoleUpdate, actor: dict = Depends
         "roles_updated_by": actor.get("email")
     }
     users.update_one({"_id": target["_id"], **organisation_filter(actor)}, {"$set": update})
-    _write_role_audit("user_roles_updated", target["email"], actor, {"roles": assigned_roles, "custom_roles": custom_names})
+    _write_role_audit("user_roles_updated", target["email"], actor, {"roles": assigned_roles, "custom_roles": custom_names}, target.get("organisation_id"))
     return {"email": target["email"], "roles": assigned_roles, "custom_roles": custom_names}
 
 
