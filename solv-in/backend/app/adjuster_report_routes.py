@@ -76,7 +76,10 @@ def list_adjuster_reports(
     if not is_in_scope_claim(claim):
         raise HTTPException(status_code=422, detail="Adjuster reports are limited to Property and Commercial Casualty claims.")
     try:
-        rows = list(db["adjuster_reports"].find({"claim_id": claim_id}).sort("created_at", DESCENDING).limit(100))
+        rows = list(db["adjuster_reports"].find({
+            "claim_id": claim_id,
+            "organisation_id": claim.get("organisation_id"),
+        }).sort("created_at", DESCENDING).limit(100))
         return {"items": [_serialise_report(row) for row in rows], "count": len(rows)}
     except PyMongoError as exc:
         raise HTTPException(status_code=503, detail="Unable to retrieve adjuster reports.") from exc
