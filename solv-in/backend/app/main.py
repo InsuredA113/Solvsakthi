@@ -2395,6 +2395,11 @@ def receive_email_intake(
                 "provider_message_id": payload.provider_message_id,
                 **org_scope
             }, {"_id": 0, "body_text": 0})
+            if not existing:
+                raise HTTPException(
+                    status_code=409,
+                    detail="This provider message is already registered under another organisation. Verify the mailbox-to-organisation binding."
+                )
             return {"duplicate": True, "item": existing}
         if isinstance(exc, PyMongoError):
             raise HTTPException(status_code=503, detail="Unable to store the incoming email.") from exc
