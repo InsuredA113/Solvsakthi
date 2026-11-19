@@ -21,7 +21,6 @@ def seed_initial_admin():
                 "roles": ["Super Administrator"],
                 "is_global_admin": True,
                 "organisation_id": None,
-                "is_active": True,
             }}
         )
         return
