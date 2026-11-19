@@ -8,6 +8,7 @@ from pymongo.errors import PyMongoError
 from .auth import require_permissions, require_roles
 from .claims_analytics import is_in_scope_claim
 from .database import database_is_available, get_database
+from .organisations import scoped_claim_filter
 
 router = APIRouter()
 
@@ -49,12 +50,12 @@ def _serialise_comment(row: dict) -> dict:
     return row
 
 
-def _get_scoped_claim(claim_id: str):
+def _get_scoped_claim(claim_id: str, user: dict):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     db = get_database()
     claim = db["claims"].find_one(
-        {"claim_id": claim_id},
+        scoped_claim_filter(claim_id, user),
         {"_id": 0, "claim_id": 1, "claim_type": 1, "casualty_segment": 1}
     )
     if not claim:
@@ -69,7 +70,7 @@ def list_comparison_comments(
     claim_id: str,
     user: dict = Depends(require_permissions("reports.view"))
 ):
-    db = _get_scoped_claim(claim_id)
+    db = _get_scoped_claim(claim_id, user)
     try:
         rows = list(
             db["comparison_comments"].find({"claim_id": claim_id})
@@ -89,6 +90,7 @@ def create_comparison_comment(
     db = _get_scoped_claim(claim_id)
     record = {
         "claim_id": claim_id,
+        "organisation_id": user.get("organisation_id"),
         "comment": payload.comment,
         "field_key": payload.field_key,
         "field_label": payload.field_label,
