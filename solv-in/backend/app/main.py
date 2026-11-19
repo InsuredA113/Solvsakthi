@@ -14,7 +14,7 @@ from .auth import (
     ROLES, create_access_token, get_current_user, hash_password,
     normalize_email, require_permissions, require_roles, verify_password
 )
-from .bootstrap import seed_initial_admin
+from .bootstrap import seed_initial_admin, migrate_initial_organisation_membership
 from .organisations import ensure_default_organisation, organisation_filter, claim_visibility_filter, scoped_claim_filter, resolve_write_organisation_id
 from .config import CORS_ORIGINS, ACCESS_TOKEN_MINUTES
 from .database import get_database, database_is_available
@@ -83,7 +83,8 @@ class FinancialEstimateReviewUpdate(BaseModel):
 def startup():
     if database_is_available():
         db = get_database()
-        ensure_default_organisation(db)
+        default_organisation = ensure_default_organisation(db)
+        migrate_initial_organisation_membership(default_organisation["organisation_id"])
         seed_initial_admin()
         db["custom_roles"].create_index([("organisation_id", 1), ("name_key", 1)], unique=True)
         get_database()["role_audit_logs"].create_index("created_at")
