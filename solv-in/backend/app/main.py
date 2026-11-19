@@ -1432,6 +1432,44 @@ def download_claim_document(
         raise HTTPException(status_code=503, detail="Unable to retrieve the claim document.") from exc
 
 
+@app.delete("/api/claims/{claim_id}/documents/{file_id}")
+def delete_claim_document(
+    claim_id: str,
+    file_id: str,
+    user: dict = Depends(require_permissions("evidence.delete"))
+):
+    """Delete one evidence file only after validating its parent claim and tenant."""
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    try:
+        object_id = ObjectId(file_id)
+    except InvalidId as exc:
+        raise HTTPException(status_code=400, detail="Invalid document ID.") from exc
+
+    db = get_database()
+    claim = db["claims"].find_one(
+        scoped_claim_filter(claim_id, user),
+        {"_id": 0, "claim_id": 1, "organisation_id": 1}
+    )
+    if not claim:
+        raise HTTPException(status_code=404, detail="Claim not found.")
+
+    bucket = GridFSBucket(db, bucket_name="claim_documents")
+    try:
+        stored = bucket.open_download_stream(object_id)
+        if (
+            stored.metadata.get("claim_id") != claim_id
+            or stored.metadata.get("organisation_id") != claim.get("organisation_id")
+        ):
+            raise HTTPException(status_code=404, detail="Document not found for this claim.")
+        bucket.delete(object_id)
+        return {"deleted": True, "claim_id": claim_id, "file_id": file_id}
+    except NoFile as exc:
+        raise HTTPException(status_code=404, detail="Document not found.") from exc
+    except PyMongoError as exc:
+        raise HTTPException(status_code=503, detail="Unable to delete the claim document.") from exc
+
+
 # Phase 4: AI-assisted visual damage analysis
 from typing import Any
 import json
