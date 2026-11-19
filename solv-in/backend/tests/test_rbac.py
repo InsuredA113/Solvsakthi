@@ -149,6 +149,15 @@ class OrganisationScopeTests(unittest.TestCase):
             },
         )
 
+    def test_unknown_or_custom_role_fails_closed_for_claim_visibility(self):
+        with self.assertRaises(HTTPException) as error:
+            claim_visibility_filter({
+                "email": "custom@example.test",
+                "roles": ["Custom Claims Viewer"],
+                "organisation_id": "org-a",
+            })
+        self.assertEqual(error.exception.status_code, 403)
+
     def test_claims_manager_retains_organisation_wide_visibility(self):
         self.assertEqual(
             claim_visibility_filter({
