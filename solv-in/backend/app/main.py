@@ -21,7 +21,7 @@ from .database import get_database, database_is_available
 from .models import ClaimCreate, ClaimStatusUpdate
 from .claims_analytics import build_claims_analytics, is_in_scope_claim, safe_csv_cell
 from .user_models import LoginRequest, UserCreate
-from .rbac import get_effective_permissions, PERMISSIONS, PREDEFINED_ROLES, get_user_roles
+from .rbac import get_effective_permissions, PERMISSIONS, PREDEFINED_ROLES, ROLE_PERMISSIONS, get_user_roles
 from .repair_rate_models import RepairRateCreate, RepairRateStatusUpdate
 from .email_intake import EmailIntakeCreate, EmailIntakeReview, extract_email_intake
 from .email_connector_routes import router as email_connector_router
@@ -164,12 +164,30 @@ def _validate_custom_role_permissions(permissions: list[str], actor: dict) -> li
     unknown = sorted(set(selected) - set(PERMISSIONS))
     if unknown:
         raise HTTPException(status_code=422, detail={"message": "Unknown permission identifiers.", "permissions": unknown})
-    if "Super Administrator" not in get_user_roles(actor):
+    if actor.get("is_global_admin") is not True:
         allowed = get_effective_permissions(actor)
         denied = sorted(set(selected) - allowed)
         if denied:
             raise HTTPException(status_code=403, detail={"message": "You cannot grant permissions you do not hold.", "permissions": denied})
     return selected
+
+
+def _validate_predefined_role_grants(roles: list[str], actor: dict):
+    """Prevent tenant admins from assigning predefined roles above their permission ceiling."""
+    if actor.get("is_global_admin") is True:
+        return
+    allowed = get_effective_permissions(actor)
+    for role in roles:
+        missing = set(ROLE_PERMISSIONS.get(role, ())) - allowed
+        if missing:
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "message": "You cannot assign a role with permissions above your own.",
+                    "role": role,
+                    "permissions_above_your_ceiling": sorted(missing),
+                },
+            )
 
 
 def _write_role_audit(action: str, role_name: str, actor: dict, details: dict | None = None, organisation_id: str | None = None):
@@ -269,8 +287,9 @@ def update_user_roles(email: str, payload: UserRoleUpdate, actor: dict = Depends
     unknown_roles = sorted(set(assigned_roles) - set(PREDEFINED_ROLES))
     if unknown_roles:
         raise HTTPException(status_code=422, detail={"message": "Unknown predefined roles.", "roles": unknown_roles})
-    if "Super Administrator" in assigned_roles and "Super Administrator" not in get_user_roles(actor):
-        raise HTTPException(status_code=403, detail="Only a Super Administrator can grant Super Administrator access.")
+    if "Super Administrator" in assigned_roles and actor.get("is_global_admin") is not True:
+        raise HTTPException(status_code=403, detail="Only a global Super Administrator can grant Super Administrator access.")
+    _validate_predefined_role_grants(assigned_roles, actor)
     users = get_database()["users"]
     target = users.find_one({"email": normalize_email(email), **organisation_filter(actor)})
     if not target:
@@ -282,6 +301,19 @@ def update_user_roles(email: str, payload: UserRoleUpdate, actor: dict = Depends
     custom_names = list(dict.fromkeys(payload.custom_roles))
     custom_docs = list(get_database()["custom_roles"].find({"name": {"$in": custom_names}, "is_active": True, "organisation_id": target.get("organisation_id")}, {"_id": 0}))
     found_names = {item["name"] for item in custom_docs}
+    if actor.get("is_global_admin") is not True:
+        actor_permissions = get_effective_permissions(actor)
+        excessive = sorted({
+            permission
+            for custom_role in custom_docs
+            for permission in custom_role.get("permissions", [])
+            if permission not in actor_permissions
+        })
+        if excessive:
+            raise HTTPException(status_code=403, detail={
+                "message": "You cannot assign a custom role with permissions above your own.",
+                "permissions_above_your_ceiling": excessive,
+            })
     missing = sorted(set(custom_names) - found_names)
     if missing:
         raise HTTPException(status_code=422, detail={"message": "Unknown or inactive custom roles.", "roles": missing})
