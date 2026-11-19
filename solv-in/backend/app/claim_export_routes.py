@@ -24,6 +24,7 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from .auth import require_permissions, require_roles
 from .claims_analytics import is_in_scope_claim
 from .database import database_is_available, get_database
+from .organisations import scoped_claim_filter
 
 router = APIRouter()
 
@@ -147,11 +148,11 @@ def _safe_filename(claim_id: str) -> str:
     return re.sub(r"[^A-Za-z0-9_-]", "_", claim_id)
 
 
-def _load_claim_export(claim_id: str) -> tuple[Any, list[tuple[str, dict]], list[tuple[str, bytes]]]:
+def _load_claim_export(claim_id: str, user: dict) -> tuple[Any, list[tuple[str, dict]], list[tuple[str, bytes]]]:
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     db = get_database()
-    claim = db["claims"].find_one({"claim_id": claim_id}, {"_id": 0})
+    claim = db["claims"].find_one(scoped_claim_filter(claim_id, user), {"_id": 0})
     if not claim:
         raise HTTPException(status_code=404, detail="Claim not found.")
     if not is_in_scope_claim(claim) and claim.get("auto_intake_status") != "Provisional":
@@ -186,7 +187,7 @@ def export_claim(
     format: str = Query(default="pdf", pattern="^(pdf|xlsx|csv|zip)$"),
     user: dict = Depends(require_permissions("claims.export"))
 ):
-    db, records, documents = _load_claim_export(claim_id)
+    db, records, documents = _load_claim_export(claim_id, user)
     claim_name = _safe_filename(claim_id)
     pdf_content = _pdf_bytes(records, claim_id)
     xlsx_content = _xlsx_bytes(records)
@@ -214,7 +215,7 @@ def export_claim(
         content, media_type, extension = archive.getvalue(), "application/zip", "zip"
     try:
         db["claim_export_audit"].insert_one({
-            "claim_id": claim_id, "format": format, "generated_at": generated_at,
+            "claim_id": claim_id, "organisation_id": user.get("organisation_id"), "format": format, "generated_at": generated_at,
             "generated_by": user["email"], "generated_by_role": user["role"],
             "file_size": len(content), "included_evidence_files": len(documents) if format == "zip" else 0
         })
