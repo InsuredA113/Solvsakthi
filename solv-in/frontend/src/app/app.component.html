@@ -95,6 +95,32 @@
         </section>
       </ng-container>
 
+      <ng-container *ngIf="activePage === 'My Claims'">
+        <section class="panel claims-panel">
+          <div class="panel-heading">
+            <div><h2>My Claims</h2><span class="subtle">Claims explicitly linked to your verified policyholder account</span></div>
+            <button class="secondary-action" type="button" (click)="loadClaims()">Refresh</button>
+          </div>
+          <p class="muted" *ngIf="loadingClaims">Loading your claims…</p>
+          <div class="table-scroll" *ngIf="!loadingClaims">
+            <table>
+              <thead><tr><th>Claim ID</th><th>Claim Type</th><th>Policy Number</th><th>Incident Date</th><th>Reported Date</th><th>Status</th></tr></thead>
+              <tbody>
+                <tr *ngFor="let claim of claims">
+                  <td>{{ claim.claim_id }}</td>
+                  <td>{{ claim.claim_type === 'Casualty' ? 'Commercial Casualty' : claim.claim_type }}</td>
+                  <td>{{ claim.policy_number || 'Not recorded' }}</td>
+                  <td>{{ claim.incident_date || 'Not recorded' }}</td>
+                  <td>{{ claim.created_at ? (claim.created_at | date:'mediumDate') : 'Not recorded' }}</td>
+                  <td><span class="claim-status-pill">{{ claim.status || 'Not recorded' }}</span></td>
+                </tr>
+                <tr *ngIf="claims.length === 0"><td colspan="6" class="empty">No claims have been linked to your verified account yet.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </ng-container>
+
       <ng-container *ngIf="activePage === 'Claims'">
         <div class="dashboard-quick-filter" *ngIf="dashboardClaimsQuickFilter !== 'all'"><span>Dashboard filter: <strong>{{ dashboardClaimsQuickFilter === 'open' ? 'Open claims' : dashboardClaimsQuickFilter === 'pending' ? 'Pending approval' : dashboardClaimsQuickFilter === 'closed' ? 'Closed claims' : 'Overdue claims' }}</strong></span><button type="button" class="text-button" (click)="openDashboardClaimsFilter('all')">Clear filter</button></div>
         <section class="panel filters">
