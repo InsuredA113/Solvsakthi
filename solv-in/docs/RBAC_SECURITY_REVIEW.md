@@ -155,6 +155,16 @@ Implemented on `feature/solvin-rbac-foundation`:
 - Added MongoDB-mock API integration tests for cross-organisation claim-ID reads, same-organisation surveyor assignment/history, rejection of cross-organisation surveyor assignment, and policyholder visibility limited to staff-verified claims.
 - Added Angular surveyor assignment in the Claims register, a staff identity-verification panel on Claim Details, and a policyholder-only My Claims page that calls the own-claims endpoint.
 
+## Validation evidence
+
+Latest code validation: commit `17565e8f75a0f3a842c19c6906e871b343902e21` (2026-11-19).
+
+- Backend: Python compileall passed; pytest passed with **78 tests**.
+- Frontend: Angular production build passed.
+- GitHub Actions run: https://github.com/InsuredA113/Solvsakthi/actions/runs/44503446230
+
+The validation run covers the new MongoDB-mock tenant API integration tests. It does not constitute a production Atlas migration or a full independent security review.
+
 ## Remaining release blockers
 
 This work is a foundation, not yet a production-ready multi-tenant security certification:
