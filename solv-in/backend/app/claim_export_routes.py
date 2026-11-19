@@ -160,7 +160,7 @@ def _load_claim_export(claim_id: str, user: dict) -> tuple[Any, list[tuple[str, 
     records: list[tuple[str, dict]] = [("Claim", claim)]
     policy_number = claim.get("policy_number")
     if policy_number:
-        policy = db["policies"].find_one({"policy_number": policy_number}, {"_id": 0})
+        policy = db["policies"].find_one({"policy_number": policy_number, "organisation_id": claim.get("organisation_id")}, {"_id": 0})
         if policy:
             records.append(("Policy", policy))
     for collection_name, label in RELATED_COLLECTIONS:
@@ -215,7 +215,7 @@ def export_claim(
         content, media_type, extension = archive.getvalue(), "application/zip", "zip"
     try:
         db["claim_export_audit"].insert_one({
-            "claim_id": claim_id, "organisation_id": user.get("organisation_id"), "format": format, "generated_at": generated_at,
+            "claim_id": claim_id, "organisation_id": records[0][1].get("organisation_id"), "format": format, "generated_at": generated_at,
             "generated_by": user["email"], "generated_by_role": user["role"],
             "file_size": len(content), "included_evidence_files": len(documents) if format == "zip" else 0
         })
