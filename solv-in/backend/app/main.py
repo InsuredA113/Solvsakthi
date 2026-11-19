@@ -986,11 +986,11 @@ def list_recorded_loss_causes(
     """Return only non-empty loss causes already recorded on in-scope claims."""
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
-    scope_query = {"$or": [
+    scope_query = {"$and": [claim_visibility_filter(user), {"$or": [
         {"claim_type": "Property"},
         {"claim_type": "Casualty", "casualty_segment": "Commercial"},
         {"auto_intake_status": "Provisional"}
-    ]}
+    ]}]}
     try:
         recorded_values = get_database()["claims"].distinct("loss_cause", scope_query)
         options = sorted({
