@@ -108,6 +108,7 @@ export class AppComponent implements OnInit {
   selectedFnolDocument: File | null = null;
   documentUploadBusy = false;
   documentsLoading = false;
+  documentDeleteBusyId: string | null = null;
   users: User[] = [];
   roles: string[] = [];
   customRoles: any[] = [];
@@ -1257,9 +1258,16 @@ export class AppComponent implements OnInit {
     });
   }
 
+  canDeleteEvidence(): boolean { return this.hasPermission('evidence.delete'); }
+
   loadClaimDocuments(): void {
     const claimId = this.selectedClaim?.claim_id;
     if (!claimId) return;
+    if (!this.hasPermission('evidence.view')) {
+      this.claimDocuments = [];
+      this.documentsLoading = false;
+      return;
+    }
     this.documentsLoading = true;
     this.http.get<{items: ClaimDocument[]; count: number}>(`${environment.apiBaseUrl}/claims/${encodeURIComponent(claimId)}/documents`, { headers: this.authHeaders() }).subscribe({
       next: result => { this.claimDocuments = result.items; this.documentsLoading = false; },
@@ -1322,6 +1330,27 @@ export class AppComponent implements OnInit {
         URL.revokeObjectURL(url);
       },
       error: error => this.handleApiError(error)
+    });
+  }
+
+  deleteClaimDocument(document: ClaimDocument): void {
+    if (!this.canDeleteEvidence() || this.documentDeleteBusyId) return;
+    const confirmed = window.confirm(`Permanently delete evidence file "${document.filename}" from claim ${document.claim_id}?`);
+    if (!confirmed) return;
+    this.documentDeleteBusyId = document.file_id;
+    this.errorMessage = '';
+    this.http.delete<{deleted: boolean}>(`${environment.apiBaseUrl}/claims/${encodeURIComponent(document.claim_id)}/documents/${encodeURIComponent(document.file_id)}`, {
+      headers: this.authHeaders()
+    }).subscribe({
+      next: () => {
+        this.documentDeleteBusyId = null;
+        this.successMessage = `${document.filename} deleted successfully.`;
+        this.loadClaimDocuments();
+      },
+      error: error => {
+        this.documentDeleteBusyId = null;
+        this.handleApiError(error);
+      }
     });
   }
 
