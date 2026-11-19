@@ -15,6 +15,7 @@ from .auth import (
     normalize_email, require_permissions, require_roles, verify_password
 )
 from .bootstrap import seed_initial_admin
+from .organisations import ensure_default_organisation
 from .config import CORS_ORIGINS, ACCESS_TOKEN_MINUTES
 from .database import get_database, database_is_available
 from .models import ClaimCreate, ClaimStatusUpdate
@@ -80,9 +81,11 @@ class FinancialEstimateReviewUpdate(BaseModel):
 
 @app.on_event("startup")
 def startup():
-    seed_initial_admin()
     if database_is_available():
-        get_database()["custom_roles"].create_index("name_key", unique=True)
+        db = get_database()
+        ensure_default_organisation(db)
+        seed_initial_admin()
+        db["custom_roles"].create_index("name_key", unique=True)
         get_database()["role_audit_logs"].create_index("created_at")
 
 @app.get("/api/health")
