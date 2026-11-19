@@ -2471,7 +2471,7 @@ def create_claim_from_email_intake(
     if ((confirmed_type == "Property" and payload.claim_type != "Property") or
         (confirmed_type == "Commercial Casualty" and
          (payload.claim_type != "Casualty" or payload.casualty_segment != "Commercial"))):
-        collection.update_one({"intake_id": intake_id}, {"$set": {"conversion_state": "Failed"}})
+        collection.update_one({"$and": [{"intake_id": intake_id}, org_scope]}, {"$set": {"conversion_state": "Failed"}})
         raise HTTPException(status_code=422, detail="The claim type must match the reviewed email classification.")
     db = get_database()
     try:
@@ -2496,7 +2496,7 @@ def create_claim_from_email_intake(
         })
         db["claims"].insert_one(claim_record)
         collection.update_one(
-            {"intake_id": intake_id, "conversion_state": "Processing"},
+            {"$and": [{"intake_id": intake_id, "conversion_state": "Processing"}, org_scope]},
             {"$set": {"review_status": "Converted", "conversion_state": "Completed",
                       "claim_id": claim_id, "converted_at": now,
                       "converted_by": user["email"]}}
@@ -2505,12 +2505,12 @@ def create_claim_from_email_intake(
     except PyMongoError as exc:
         existing_claim = db["claims"].find_one({"$and": [{"source_intake_id": intake_id}, org_scope]}, {"_id": 0})
         if existing_claim:
-            collection.update_one({"intake_id": intake_id}, {"$set": {
+            collection.update_one({"$and": [{"intake_id": intake_id}, org_scope]}, {"$set": {
                 "review_status": "Converted", "conversion_state": "Completed",
                 "claim_id": existing_claim["claim_id"]
             }})
             return existing_claim
-        collection.update_one({"intake_id": intake_id, "conversion_state": "Processing"},
+        collection.update_one({"$and": [{"intake_id": intake_id, "conversion_state": "Processing"}, org_scope]},
                               {"$set": {"conversion_state": "Failed"}})
         raise HTTPException(status_code=503, detail="Unable to create the claim from this email.") from exc
 
