@@ -48,3 +48,26 @@ def ensure_default_organisation(db):
     except PyMongoError:
         raise
 
+
+
+
+def organisation_filter(user: dict) -> dict:
+    """Return an explicit tenant filter; only marked global admins bypass it."""
+    from fastapi import HTTPException
+
+    if user.get("is_global_admin") is True:
+        return {}
+    organisation_id = user.get("organisation_id")
+    if not organisation_id:
+        raise HTTPException(status_code=403, detail="Your account is not assigned to an organisation.")
+    return {"organisation_id": organisation_id}
+
+
+def scoped_claim_filter(claim_id: str, user: dict) -> dict:
+    """Build a claim lookup that is tenant-scoped for ordinary users."""
+    return {"$and": [{"claim_id": claim_id}, organisation_filter(user)]}
+
+
+def get_claim_for_user(db, claim_id: str, user: dict, projection=None):
+    """Fetch a claim only when it belongs to the authenticated user's organisation."""
+    return db["claims"].find_one(scoped_claim_filter(claim_id, user), projection)
