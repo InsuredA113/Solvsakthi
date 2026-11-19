@@ -61,6 +61,7 @@ ROLE_PERMISSIONS = {
         "users.view", "users.create", "users.edit", "users.deactivate", "roles.view",
         "roles.manage", "audit.view", "underwriting.view", "underwriting.review",
         "reinsurance.view", "reinsurance.review", "compliance.view", "compliance.manage",
+        "own_claims.view", "own_claims.create",
     }),
     "Claims Manager": frozenset({
         "dashboard.view", "claims.view", "claims.create", "claims.edit", "claims.assign", "claims.approve",
