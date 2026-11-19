@@ -263,6 +263,19 @@ export class AppComponent implements OnInit {
     return this.effectivePermissions.includes(permission);
   }
 
+  canAccessPage(page: string): boolean {
+    const required: Record<string, string[]> = {
+      'Dashboard': ['dashboard.view'],
+      'Claims': ['claims.view'],
+      'AI Damage Analysis': ['damage.analyse'],
+      'Policy Coverage': ['coverage.view'],
+      'Financial Estimate': ['finance.view', 'finance.edit', 'finance.approve'],
+    };
+    if (page === 'Settings') return this.isAdmin();
+    const permissions = required[page] || [];
+    return permissions.some(permission => this.hasPermission(permission));
+  }
+
   logout(showMessage = true): void {
     sessionStorage.removeItem('solvin_access_token');
     this.currentUser = null;
