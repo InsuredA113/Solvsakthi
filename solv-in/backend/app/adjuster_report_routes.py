@@ -91,7 +91,7 @@ def create_adjuster_report(
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     db = get_database()
-    claim = db["claims"].find_one({"claim_id": claim_id}, {"_id": 0, "claim_id": 1, "claim_type": 1, "casualty_segment": 1})
+    claim = db["claims"].find_one(scoped_claim_filter(claim_id, user), {"_id": 0, "claim_id": 1, "claim_type": 1, "casualty_segment": 1})
     if not claim:
         raise HTTPException(status_code=404, detail="Claim not found.")
     if not is_in_scope_claim(claim):
