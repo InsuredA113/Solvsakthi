@@ -1,10 +1,14 @@
 import mongomock
+import mongomock.gridfs
 from bson import ObjectId
+from gridfs import GridFSBucket
 import pytest
 from fastapi.testclient import TestClient
 
 from app import main, adjuster_report_routes, comparison_comment_routes, claim_export_routes, email_connector_routes
 from app.auth import get_current_user
+
+mongomock.gridfs.enable_gridfs_integration()
 
 
 @pytest.fixture
@@ -197,3 +201,85 @@ def test_comparison_comment_create_and_read_are_claim_and_tenant_scoped(tenant_a
     assert len(listed.json()["items"]) == 1
     assert listed.json()["items"][0]["comment"] == "Please verify the estimate depreciation basis."
 
+
+
+
+def company_admin(email="admin-a@example.test", organisation_id="org-a"):
+    return {
+        "email": email, "full_name": "Insurance Company Administrator",
+        "role": "Insurance Company Administrator",
+        "roles": ["Insurance Company Administrator"],
+        "organisation_id": organisation_id, "is_active": True,
+    }
+
+
+def test_evidence_list_download_and_delete_validate_claim_and_organisation(tenant_api):
+    client, db, sign_in_as = tenant_api
+    bucket = GridFSBucket(db, bucket_name="claim_documents")
+    own_id = bucket.upload_from_stream(
+        "own.pdf", b"%PDF-1.4 own evidence",
+        metadata={"claim_id": "CLM-A-000001", "organisation_id": "org-a", "content_type": "application/pdf"},
+    )
+    foreign_id = bucket.upload_from_stream(
+        "foreign.pdf", b"%PDF-1.4 foreign evidence",
+        metadata={"claim_id": "CLM-A-000001", "organisation_id": "org-b", "content_type": "application/pdf"},
+    )
+
+    sign_in_as(manager())
+    listed = client.get("/api/claims/CLM-A-000001/documents")
+    own_download = client.get(f"/api/claims/CLM-A-000001/documents/{own_id}/download")
+    foreign_download = client.get(f"/api/claims/CLM-A-000001/documents/{foreign_id}/download")
+
+    assert listed.status_code == 200
+    assert [item["file_id"] for item in listed.json()["items"]] == [str(own_id)]
+    assert own_download.status_code == 200
+    assert own_download.content == b"%PDF-1.4 own evidence"
+    assert foreign_download.status_code == 404
+
+    sign_in_as(company_admin())
+    foreign_delete = client.delete(f"/api/claims/CLM-A-000001/documents/{foreign_id}")
+    own_delete = client.delete(f"/api/claims/CLM-A-000001/documents/{own_id}")
+
+    assert foreign_delete.status_code == 404
+    assert own_delete.status_code == 200
+    assert db["claim_documents.files"].count_documents({"_id": own_id}) == 0
+    assert db["claim_documents.files"].count_documents({"_id": foreign_id}) == 1
+
+
+def test_claim_export_excludes_child_records_from_another_organisation(tenant_api):
+    client, db, sign_in_as = tenant_api
+    db["damage_assessments"].insert_many([
+        {"claim_id": "CLM-A-000001", "organisation_id": "org-a", "summary": "OWN-DAMAGE-RECORD"},
+        {"claim_id": "CLM-A-000001", "organisation_id": "org-b", "summary": "FOREIGN-DAMAGE-RECORD"},
+    ])
+    sign_in_as(manager())
+    response = client.get("/api/claims/CLM-A-000001/export?format=csv")
+
+    assert response.status_code == 200
+    assert "OWN-DAMAGE-RECORD" in response.text
+    assert "FOREIGN-DAMAGE-RECORD" not in response.text
+
+
+def test_dashboard_summary_is_limited_to_the_callers_organisation(tenant_api):
+    client, _, sign_in_as = tenant_api
+    sign_in_as(manager())
+    response = client.get("/api/dashboard/summary")
+
+    assert response.status_code == 200
+    assert response.json()["total_claims"] == 2
+
+
+def test_company_admin_cannot_change_roles_for_another_organisation_user(tenant_api):
+    client, db, sign_in_as = tenant_api
+    db["users"].insert_many([
+        {"email": "target-a@example.test", "full_name": "Target A", "role": "Claims Manager", "roles": ["Claims Manager"], "organisation_id": "org-a", "is_active": True},
+        {"email": "target-b@example.test", "full_name": "Target B", "role": "Claims Manager", "roles": ["Claims Manager"], "organisation_id": "org-b", "is_active": True},
+    ])
+    sign_in_as(company_admin())
+    response = client.patch(
+        "/api/users/target-b@example.test/roles",
+        json={"roles": ["Claims Manager"], "custom_roles": []},
+    )
+
+    assert response.status_code == 404
+    assert db["users"].find_one({"email": "target-b@example.test"})["roles"] == ["Claims Manager"]
