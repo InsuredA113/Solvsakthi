@@ -2228,7 +2228,7 @@ def create_claim_from_email_intake(
         )
         return claim_record
     except PyMongoError as exc:
-        existing_claim = db["claims"].find_one({"source_intake_id": intake_id}, {"_id": 0})
+        existing_claim = db["claims"].find_one({"$and": [{"source_intake_id": intake_id}, org_scope]}, {"_id": 0})
         if existing_claim:
             collection.update_one({"intake_id": intake_id}, {"$set": {
                 "review_status": "Converted", "conversion_state": "Completed",
