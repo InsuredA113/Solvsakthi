@@ -93,7 +93,7 @@ def create_comparison_comment(
     payload: ComparisonCommentCreate,
     user: dict = Depends(require_roles(*COMMENT_WRITE_ROLES))
 ):
-    db = _get_scoped_claim(claim_id, user)
+    db, claim = _get_scoped_claim(claim_id, user)
     record = {
         "claim_id": claim_id,
         "tenant_id": claim.get("tenant_id"),
