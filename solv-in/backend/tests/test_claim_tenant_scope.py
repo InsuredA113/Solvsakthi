@@ -26,6 +26,7 @@ class FakeDatabase(dict):
 def install_tenants(monkeypatch, rows):
     db = FakeDatabase(tenants=FakeTenants(rows))
     monkeypatch.setattr(main, "get_database", lambda: db)
+    monkeypatch.setattr(auth, "get_database", lambda: db)
 
 
 def test_claim_filter_limits_insurer_user_to_database_tenant(monkeypatch):
