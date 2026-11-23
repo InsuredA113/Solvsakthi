@@ -1,4 +1,3 @@
-import re
 from typing import Literal
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
@@ -13,7 +12,7 @@ class TenantCreate(BaseModel):
     @field_validator("tenant_slug", mode="before")
     @classmethod
     def normalize_slug(cls, value: str) -> str:
-        return value.lower()
+        return value.lower() if isinstance(value, str) else value
 
 class TenantStatusUpdate(BaseModel):
     status: TenantStatus
