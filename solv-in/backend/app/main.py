@@ -61,6 +61,39 @@ STATUS_ROLES = (
 )
 ADMIN_ROLES = ("Super Administrator",)
 
+def _tenant_id_for_user(user: dict) -> str | None:
+    """Return the authenticated user's active tenant; Super Admin remains global."""
+    if user.get("role") == "Super Administrator":
+        return None
+    tenant_id = user.get("tenant_id")
+    if not tenant_id:
+        raise HTTPException(status_code=403, detail="Your account is not assigned to an insurer tenant.")
+    tenant = get_database()["tenants"].find_one(
+        {"tenant_id": tenant_id, "status": "Active"}, {"_id": 0, "tenant_id": 1}
+    )
+    if not tenant:
+        raise HTTPException(status_code=403, detail="Your insurer tenant is inactive or unavailable.")
+    return tenant_id
+
+
+def _claim_filter(user: dict, claim_id: str | None = None) -> dict:
+    query = {}
+    if claim_id is not None:
+        query["claim_id"] = claim_id
+    tenant_id = _tenant_id_for_user(user)
+    if tenant_id is not None:
+        query["tenant_id"] = tenant_id
+    return query
+
+
+def _scoped_query(user: dict, query: dict | None = None) -> dict:
+    base = dict(query or {})
+    tenant_id = _tenant_id_for_user(user)
+    if tenant_id is not None:
+        base["tenant_id"] = tenant_id
+    return base
+
+
 DAMAGE_REVIEW_ROLES = ("Super Administrator", "Insurance Company Administrator", "Claims Manager", "Property Adjuster", "Casualty Adjuster", "Surveyor", "Actuarial Analyst", "Approver")
 DAMAGE_APPROVAL_ROLES = ("Super Administrator", "Insurance Company Administrator", "Claims Manager", "Approver")
 
@@ -180,7 +213,8 @@ def _load_claims_analytics(
     to_date: date | None,
     country_code: str | None,
     currency: str | None,
-    portfolio: str
+    portfolio: str,
+    tenant_id: str | None = None
 ):
     if from_date and to_date and from_date > to_date:
         raise HTTPException(status_code=422, detail="From date must be on or before to date.")
@@ -207,6 +241,8 @@ def _load_claims_analytics(
     elif portfolio == "Commercial Casualty":
         scope_filter = {"claim_type": "Casualty", "casualty_segment": "Commercial"}
 
+    if tenant_id is not None:
+        common_filters.append({"tenant_id": tenant_id})
     query_parts = [scope_filter, *common_filters]
     query = {"$and": query_parts}
     db = get_database()
@@ -263,7 +299,7 @@ def claims_analytics(
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
-    return _load_claims_analytics(from_date, to_date, country_code, currency, portfolio)
+    return _load_claims_analytics(from_date, to_date, country_code, currency, portfolio, _tenant_id_for_user(user))
 
 
 @app.get("/api/reports/claims-analytics.csv")
@@ -277,7 +313,7 @@ def export_claims_analytics_csv(
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
-    data = _load_claims_analytics(from_date, to_date, country_code, currency, portfolio)
+    data = _load_claims_analytics(from_date, to_date, country_code, currency, portfolio, _tenant_id_for_user(user))
     output = io.StringIO()
     writer = csv.writer(output)
     def write_row(values):
@@ -314,7 +350,7 @@ def list_adjusters(user: dict = Depends(require_roles(*READ_ROLES))):
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     try:
         rows = list(get_database()["users"].find(
-            {"is_active": True, "role": {"$in": ["Property Adjuster", "Casualty Adjuster"]}},
+            _scoped_query(user, {"is_active": True, "role": {"$in": ["Property Adjuster", "Casualty Adjuster"]}}),
             {"_id": 0, "full_name": 1, "email": 1, "role": 1}
         ).sort("full_name", 1))
         return {"items": rows, "count": len(rows)}
@@ -331,11 +367,11 @@ def assign_claim_adjuster(
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     db = get_database()
-    claim = db["claims"].find_one({"claim_id": claim_id})
+    claim = db["claims"].find_one(_claim_filter(user, claim_id))
     if not claim or (not is_in_scope_claim(claim) and claim.get("auto_intake_status") != "Provisional"):
         raise HTTPException(status_code=404, detail="Claim not found.")
     adjuster_email = normalize_email(payload.adjuster_email)
-    adjuster = db["users"].find_one({"email": adjuster_email, "is_active": True})
+    adjuster = db["users"].find_one(_scoped_query(user, {"email": adjuster_email, "is_active": True}))
     if not adjuster or adjuster.get("role") not in {"Property Adjuster", "Casualty Adjuster"}:
         raise HTTPException(status_code=422, detail="Select an active Property or Casualty Adjuster.")
     expected_role = "Property Adjuster" if claim.get("claim_type") == "Property" else "Casualty Adjuster" if claim.get("claim_type") == "Casualty" else None
@@ -344,7 +380,7 @@ def assign_claim_adjuster(
     now = datetime.now(timezone.utc).isoformat()
     try:
         updated = db["claims"].find_one_and_update(
-            {"claim_id": claim_id},
+            _claim_filter(user, claim_id),
             {"$set": {
                 "assigned_adjuster_email": adjuster_email,
                 "assigned_adjuster_name": adjuster.get("full_name") or adjuster_email,
@@ -570,7 +606,7 @@ def list_recorded_loss_causes(
         {"auto_intake_status": "Provisional"}
     ]}
     try:
-        recorded_values = get_database()["claims"].distinct("loss_cause", scope_query)
+        recorded_values = get_database()["claims"].distinct("loss_cause", _scoped_query(user, scope_query))
         options = sorted({
             value.strip()
             for value in recorded_values
@@ -591,7 +627,7 @@ def get_claim_details(
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     try:
-        claim = get_database()["claims"].find_one({"claim_id": claim_id}, {"_id": 0})
+        claim = get_database()["claims"].find_one(_claim_filter(user, claim_id), {"_id": 0})
         if not claim or (not is_in_scope_claim(claim) and claim.get("auto_intake_status") != "Provisional"):
             raise HTTPException(status_code=404, detail="Claim not found.")
         return claim
@@ -657,7 +693,7 @@ def edit_claim(
     if not payload:
         raise HTTPException(status_code=422, detail="Provide at least one field to update.")
     collection = get_database()["claims"]
-    existing = collection.find_one({"claim_id": claim_id})
+    existing = collection.find_one(_claim_filter(user, claim_id))
     if not existing or (not is_in_scope_claim(existing) and existing.get("auto_intake_status") != "Provisional"):
         raise HTTPException(status_code=404, detail="Claim not found.")
     merged = {key: existing.get(key) for key in EDITABLE_CLAIM_FIELDS}
@@ -676,7 +712,7 @@ def edit_claim(
     changes.update({"updated_at": now, "updated_by": user["email"]})
     try:
         updated = collection.find_one_and_update(
-            {"claim_id": claim_id},
+            _claim_filter(user, claim_id),
             {"$set": changes},
             return_document=ReturnDocument.AFTER,
             projection={"_id": 0}
@@ -773,7 +809,7 @@ def update_claim_field(
     now = datetime.now(timezone.utc).isoformat()
     try:
         updated = collection.find_one_and_update(
-            {"claim_id": claim_id},
+            _claim_filter(user, claim_id),
             {"$set": {field_name: value, "updated_at": now, "updated_by": user["email"]}},
             return_document=ReturnDocument.AFTER,
             projection={"_id": 0}
@@ -795,7 +831,7 @@ def delete_claim(
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     db = get_database()
-    existing = db["claims"].find_one({"claim_id": claim_id}, {"_id": 0, "claim_id": 1})
+    existing = db["claims"].find_one(_claim_filter(user, claim_id), {"_id": 0, "claim_id": 1})
     if not existing:
         raise HTTPException(status_code=404, detail="Claim not found.")
     try:
@@ -804,7 +840,7 @@ def delete_claim(
             bucket.delete(stored_file._id)
         for collection_name in ("financial_estimates", "damage_assessments", "coverage_assessments"):
             db[collection_name].delete_many({"claim_id": claim_id})
-        db["claims"].delete_one({"claim_id": claim_id})
+        db["claims"].delete_one(_claim_filter(user, claim_id))
         return {"deleted": True, "claim_id": claim_id}
     except PyMongoError as exc:
         raise HTTPException(status_code=503, detail="Unable to fully delete the claim and linked records.") from exc
@@ -820,7 +856,7 @@ def update_claim_status(
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     try:
         updated = get_database()["claims"].find_one_and_update(
-            {"claim_id": claim_id},
+            _claim_filter(user, claim_id),
             {"$set": {
                 "status": payload.status,
                 "updated_at": datetime.now(timezone.utc).isoformat(),
