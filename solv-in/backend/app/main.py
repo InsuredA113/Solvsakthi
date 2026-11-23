@@ -161,6 +161,7 @@ def create_user(payload: UserCreate, actor: dict = Depends(require_roles(*ADMIN_
         "password_hash": hash_password(payload.password),
         "role": payload.role,
         "tenant_id": tenant_id,
+        "tenant_access_enabled": payload.role == "Super Administrator",
         "is_active": True,
         "created_at": now,
         "updated_at": now,
