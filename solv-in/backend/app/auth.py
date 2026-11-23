@@ -64,6 +64,11 @@ def get_current_user(credentials: HTTPAuthorizationCredentials | None = Depends(
         user = get_database()["users"].find_one({"email": email, "is_active": True}, {"_id": 0, "password_hash": 0})
         if not user:
             raise unauthorized
+        if user.get("role") != "Super Administrator" and user.get("tenant_id") and not user.get("tenant_access_enabled", False):
+            raise HTTPException(
+                status_code=403,
+                detail="Insurer user access is pending completion of tenant data-isolation controls.",
+            )
         return user
     except (jwt.PyJWTError, PyMongoError, ValueError):
         raise unauthorized
