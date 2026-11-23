@@ -1840,6 +1840,16 @@ export class AppComponent implements OnInit {
     });
   }
 
+  onNewUserRoleChange(role: string): void {
+    this.newUser.role = role;
+    if (role === 'Super Administrator') this.newUser.tenant_id = '';
+  }
+
+  tenantName(tenantId?: string | null): string {
+    if (!tenantId) return 'Global';
+    return this.tenants.find(tenant => tenant.tenant_id === tenantId)?.company_name || tenantId;
+  }
+
   createUser(): void {
     this.errorMessage = '';
     this.successMessage = '';
