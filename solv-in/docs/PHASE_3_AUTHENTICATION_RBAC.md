@@ -27,3 +27,19 @@
 
 ## Important limitations
 This is a development implementation, not a production identity and access management system. Insurer tenant isolation, claim-level ownership, property/casualty claim-type scoping, Customer self-service, MFA, password reset/change, refresh-token rotation, account lockout/rate limiting, comprehensive audit logging, and security testing are not yet implemented. The Insurance Company Administrator role is recognised for claim API permissions, but user administration remains Super Administrator-only until tenant boundaries exist. Do not use real customer or policyholder data.
+
+## Phase 3A-1 – Tenant registry foundation (in progress)
+
+Implemented on branch `feature/phase-3a-1-tenant-foundation`:
+- Added a MongoDB `tenants` collection registry with unique indexes for `tenant_id` and `tenant_slug`.
+- Added Super Administrator-only endpoints: `GET /api/tenants`, `POST /api/tenants`, `GET /api/tenants/{tenant_id}`, and `PATCH /api/tenants/{tenant_id}/status`.
+- Added reusable database-backed tenant authorization dependencies. A global Super Administrator can select an active tenant using `X-Tenant-ID`; non-super-admin users cannot override their database tenant association.
+- Tenant status values are `Active`, `Inactive`, and `Suspended`.
+
+Not yet complete:
+- Assigning tenant IDs when provisioning insurer users and displaying tenant assignment in the Angular administration screen.
+- A safe, explicit legacy-user migration utility.
+- Applying tenant filters to claims and related operational APIs (Phase 3A-2 / Phase 3B).
+- Automated tenant isolation tests and execution of the backend/frontend test suites.
+
+Security note: tenant registry creation does not itself isolate existing claims or operational data. Do not treat this branch as production-ready multi-tenant security until the follow-on isolation phases are implemented and verified. Existing login and claims behavior have intentionally not been changed in this first registry slice.
