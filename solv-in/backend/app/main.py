@@ -1099,7 +1099,7 @@ Keep findings concise and distinguish observation from hypothesis.
     result["possible_cause"] = str(result.get("possible_cause") or "Undetermined")[:500]
     record = {
         "claim_id": claim_id,
-        "tenant_id": claim.get("tenant_id") if claim else None,
+        "tenant_id": claim.get("tenant_id") if claim else _tenant_id_for_user(user),
         "file_name": (image.filename or "uploaded-image")[:255],
         "mime_type": content_type,
         "damage_category": result["damage_category"],
@@ -1216,7 +1216,7 @@ def create_financial_estimate(
             damage_object_id = ObjectId(payload.source_damage_assessment_id)
         except InvalidId as exc:
             raise HTTPException(status_code=422, detail="Invalid source damage assessment ID.") from exc
-        source_damage_assessment = db["damage_assessments"].find_one({"_id": damage_object_id, "claim_id": claim_id})
+        source_damage_assessment = db["damage_assessments"].find_one(_scoped_query(user, {"_id": damage_object_id, "claim_id": claim_id}))
         if not source_damage_assessment:
             raise HTTPException(status_code=404, detail="The selected damage assessment was not found for this claim.")
         if source_damage_assessment.get("status") not in {"Reviewed", "Approved"}:
@@ -1857,7 +1857,7 @@ def receive_email_intake(
     collection = get_database()["email_intake"]
     try:
         collection.create_index([("provider", 1), ("provider_message_id", 1)], unique=True)
-        existing = collection.find_one({
+        existing = collection.find_one(_intake_filter(user) | {
             "provider": payload.provider,
             "provider_message_id": payload.provider_message_id
         }, {"_id": 0, "body_text": 0})
@@ -1867,6 +1867,7 @@ def receive_email_intake(
         received_at = (payload.received_at or datetime.now(timezone.utc)).isoformat()
         record = {
             "intake_id": str(ObjectId()),
+            **({"tenant_id": _tenant_id_for_user(user)} if user.get("role") != "Super Administrator" else {}),
             "provider": payload.provider,
             "provider_message_id": payload.provider_message_id,
             "sender_email": str(payload.sender_email),
@@ -1908,6 +1909,7 @@ def list_email_intake(
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     query = {"review_status": status} if status else {}
+    query = _intake_filter(user) | query
     try:
         rows = list(get_database()["email_intake"].find(
             query, {"_id": 0, "body_text": 0}
@@ -1924,7 +1926,7 @@ def get_email_intake(
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
-    record = get_database()["email_intake"].find_one({"intake_id": intake_id}, {"_id": 0})
+    record = get_database()["email_intake"].find_one(_intake_filter(user, intake_id), {"_id": 0})
     if not record:
         raise HTTPException(status_code=404, detail="Email intake record not found.")
     return record
@@ -1941,7 +1943,7 @@ def review_email_intake(
     if payload.status == "Rejected" and not payload.notes.strip():
         raise HTTPException(status_code=422, detail="A reason is required when rejecting an email intake.")
     collection = get_database()["email_intake"]
-    record = collection.find_one({"intake_id": intake_id})
+    record = collection.find_one(_intake_filter(user, intake_id))
     if not record:
         raise HTTPException(status_code=404, detail="Email intake record not found.")
     if record.get("review_status") == "Out of Scope":
@@ -1958,7 +1960,7 @@ def review_email_intake(
         "reviewed_by": user["email"], "reviewer_role": user["role"]
     })
     updated = collection.find_one_and_update(
-        {"intake_id": intake_id, "claim_id": {"$exists": False}},
+        _intake_filter(user, intake_id) | {"claim_id": {"$exists": False}},
         {"$set": {"review_status": payload.status, "review_history": history,
                   "confirmed_claim_type": confirmed_type if payload.status == "Reviewed" else record.get("confirmed_claim_type"),
                   "reviewed_at": datetime.now(timezone.utc).isoformat(),
@@ -1993,7 +1995,7 @@ def create_claim_from_email_intake(
     except PyMongoError as exc:
         raise HTTPException(status_code=503, detail="Unable to verify email-to-claim conversion state.") from exc
     record = collection.find_one_and_update(
-        {"intake_id": intake_id, "review_status": "Reviewed",
+        _intake_filter(user, intake_id) | {"review_status": "Reviewed",
          "claim_id": {"$exists": False}, "conversion_state": {"$ne": "Processing"}},
         {"$set": {"conversion_state": "Processing"}},
         return_document=ReturnDocument.AFTER
