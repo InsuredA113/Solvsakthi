@@ -73,6 +73,26 @@ def _log_connector_failure(provider: str, stage: str, exc: Exception) -> None:
         )
 
 
+def _configured_ingest_tenant(db) -> dict:
+    """Resolve the single configured mailbox to an active insurer tenant."""
+    tenant_id = setting("EMAIL_CONNECTOR_TENANT_ID").strip()
+    if not tenant_id:
+        raise HTTPException(
+            status_code=503,
+            detail="Email intake is paused until EMAIL_CONNECTOR_TENANT_ID is configured for an active insurer tenant.",
+        )
+    tenant = db["tenants"].find_one(
+        {"tenant_id": tenant_id, "status": "Active"},
+        {"_id": 0, "tenant_id": 1, "company_name": 1},
+    )
+    if not tenant:
+        raise HTTPException(
+            status_code=503,
+            detail="The configured email intake tenant is missing or inactive. Email intake is paused.",
+        )
+    return tenant
+
+
 def _suggestions_for_missing(missing_fields: list[str]) -> dict[str, str]:
     guidance = {
         "customer_name": "Ask for the insured person's full legal name or the business contact name.",
@@ -90,7 +110,7 @@ def _suggestions_for_missing(missing_fields: list[str]) -> dict[str, str]:
     return {field: guidance.get(field, "Please confirm this information with the sender.") for field in missing_fields}
 
 
-def _create_provisional_claim(db, intake_id: str, sender_email: str, parsed: dict,
+def _create_provisional_claim(db, intake_id: str, tenant_id: str, sender_email: str, parsed: dict,
                               received_at: str) -> dict | None:
     classification = parsed.get("suggested_claim_type")
     if classification == "Out of Scope":
@@ -137,6 +157,7 @@ def _create_provisional_claim(db, intake_id: str, sender_email: str, parsed: dic
     claim_id = f"CLM-{datetime.now(timezone.utc).year}-{sequence['sequence']:06d}"
     claim = {
         "claim_id": claim_id,
+        "tenant_id": tenant_id,
         "customer_name": clean("customer_name"),
         "loss_cause": clean("loss_cause"),
         "email": clean("email") or sender_email,
@@ -179,6 +200,8 @@ def _save_email(provider: str, provider_message_id: str, sender_email: str,
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     db = get_database()
+    tenant = _configured_ingest_tenant(db)
+    tenant_id = tenant["tenant_id"]
     collection = db["email_intake"]
     collection.create_index([("provider", 1), ("provider_message_id", 1)], unique=True)
     existing = collection.find_one(
@@ -242,7 +265,7 @@ def _save_email(provider: str, provider_message_id: str, sender_email: str,
     received = (payload.received_at or datetime.now(timezone.utc)).isoformat()
     intake_id = str(ObjectId())
     record = {
-        "intake_id": intake_id, "provider": provider,
+        "intake_id": intake_id, "tenant_id": tenant_id, "provider": provider,
         "provider_message_id": provider_message_id,
         "sender_email": str(payload.sender_email), "subject": payload.subject,
         "body_text": body_text or "(No readable message body)",
@@ -264,7 +287,7 @@ def _save_email(provider: str, provider_message_id: str, sender_email: str,
 
     claim = None
     try:
-        claim = _create_provisional_claim(db, intake_id, str(payload.sender_email), parsed, received)
+        claim = _create_provisional_claim(db, intake_id, tenant_id, str(payload.sender_email), parsed, received)
         if claim:
             collection.update_one({"intake_id": intake_id}, {"$set": {
                 "claim_id": claim["claim_id"], "review_status": "Converted",
@@ -300,7 +323,7 @@ def _save_email(provider: str, provider_message_id: str, sender_email: str,
                 continue
             file_id = GridFSBucket(db, bucket_name="claim_documents").upload_from_stream(
                 filename, io.BytesIO(content),
-                metadata={"claim_id": claim["claim_id"], "content_type": content_type,
+                metadata={"claim_id": claim["claim_id"], "tenant_id": tenant_id, "content_type": content_type,
                           "size": len(content), "uploaded_at": datetime.now(timezone.utc).isoformat(),
                           "uploaded_by": "system:email-attachment", "source": "email_attachment",
                           "source_intake_id": intake_id}
@@ -344,7 +367,7 @@ def _fetch_gmail_attachments(message: dict, message_id: str, token: str) -> list
 
 
 @router.get("/api/email-connectors/status")
-def connector_status(user: dict = Depends(require_roles(*READ_ROLES))):
+def connector_status(user: dict = Depends(require_roles("Super Administrator"))):
     db = get_database()
     gmail_mailbox = setting("GMAIL_MAILBOX").lower()
     ms_mailbox = setting("MS365_MAILBOX").lower()
@@ -353,12 +376,13 @@ def connector_status(user: dict = Depends(require_roles(*READ_ROLES))):
     return {
         "gmail": {"configured": gmail_configured(), "watch_active": bool(gmail_state and gmail_state.get("watch_expiration")), "watch_expiration": gmail_state.get("watch_expiration") if gmail_state else None},
         "microsoft365": {"configured": microsoft_configured(), "subscription_active": bool(ms_state and ms_state.get("subscription_id")), "subscription_expiration": ms_state.get("subscription_expiration") if ms_state else None},
-        "note": "Connector credentials are held in backend environment variables and are never returned."
+        "tenant_mapping_configured": bool(setting("EMAIL_CONNECTOR_TENANT_ID")),
+        "note": "Connector credentials and the single-mailbox tenant mapping are held in backend environment variables and are never returned."
     }
 
 
 @router.post("/api/email-connectors/gmail/watch")
-def start_gmail_watch(user: dict = Depends(require_roles(*ADMIN_ROLES))):
+def start_gmail_watch(user: dict = Depends(require_roles("Super Administrator"))):
     if not gmail_configured():
         raise HTTPException(status_code=409, detail="Configure all GMAIL environment variables before starting Gmail watch.")
     stage = "OAuth token refresh"
@@ -447,7 +471,7 @@ def gmail_pubsub(payload: dict, authorization: str | None = Header(default=None)
 
 
 @router.post("/api/email-connectors/microsoft365/subscribe")
-def create_microsoft_subscription(user: dict = Depends(require_roles(*ADMIN_ROLES))):
+def create_microsoft_subscription(user: dict = Depends(require_roles("Super Administrator"))):
     if not microsoft_configured():
         raise HTTPException(status_code=409, detail="Configure all MS365 environment variables before subscribing.")
     try:
