@@ -1365,7 +1365,7 @@ def list_financial_estimates(
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
-    if not get_database()["claims"].find_one({"claim_id": claim_id}, {"_id": 1}):
+    if not get_database()["claims"].find_one(_claim_filter(user, claim_id), {"_id": 1}):
         raise HTTPException(status_code=404, detail="Claim not found.")
     rows = list(get_database()["financial_estimates"].find({"claim_id": claim_id}).sort("created_at", DESCENDING).limit(100))
     for row in rows:
@@ -1528,7 +1528,7 @@ def list_coverage_assessments(
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
-    if not get_database()["claims"].find_one({"claim_id": claim_id}, {"_id": 1}):
+    if not get_database()["claims"].find_one(_claim_filter(user, claim_id), {"_id": 1}):
         raise HTTPException(status_code=404, detail="Claim not found.")
     rows = list(get_database()["coverage_assessments"].find({"claim_id": claim_id}).sort("created_at", DESCENDING).limit(100))
     for row in rows:
@@ -1953,7 +1953,7 @@ def create_claim_from_email_intake(
     collection = db["email_intake"]
     try:
         db["claims"].create_index("source_intake_id", unique=True, sparse=True)
-        existing_claim = db["claims"].find_one({"source_intake_id": intake_id}, {"_id": 0})
+        existing_claim = db["claims"].find_one(_scoped_query(user, {"source_intake_id": intake_id}), {"_id": 0})
         if existing_claim:
             collection.update_one({"intake_id": intake_id}, {"$set": {
                 "review_status": "Converted", "conversion_state": "Completed",
@@ -1987,7 +1987,9 @@ def create_claim_from_email_intake(
         now = datetime.now(timezone.utc).isoformat()
         claim_record = payload.model_dump(mode="json")
         claim_record.update({
-            "claim_id": claim_id, "status": "FNOL Received",
+            "claim_id": claim_id,
+            **({"tenant_id": user["tenant_id"]} if user.get("role") != "Super Administrator" else {}),
+            "status": "FNOL Received",
             "created_at": now, "updated_at": now,
             "created_by": user["email"],
             "created_by_name": user.get("full_name") or user["email"],
@@ -2005,7 +2007,7 @@ def create_claim_from_email_intake(
         )
         return claim_record
     except PyMongoError as exc:
-        existing_claim = db["claims"].find_one({"source_intake_id": intake_id}, {"_id": 0})
+        existing_claim = db["claims"].find_one(_scoped_query(user, {"source_intake_id": intake_id}), {"_id": 0})
         if existing_claim:
             collection.update_one({"intake_id": intake_id}, {"$set": {
                 "review_status": "Converted", "conversion_state": "Completed",
