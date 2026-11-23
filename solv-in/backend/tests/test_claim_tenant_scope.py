@@ -67,3 +67,12 @@ def test_scoped_query_preserves_filters_and_adds_tenant(monkeypatch):
         {"status": "Closed"},
     )
     assert query == {"status": "Closed", "tenant_id": "ten_beta"}
+
+def test_claim_filter_for_second_tenant_cannot_match_first_tenant(monkeypatch):
+    install_tenants(monkeypatch, [{"tenant_id": "ten_bravo", "status": "Active"}])
+    query = main._claim_filter(
+        {"role": "Claims Manager", "tenant_id": "ten_bravo"},
+        "CLM-2026-000001",
+    )
+    assert query["tenant_id"] == "ten_bravo"
+    assert query["tenant_id"] != "ten_alpha"
