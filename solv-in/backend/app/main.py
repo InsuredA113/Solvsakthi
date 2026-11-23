@@ -93,6 +93,13 @@ def _scoped_query(user: dict, query: dict | None = None) -> dict:
         base["tenant_id"] = tenant_id
     return base
 
+def _intake_filter(user: dict, intake_id: str | None = None) -> dict:
+    query = {}
+    if intake_id is not None:
+        query["intake_id"] = intake_id
+    return _scoped_query(user, query)
+
+
 
 DAMAGE_REVIEW_ROLES = ("Super Administrator", "Insurance Company Administrator", "Claims Manager", "Property Adjuster", "Casualty Adjuster", "Surveyor", "Actuarial Analyst", "Approver")
 DAMAGE_APPROVAL_ROLES = ("Super Administrator", "Insurance Company Administrator", "Claims Manager", "Approver")
