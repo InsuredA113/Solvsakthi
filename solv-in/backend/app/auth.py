@@ -48,6 +48,26 @@ def create_access_token(user: dict) -> str:
     }
     return jwt.encode(payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
 
+def validate_tenant_user_access(user: dict) -> dict:
+    """Fail closed for every non-global account until its active tenant is enabled."""
+    if user.get("role") == "Super Administrator":
+        return user
+    tenant_id = user.get("tenant_id")
+    if not tenant_id:
+        raise HTTPException(status_code=403, detail="Your account is not assigned to an insurer tenant.")
+    if not user.get("tenant_access_enabled", False):
+        raise HTTPException(
+            status_code=403,
+            detail="Insurer user access is pending completion of tenant data-isolation controls.",
+        )
+    tenant = get_database()["tenants"].find_one(
+        {"tenant_id": tenant_id, "status": "Active"}, {"_id": 1}
+    )
+    if not tenant:
+        raise HTTPException(status_code=403, detail="Your insurer tenant is inactive or unavailable.")
+    return user
+
+
 def get_current_user(credentials: HTTPAuthorizationCredentials | None = Depends(bearer)):
     unauthorized = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -64,12 +84,7 @@ def get_current_user(credentials: HTTPAuthorizationCredentials | None = Depends(
         user = get_database()["users"].find_one({"email": email, "is_active": True}, {"_id": 0, "password_hash": 0})
         if not user:
             raise unauthorized
-        if user.get("role") != "Super Administrator" and user.get("tenant_id") and not user.get("tenant_access_enabled", False):
-            raise HTTPException(
-                status_code=403,
-                detail="Insurer user access is pending completion of tenant data-isolation controls.",
-            )
-        return user
+        return validate_tenant_user_access(user)
     except (jwt.PyJWTError, PyMongoError, ValueError):
         raise unauthorized
 
