@@ -854,14 +854,15 @@ def delete_claim(
     if not existing:
         raise HTTPException(status_code=404, detail="Claim not found.")
     try:
+        tenant_query = {"claim_id": claim_id, "tenant_id": existing.get("tenant_id")}
         bucket = GridFSBucket(db, bucket_name="claim_documents")
-        for stored_file in bucket.find({"metadata.claim_id": claim_id}):
+        for stored_file in bucket.find({"metadata.claim_id": claim_id, "metadata.tenant_id": existing.get("tenant_id")}):
             bucket.delete(stored_file._id)
         for collection_name in (
             "financial_estimates", "damage_assessments", "coverage_assessments",
             "comparison_comments", "adjuster_reports", "claim_export_audit", "email_intake",
         ):
-            db[collection_name].delete_many({"claim_id": claim_id})
+            db[collection_name].delete_many(tenant_query)
         db["claims"].delete_one(_claim_filter(user, claim_id))
         return {"deleted": True, "claim_id": claim_id}
     except PyMongoError as exc:
@@ -914,7 +915,7 @@ async def upload_claim_document(
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
-    claim = get_database()["claims"].find_one(_claim_filter(user, claim_id), {"_id": 0, "claim_id": 1})
+    claim = get_database()["claims"].find_one(_claim_filter(user, claim_id), {"_id": 0, "claim_id": 1, "tenant_id": 1})
     if not claim:
         raise HTTPException(status_code=404, detail="Claim not found.")
     content_type = (file.content_type or "").lower()
@@ -963,10 +964,11 @@ def list_claim_documents(
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
-    if not get_database()["claims"].find_one(_claim_filter(user, claim_id), {"_id": 1}):
+    claim = get_database()["claims"].find_one(_claim_filter(user, claim_id), {"_id": 0, "tenant_id": 1})
+    if not claim:
         raise HTTPException(status_code=404, detail="Claim not found.")
     bucket = GridFSBucket(get_database(), bucket_name="claim_documents")
-    rows = list(bucket.find({"metadata.claim_id": claim_id}).sort("uploadDate", DESCENDING).limit(200))
+    rows = list(bucket.find({"metadata.claim_id": claim_id, "metadata.tenant_id": claim.get("tenant_id")}).sort("uploadDate", DESCENDING).limit(200))
     return {"items": [{
         "file_id": str(row._id), "claim_id": claim_id, "filename": row.filename,
         "content_type": row.metadata.get("content_type", "application/octet-stream"),
@@ -987,12 +989,13 @@ def download_claim_document(
         object_id = ObjectId(file_id)
     except InvalidId as exc:
         raise HTTPException(status_code=400, detail="Invalid document ID.") from exc
-    if not get_database()["claims"].find_one(_claim_filter(user, claim_id), {"_id": 1}):
+    claim = get_database()["claims"].find_one(_claim_filter(user, claim_id), {"_id": 0, "tenant_id": 1})
+    if not claim:
         raise HTTPException(status_code=404, detail="Claim not found.")
     bucket = GridFSBucket(get_database(), bucket_name="claim_documents")
     try:
         stored = bucket.open_download_stream(object_id)
-        if stored.metadata.get("claim_id") != claim_id:
+        if stored.metadata.get("claim_id") != claim_id or stored.metadata.get("tenant_id") != claim.get("tenant_id"):
             raise HTTPException(status_code=404, detail="Document not found for this claim.")
         content = stored.read()
         return Response(
