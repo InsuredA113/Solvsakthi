@@ -221,7 +221,8 @@ def export_claim(
         content, media_type, extension = archive.getvalue(), "application/zip", "zip"
     try:
         db["claim_export_audit"].insert_one({
-            "claim_id": claim_id, "format": format, "generated_at": generated_at,
+            "claim_id": claim_id, "tenant_id": records[0][1].get("tenant_id"),
+            "format": format, "generated_at": generated_at,
             "generated_by": user["email"], "generated_by_role": user["role"],
             "file_size": len(content), "included_evidence_files": len(documents) if format == "zip" else 0
         })
