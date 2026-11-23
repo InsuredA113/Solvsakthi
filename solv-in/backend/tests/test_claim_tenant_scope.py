@@ -5,7 +5,7 @@ os.environ.setdefault("JWT_SECRET_KEY", "test-only-secret-key-at-least-32-charac
 import pytest
 from fastapi import HTTPException
 
-from app import main, auth
+from app import main, auth, email_connector_routes
 
 
 class FakeTenants:
@@ -125,3 +125,27 @@ def test_super_admin_intake_filter_remains_global(monkeypatch):
     install_tenants(monkeypatch, [])
     query = main._intake_filter({"role": "Super Administrator"}, "intake-123")
     assert query == {"intake_id": "intake-123"}
+
+def test_automated_email_intake_requires_configured_active_tenant(monkeypatch):
+    db = FakeDatabase(tenants=FakeTenants([{"tenant_id": "ten_alpha", "status": "Active", "company_name": "Alpha"}]))
+    monkeypatch.setattr(email_connector_routes, "setting", lambda name: "ten_alpha")
+    tenant = email_connector_routes._configured_ingest_tenant(db)
+    assert tenant["tenant_id"] == "ten_alpha"
+
+
+def test_automated_email_intake_fails_closed_without_tenant_mapping(monkeypatch):
+    from fastapi import HTTPException
+    db = FakeDatabase(tenants=FakeTenants([]))
+    monkeypatch.setattr(email_connector_routes, "setting", lambda name: "")
+    with pytest.raises(HTTPException) as error:
+        email_connector_routes._configured_ingest_tenant(db)
+    assert error.value.status_code == 503
+
+
+def test_automated_email_intake_rejects_inactive_tenant(monkeypatch):
+    from fastapi import HTTPException
+    db = FakeDatabase(tenants=FakeTenants([{"tenant_id": "ten_alpha", "status": "Suspended"}]))
+    monkeypatch.setattr(email_connector_routes, "setting", lambda name: "ten_alpha")
+    with pytest.raises(HTTPException) as error:
+        email_connector_routes._configured_ingest_tenant(db)
+    assert error.value.status_code == 503
