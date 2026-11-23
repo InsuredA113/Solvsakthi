@@ -372,12 +372,18 @@ def connector_status(user: dict = Depends(require_roles("Super Administrator")))
     db = get_database()
     gmail_mailbox = setting("GMAIL_MAILBOX").lower()
     ms_mailbox = setting("MS365_MAILBOX").lower()
-    gmail_state = db["email_connector_state"].find_one({"_id": "gmail:" + gmail_mailbox}, {"_id": 0}) if database_is_available() and gmail_mailbox else None
-    ms_state = db["email_connector_state"].find_one({"_id": "microsoft365:" + ms_mailbox}, {"_id": 0}) if database_is_available() and ms_mailbox else None
+    tenant_mapping_id = setting("EMAIL_CONNECTOR_TENANT_ID")
+    database_ready = database_is_available()
+    gmail_state = db["email_connector_state"].find_one({"_id": "gmail:" + gmail_mailbox}, {"_id": 0}) if database_ready and gmail_mailbox else None
+    ms_state = db["email_connector_state"].find_one({"_id": "microsoft365:" + ms_mailbox}, {"_id": 0}) if database_ready and ms_mailbox else None
+    tenant_mapping_active = bool(
+        database_ready and tenant_mapping_id and
+        db["tenants"].find_one({"tenant_id": tenant_mapping_id, "status": "Active"}, {"_id": 1})
+    )
     return {
         "gmail": {"configured": gmail_configured(), "watch_active": bool(gmail_state and gmail_state.get("watch_expiration")), "watch_expiration": gmail_state.get("watch_expiration") if gmail_state else None},
         "microsoft365": {"configured": microsoft_configured(), "subscription_active": bool(ms_state and ms_state.get("subscription_id")), "subscription_expiration": ms_state.get("subscription_expiration") if ms_state else None},
-        "tenant_mapping_configured": bool(setting("EMAIL_CONNECTOR_TENANT_ID")),
+        "tenant_mapping_configured": tenant_mapping_active,
         "note": "Connector credentials and the single-mailbox tenant mapping are held in backend environment variables and are never returned."
     }
 
