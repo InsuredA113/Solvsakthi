@@ -5,6 +5,7 @@ python -m scripts.migrate_legacy_claims --tenant-id <active-tenant-id>
 Append --apply only after reviewing the dry-run count.
 """
 import argparse
+from datetime import datetime, timezone
 
 from pymongo import MongoClient
 
@@ -39,7 +40,7 @@ def main() -> int:
 
         result = db["claims"].update_many(
             unassigned,
-            {"$set": {"tenant_id": tenant["tenant_id"], "tenant_migrated_at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()}},
+            {"$set": {"tenant_id": tenant["tenant_id"], "tenant_migrated_at": datetime.now(timezone.utc).isoformat()}},
         )
         print(f"Matched {result.matched_count}; assigned tenant to {result.modified_count} claim(s).")
         return 0
