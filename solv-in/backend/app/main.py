@@ -843,7 +843,7 @@ def delete_claim(
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     db = get_database()
-    existing = db["claims"].find_one(_claim_filter(user, claim_id), {"_id": 0, "claim_id": 1})
+    existing = db["claims"].find_one(_claim_filter(user, claim_id), {"_id": 0, "claim_id": 1, "tenant_id": 1})
     if not existing:
         raise HTTPException(status_code=404, detail="Claim not found.")
     try:
@@ -932,8 +932,9 @@ async def upload_claim_document(
         file_id = bucket.upload_from_stream(
             filename, io.BytesIO(content),
             metadata={
-                "claim_id": claim_id, "content_type": content_type,
-                "size": len(content), "uploaded_at": now, "uploaded_by": user["email"]
+                "claim_id": claim_id, "tenant_id": claim.get("tenant_id"),
+                "content_type": content_type, "size": len(content),
+                "uploaded_at": now, "uploaded_by": user["email"]
             }
         )
         return {
