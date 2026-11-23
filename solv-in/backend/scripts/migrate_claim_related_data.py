@@ -72,14 +72,18 @@ def main() -> int:
             print(f"{collection_name}: {counts}")
 
         policy_counts = {"would_update": 0, "updated": 0, "already_assigned": 0, "skipped_unreferenced": 0, "skipped_ambiguous": 0, "skipped_conflict": 0}
-        for policy in db["policies"].find(
-            {"$or": [{"tenant_id": {"$exists": False}}, {"tenant_id": None}]},
-            {"_id": 1, "policy_number": 1, "tenant_id": 1},
-        ):
+        for policy in db["policies"].find({}, {"_id": 1, "policy_number": 1, "tenant_id": 1}):
             tenant_ids = db["claims"].distinct(
                 "tenant_id",
                 {"policy_number": policy.get("policy_number"), "tenant_id": {"$exists": True, "$nin": [None, ""]}},
             )
+            existing_tenant = policy.get("tenant_id")
+            if existing_tenant:
+                if not tenant_ids or set(tenant_ids) == {existing_tenant}:
+                    policy_counts["already_assigned"] += 1
+                else:
+                    policy_counts["skipped_conflict"] += 1
+                continue
             if not tenant_ids:
                 policy_counts["skipped_unreferenced"] += 1
                 continue
