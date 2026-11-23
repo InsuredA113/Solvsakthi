@@ -10,7 +10,7 @@ class TenantCreate(BaseModel):
     tenant_slug: str = Field(min_length=2, max_length=64, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
     contact_email: EmailStr
 
-    @field_validator("tenant_slug")
+    @field_validator("tenant_slug", mode="before")
     @classmethod
     def normalize_slug(cls, value: str) -> str:
         return value.lower()
