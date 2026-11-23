@@ -98,6 +98,10 @@ def main() -> int:
                 )
                 policy_counts["updated"] += result.modified_count
         print(f"policies: {policy_counts}")
+        unlinked_intake_count = db["email_intake"].count_documents({
+            "$or": [{"claim_id": {"$exists": False}}, {"claim_id": None}, {"claim_id": ""}]
+        })
+        print(f"email_intake without a linked claim (manual ownership review required): {unlinked_intake_count}")
 
         files = db["claim_documents.files"]
         file_counts = {"would_update": 0, "updated": 0, "already_assigned": 0,
