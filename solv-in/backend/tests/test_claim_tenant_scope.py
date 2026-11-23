@@ -111,3 +111,17 @@ def test_global_super_admin_does_not_require_tenant(monkeypatch):
     install_tenants(monkeypatch, [])
     user = {"role": "Super Administrator"}
     assert auth.validate_tenant_user_access(user) is user
+
+def test_intake_filter_limits_insurer_to_own_tenant(monkeypatch):
+    install_tenants(monkeypatch, [{"tenant_id": "ten_alpha", "status": "Active"}])
+    query = main._intake_filter(
+        {"role": "Claims Manager", "tenant_id": "ten_alpha"},
+        "intake-123",
+    )
+    assert query == {"intake_id": "intake-123", "tenant_id": "ten_alpha"}
+
+
+def test_super_admin_intake_filter_remains_global(monkeypatch):
+    install_tenants(monkeypatch, [])
+    query = main._intake_filter({"role": "Super Administrator"}, "intake-123")
+    assert query == {"intake_id": "intake-123"}
