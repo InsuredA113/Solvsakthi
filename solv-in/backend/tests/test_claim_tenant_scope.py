@@ -5,7 +5,7 @@ os.environ.setdefault("JWT_SECRET_KEY", "test-only-secret-key-at-least-32-charac
 import pytest
 from fastapi import HTTPException
 
-from app import main
+from app import main, auth
 
 
 class FakeTenants:
@@ -76,3 +76,37 @@ def test_claim_filter_for_second_tenant_cannot_match_first_tenant(monkeypatch):
     )
     assert query["tenant_id"] == "ten_bravo"
     assert query["tenant_id"] != "ten_alpha"
+
+def test_insurer_access_is_denied_until_explicitly_enabled(monkeypatch):
+    install_tenants(monkeypatch, [{"tenant_id": "ten_alpha", "status": "Active"}])
+    with pytest.raises(HTTPException) as error:
+        auth.validate_tenant_user_access({
+            "role": "Claims Manager", "tenant_id": "ten_alpha",
+            "tenant_access_enabled": False,
+        })
+    assert error.value.status_code == 403
+
+
+def test_insurer_access_requires_active_tenant(monkeypatch):
+    install_tenants(monkeypatch, [{"tenant_id": "ten_alpha", "status": "Suspended"}])
+    with pytest.raises(HTTPException) as error:
+        auth.validate_tenant_user_access({
+            "role": "Claims Manager", "tenant_id": "ten_alpha",
+            "tenant_access_enabled": True,
+        })
+    assert error.value.status_code == 403
+
+
+def test_enabled_insurer_user_with_active_tenant_passes_gate(monkeypatch):
+    install_tenants(monkeypatch, [{"tenant_id": "ten_alpha", "status": "Active"}])
+    user = {
+        "role": "Claims Manager", "tenant_id": "ten_alpha",
+        "tenant_access_enabled": True,
+    }
+    assert auth.validate_tenant_user_access(user) is user
+
+
+def test_global_super_admin_does_not_require_tenant(monkeypatch):
+    install_tenants(monkeypatch, [])
+    user = {"role": "Super Administrator"}
+    assert auth.validate_tenant_user_access(user) is user
