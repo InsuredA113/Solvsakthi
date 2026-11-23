@@ -929,7 +929,7 @@
                     <label>Full name *<input name="new_full_name" [(ngModel)]="newUser.full_name" required minlength="2" maxlength="120" placeholder="Full name"></label>
                     <label>Email address *<input type="email" name="new_email" [(ngModel)]="newUser.email" required placeholder="user@company.com"></label>
                     <label>Temporary password *<input type="password" name="new_password" [(ngModel)]="newUser.password" required minlength="12" placeholder="At least 12 characters with letters and numbers"></label>
-                    <label>Role *<select name="new_role" [(ngModel)]="newUser.role"><option *ngFor="let role of roles" [value]="role">{{ role }}</option></select></label>
+                    <label>Role *<select name="new_role" [ngModel]="newUser.role" (ngModelChange)="onNewUserRoleChange($event)"><option *ngFor="let role of roles" [value]="role">{{ role }}</option></select></label>
                     <label *ngIf="newUser.role !== 'Super Administrator'">Insurer tenant *<select name="new_tenant_id" [(ngModel)]="newUser.tenant_id" required><option value="">Select an active insurer</option><option *ngFor="let tenant of tenants" [value]="tenant.tenant_id" [disabled]="tenant.status !== 'Active'">{{ tenant.company_name }} · {{ tenant.status }}</option></select></label>
                   </div>
                   <div class="form-actions"><span class="muted">User provisioning remains restricted to the Super Administrator.</span><button class="primary-action" type="submit" [disabled]="userBusy">{{ userBusy ? 'Creating…' : 'Create user' }}</button></div>
@@ -937,9 +937,9 @@
               </section>
               <section class="panel claims-panel" style="margin-top:14px">
                 <div class="panel-heading"><h2>Workspace users</h2><span class="subtle">{{ users.length }} accounts</span></div>
-                <div class="table-scroll"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Account status</th></tr></thead>
-                  <tbody><tr *ngFor="let account of users"><td>{{ account.full_name }}</td><td>{{ account.email }}</td><td>{{ account.role }}</td><td><span class="status">{{ account.is_active ? 'Active' : 'Inactive' }}</span></td></tr>
-                    <tr *ngIf="users.length === 0"><td colspan="4" class="empty">No user accounts found.</td></tr></tbody></table></div>
+                <div class="table-scroll"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Insurer tenant</th><th>Account status</th></tr></thead>
+                  <tbody><tr *ngFor="let account of users"><td>{{ account.full_name }}</td><td>{{ account.email }}</td><td>{{ account.role }}</td><td>{{ tenantName(account.tenant_id) }}</td><td><span class="status">{{ account.is_active ? 'Active' : 'Inactive' }}</span></td></tr>
+                    <tr *ngIf="users.length === 0"><td colspan="5" class="empty">No user accounts found.</td></tr></tbody></table></div>
               </section>
             </ng-container>
 
