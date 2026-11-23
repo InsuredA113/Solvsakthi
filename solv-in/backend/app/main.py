@@ -2023,7 +2023,7 @@ def create_claim_from_email_intake(
         claim_record = payload.model_dump(mode="json")
         claim_record.update({
             "claim_id": claim_id,
-            **({"tenant_id": user["tenant_id"]} if user.get("role") != "Super Administrator" else {}),
+            **({"tenant_id": record["tenant_id"]} if record.get("tenant_id") else ({"tenant_id": user["tenant_id"]} if user.get("role") != "Super Administrator" else {})),
             "status": "FNOL Received",
             "created_at": now, "updated_at": now,
             "created_by": user["email"],
