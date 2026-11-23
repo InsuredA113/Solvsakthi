@@ -938,7 +938,7 @@
               <section class="panel claims-panel" style="margin-top:14px">
                 <div class="panel-heading"><h2>Workspace users</h2><span class="subtle">{{ users.length }} accounts</span></div>
                 <div class="table-scroll"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Insurer tenant</th><th>Account status</th></tr></thead>
-                  <tbody><tr *ngFor="let account of users"><td>{{ account.full_name }}</td><td>{{ account.email }}</td><td>{{ account.role }}</td><td>{{ tenantName(account.tenant_id) }}</td><td><span class="status">{{ account.is_active ? 'Active' : 'Inactive' }}</span></td></tr>
+                  <tbody><tr *ngFor="let account of users"><td>{{ account.full_name }}</td><td>{{ account.email }}</td><td>{{ account.role }}</td><td>{{ tenantName(account.tenant_id) }}</td><td><span class="status">{{ account.tenant_id && !account.tenant_access_enabled ? 'Pending tenant isolation' : (account.is_active ? 'Active' : 'Inactive') }}</span></td></tr>
                     <tr *ngIf="users.length === 0"><td colspan="5" class="empty">No user accounts found.</td></tr></tbody></table></div>
               </section>
             </ng-container>
