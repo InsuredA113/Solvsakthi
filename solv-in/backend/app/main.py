@@ -1028,6 +1028,7 @@ async def analyse_damage_image(
         raise HTTPException(status_code=400, detail="The uploaded image is empty.")
     if len(image_bytes) > MAX_DAMAGE_IMAGE_BYTES:
         raise HTTPException(status_code=413, detail="Image size must not exceed 10 MB.")
+    claim = None
     if claim_id:
         claim = get_database()["claims"].find_one(_claim_filter(user, claim_id), {
             "_id": 0, "claim_id": 1, "claim_type": 1, "casualty_segment": 1
@@ -1090,6 +1091,7 @@ Keep findings concise and distinguish observation from hypothesis.
     result["possible_cause"] = str(result.get("possible_cause") or "Undetermined")[:500]
     record = {
         "claim_id": claim_id,
+        "tenant_id": claim.get("tenant_id") if claim else None,
         "file_name": (image.filename or "uploaded-image")[:255],
         "mime_type": content_type,
         "damage_category": result["damage_category"],
@@ -1340,6 +1342,7 @@ def create_financial_estimate(
     now = datetime.now(timezone.utc).isoformat()
     record = {
         **result, "claim_id": claim_id, "claim_type": claim.get("claim_type"),
+        "tenant_id": claim.get("tenant_id"),
         "source_damage_assessment": ({
             "assessment_id": str(source_damage_assessment["_id"]),
             "status": source_damage_assessment.get("status"),
@@ -1516,6 +1519,7 @@ def create_coverage_assessment(
         }
     record = {
         **result, "claim_id": claim_id, "policy_number": claim.get("policy_number"),
+        "tenant_id": claim.get("tenant_id"),
         "policy_snapshot": policy_snapshot, "loss_category": payload.loss_category,
         "claimed_amount": str(payload.claimed_amount) if payload.claimed_amount is not None else None,
         "notes": payload.notes, "created_at": now, "created_by": user["email"],
