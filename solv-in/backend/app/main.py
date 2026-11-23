@@ -436,6 +436,9 @@ def dashboard_analytics(
     elif month is not None:
         query_parts.append({"created_at": {"$regex": f"^[0-9]{{4}}-{month:02d}-"}})
     try:
+        tenant_id = _tenant_id_for_user(user)
+        if tenant_id is not None:
+            query_parts.append({"tenant_id": tenant_id})
         claims = list(get_database()["claims"].find({"$and": query_parts}, {"_id": 0}).sort("created_at", 1).limit(50000))
         by_month = {}
         by_status = {}
@@ -501,7 +504,7 @@ def dashboard_analytics(
             adjuster_rows.append(row)
         adjuster_rows.sort(key=lambda item: (item["adjuster_name"] == "Unassigned", item["adjuster_name"].casefold()))
         year_rows = get_database()["claims"].find(
-            {"$or": [{"claim_type": "Property"}, {"claim_type": "Casualty", "casualty_segment": "Commercial"}]},
+            _scoped_query(user, {"$or": [{"claim_type": "Property"}, {"claim_type": "Casualty", "casualty_segment": "Commercial"}]}),
             {"_id": 0, "created_at": 1}
         )
         for year_row in year_rows:
@@ -541,6 +544,9 @@ def dashboard_summary(user: dict = Depends(require_roles(*READ_ROLES))):
         ]}
         def scoped_count(status_query=None):
             filters = [scope_query]
+            tenant_id = _tenant_id_for_user(user)
+            if tenant_id is not None:
+                filters.append({"tenant_id": tenant_id})
             if status_query:
                 filters.append(status_query)
             return claims.count_documents({"$and": filters})
@@ -551,9 +557,9 @@ def dashboard_summary(user: dict = Depends(require_roles(*READ_ROLES))):
             "under_investigation": scoped_count({"status": {"$in": ["Under Review", "Investigation", "Assessment"]}}),
             "pending_approval": scoped_count({"status": "Pending Approval"}),
             "settled_claims": scoped_count({"status": "Closed"}),
-            "unclassified_legacy_casualty_claims": claims.count_documents({
+            "unclassified_legacy_casualty_claims": claims.count_documents(_scoped_query(user, {
                 "claim_type": "Casualty", "casualty_segment": {"$ne": "Commercial"}
-            })
+            }))
         }
     except PyMongoError as exc:
         raise HTTPException(status_code=503, detail="Unable to load dashboard metrics.") from exc
@@ -574,6 +580,9 @@ def list_claims(
         {"claim_type": "Casualty", "casualty_segment": "Commercial"},
         {"auto_intake_status": "Provisional"}
     ]}]}
+    tenant_id = _tenant_id_for_user(user)
+    if tenant_id is not None:
+        query["$and"].append({"tenant_id": tenant_id})
     if claim_type:
         query["$and"].append({"claim_type": claim_type})
     if status:
@@ -653,6 +662,7 @@ def create_claim(payload: ClaimCreate, user: dict = Depends(require_roles(*CREAT
         now = datetime.now(timezone.utc).isoformat()
         record.update({
             "claim_id": claim_id,
+            **({"tenant_id": user["tenant_id"]} if user.get("role") != "Super Administrator" else {}),
             "status": "FNOL Received",
             "created_at": now,
             "updated_at": now,
@@ -754,7 +764,7 @@ def update_claim_field(
             raise HTTPException(status_code=422, detail="This is a required claim field and cannot be cleared.")
         value = None
     collection = get_database()["claims"]
-    existing = collection.find_one({"claim_id": claim_id})
+    existing = collection.find_one(_claim_filter(user, claim_id))
     if not existing or (not is_in_scope_claim(existing) and existing.get("auto_intake_status") != "Provisional"):
         raise HTTPException(status_code=404, detail="Claim not found.")
     if field_name == "status":
