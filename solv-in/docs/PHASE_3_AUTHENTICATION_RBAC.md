@@ -94,7 +94,7 @@ Related-data migration (run from `solv-in/backend`):
 ```bash
 python -m scripts.migrate_claim_related_data
 ```
-Review the dry-run collection counts first. Only then, after confirming the parent claim tenant assignments, run:
+Run this only after the legacy claim migration has been reviewed and applied, so parent claims already have verified tenant IDs. Review the dry-run collection counts first. Only then, after confirming the parent claim tenant assignments, run:
 ```bash
 python -m scripts.migrate_claim_related_data --apply
 ```
