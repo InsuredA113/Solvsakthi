@@ -34,12 +34,21 @@ Implemented on branch `feature/phase-3a-1-tenant-foundation`:
 - Added a MongoDB `tenants` collection registry with unique indexes for `tenant_id` and `tenant_slug`.
 - Added Super Administrator-only endpoints: `GET /api/tenants`, `POST /api/tenants`, `GET /api/tenants/{tenant_id}`, and `PATCH /api/tenants/{tenant_id}/status`.
 - Added reusable database-backed tenant authorization dependencies. A global Super Administrator can select an active tenant using `X-Tenant-ID`; non-super-admin users cannot override their database tenant association.
+- Added tenant assignment to Super Administrator user provisioning. Insurer users must be assigned to an existing active tenant; global Super Administrators remain tenantless.
+- Added the Angular Tenant Management screen and tenant selection in user provisioning. The user list now displays the assigned insurer.
+- Added an explicit legacy-user migration utility. It is dry-run by default and requires an explicit tenant ID; `--apply` is required to write changes.
+- Added an access activation gate: newly provisioned or migrated insurer users have `tenant_access_enabled: false` and cannot sign in until tenant data isolation is implemented and explicitly enabled in a later phase. Existing tenantless accounts and the global Super Administrator are not changed by this gate.
 - Tenant status values are `Active`, `Inactive`, and `Suspended`.
 
-Not yet complete:
-- Assigning tenant IDs when provisioning insurer users and displaying tenant assignment in the Angular administration screen.
-- A safe, explicit legacy-user migration utility.
+Still outstanding:
 - Applying tenant filters to claims and related operational APIs (Phase 3A-2 / Phase 3B).
-- Automated tenant isolation tests and execution of the backend/frontend test suites.
+- Automated endpoint-level tenant isolation tests and execution of the backend/frontend test suites.
+- A controlled activation process for tenant users after tenant isolation has been fully tested.
 
-Security note: tenant registry creation does not itself isolate existing claims or operational data. Do not treat this branch as production-ready multi-tenant security until the follow-on isolation phases are implemented and verified. Existing login and claims behavior have intentionally not been changed in this first registry slice.
+Legacy user migration (run from `solv-in/backend`):
+```bash
+python -m scripts.migrate_legacy_users --tenant-id <active-tenant-id>
+```
+The command reports the eligible user count without changing data. After verifying the target tenant and count, append `--apply` to assign the tenant. Super Administrator accounts are excluded. Migrated users remain blocked from sign-in until tenant isolation is ready.
+
+Security note: tenant registry and user assignment do not themselves isolate existing claims or operational data. Do not enable insurer user access or treat this branch as production-ready multi-tenant security until the follow-on isolation phases are implemented and verified.
