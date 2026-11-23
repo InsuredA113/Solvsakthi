@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 import re
 import jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pwdlib import PasswordHash
 from pymongo.errors import PyMongoError
@@ -78,3 +78,60 @@ def require_roles(*allowed_roles: str):
 def ensure_user_indexes():
     if database_is_available():
         get_database()["users"].create_index("email", unique=True)
+
+def require_super_admin(user: dict = Depends(get_current_user)) -> dict:
+    if user.get("role") != "Super Administrator":
+        raise HTTPException(status_code=403, detail="Only a Super Administrator can perform this action.")
+    return user
+
+
+def get_current_tenant(
+    user: dict = Depends(get_current_user),
+    tenant_header: str | None = Header(default=None, alias="X-Tenant-ID"),
+) -> dict | None:
+    """Resolve the active tenant from the authenticated database user.
+
+    A global Super Administrator may explicitly select an active tenant using
+    X-Tenant-ID. Other users cannot override their database tenant association.
+    """
+    if user.get("role") == "Super Administrator":
+        if not tenant_header:
+            return None
+        tenant_id = tenant_header.strip()
+    else:
+        tenant_id = user.get("tenant_id")
+        if not tenant_id:
+            raise HTTPException(status_code=403, detail="Your account is not assigned to an insurer tenant.")
+        if tenant_header and tenant_header.strip() != tenant_id:
+            raise HTTPException(status_code=403, detail="You cannot access another insurer tenant.")
+
+    tenant = get_database()["tenants"].find_one(
+        {"tenant_id": tenant_id, "status": "Active"},
+        {"_id": 0},
+    )
+    if not tenant:
+        raise HTTPException(status_code=403, detail="The selected insurer tenant is unavailable or inactive.")
+    return tenant
+
+
+def require_tenant_admin(user: dict = Depends(get_current_user), tenant: dict | None = Depends(get_current_tenant)) -> dict:
+    if user.get("role") not in ("Super Administrator", "Insurance Company Administrator"):
+        raise HTTPException(status_code=403, detail="Your account cannot administer this insurer tenant.")
+    if user.get("role") != "Super Administrator" and not tenant:
+        raise HTTPException(status_code=403, detail="An active insurer tenant is required.")
+    return user
+
+
+def require_tenant_access(
+    tenant_id: str,
+    tenant: dict | None = Depends(get_current_tenant),
+    user: dict = Depends(get_current_user),
+) -> dict:
+    if user.get("role") == "Super Administrator":
+        if tenant is None or tenant.get("tenant_id") != tenant_id:
+            raise HTTPException(status_code=403, detail="Select the requested active tenant first.")
+        return tenant
+    if tenant is None or tenant.get("tenant_id") != tenant_id:
+        raise HTTPException(status_code=403, detail="Cross-tenant access is not permitted.")
+    return tenant
+
