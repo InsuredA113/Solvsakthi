@@ -1032,7 +1032,7 @@ async def analyse_damage_image(
     claim = None
     if claim_id:
         claim = get_database()["claims"].find_one(_claim_filter(user, claim_id), {
-            "_id": 0, "claim_id": 1, "claim_type": 1, "casualty_segment": 1
+            "_id": 0, "claim_id": 1, "claim_type": 1, "casualty_segment": 1, "tenant_id": 1
         })
         if not claim:
             raise HTTPException(status_code=404, detail="The selected claim ID was not found.")
@@ -1127,7 +1127,7 @@ def list_damage_assessments(
     if not get_database()["claims"].find_one(_claim_filter(user, claim_id), {"_id": 0}):
         raise HTTPException(status_code=404, detail="Claim not found.")
     rows = list(get_database()["damage_assessments"].find(
-        {"claim_id": claim_id}
+        _scoped_query(user, {"claim_id": claim_id})
     ).sort("created_at", DESCENDING).limit(100))
     for row in rows:
         row["assessment_id"] = str(row.pop("_id"))
@@ -1151,7 +1151,7 @@ def review_damage_assessment(assessment_id: str, payload: DamageReviewUpdate, us
     now = datetime.now(timezone.utc).isoformat()
     review_entry = {"status": payload.status, "notes": payload.notes.strip(), "reviewed_at": now, "reviewed_by": user["email"], "reviewer_role": user["role"]}
     collection = get_database()["damage_assessments"]
-    assessment = collection.find_one({"_id": object_id}, {"claim_id": 1})
+    assessment = collection.find_one(_scoped_query(user, {"_id": object_id}), {"claim_id": 1})
     if not assessment or not assessment.get("claim_id"):
         raise HTTPException(status_code=404, detail="Damage assessment not found.")
     if not get_database()["claims"].find_one(_claim_filter(user, assessment["claim_id"]), {"_id": 1}):
@@ -1163,7 +1163,7 @@ def review_damage_assessment(assessment_id: str, payload: DamageReviewUpdate, us
             return_document=ReturnDocument.AFTER, projection={"_id": 0}
         )
         if not updated:
-            existing = get_database()["damage_assessments"].find_one({"_id": object_id}, {"status": 1})
+            existing = get_database()["damage_assessments"].find_one(_scoped_query(user, {"_id": object_id}), {"status": 1})
             if not existing:
                 raise HTTPException(status_code=404, detail="Damage assessment not found.")
             raise HTTPException(status_code=409, detail="This assessment has already been finalised.")
@@ -1195,7 +1195,7 @@ def create_financial_estimate(
     claim = db["claims"].find_one(_claim_filter(user, claim_id), {
         "_id": 0, "claim_id": 1, "currency": 1, "country_code": 1,
         "loss_location": 1, "region": 1, "locality": 1, "incident_date": 1,
-        "claim_type": 1, "casualty_segment": 1
+        "claim_type": 1, "casualty_segment": 1, "tenant_id": 1
     })
     if not claim:
         raise HTTPException(status_code=404, detail="Claim not found.")
@@ -1378,7 +1378,7 @@ def list_financial_estimates(
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     if not get_database()["claims"].find_one(_claim_filter(user, claim_id), {"_id": 1}):
         raise HTTPException(status_code=404, detail="Claim not found.")
-    rows = list(get_database()["financial_estimates"].find({"claim_id": claim_id}).sort("created_at", DESCENDING).limit(100))
+    rows = list(get_database()["financial_estimates"].find(_scoped_query(user, {"claim_id": claim_id})).sort("created_at", DESCENDING).limit(100))
     for row in rows:
         row["estimate_id"] = str(row.pop("_id"))
     return {"items": rows, "count": len(rows)}
@@ -1412,7 +1412,7 @@ def review_financial_estimate(
     if not get_database()["claims"].find_one(_claim_filter(user, claim_id), {"_id": 1}):
         raise HTTPException(status_code=404, detail="Claim not found.")
     collection = get_database()["financial_estimates"]
-    existing = collection.find_one({"_id": object_id, "claim_id": claim_id})
+    existing = collection.find_one(_scoped_query(user, {"_id": object_id, "claim_id": claim_id}))
     if not existing:
         raise HTTPException(status_code=404, detail="Financial estimate not found for this claim.")
     if existing.get("review_status") in {"Approved", "Rejected"}:
@@ -1423,7 +1423,7 @@ def review_financial_estimate(
         "reviewer_email": user["email"], "reviewer_role": user["role"], "reviewed_at": now
     }
     updated = collection.find_one_and_update(
-        {"_id": object_id, "claim_id": claim_id, "review_status": existing.get("review_status")},
+        _scoped_query(user, {"_id": object_id, "claim_id": claim_id, "review_status": existing.get("review_status")}),
         {"$set": {"review_status": payload.status, "updated_at": now},
          "$push": {"review_history": event}},
         return_document=ReturnDocument.AFTER
@@ -1453,7 +1453,7 @@ def list_policies(
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     query = {"policy_number": policy_number.strip()} if policy_number else {}
-    rows = list(get_database()["policies"].find(query).sort("created_at", DESCENDING).limit(250))
+    rows = list(get_database()["policies"].find(_scoped_query(user, query)).sort("created_at", DESCENDING).limit(250))
     for row in rows:
         row["policy_id"] = str(row.pop("_id"))
     return {"items": rows, "count": len(rows)}
@@ -1462,15 +1462,24 @@ def list_policies(
 @app.post("/api/policies", status_code=201)
 def create_policy(
     payload: PolicyCreate,
+    tenant_id: str | None = Query(default=None, max_length=80),
     user: dict = Depends(require_roles(*POLICY_ADMIN_ROLES))
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
-    collection = get_database()["policies"]
-    if collection.find_one({"policy_number": payload.policy_number}):
+    db = get_database()
+    if user.get("role") == "Super Administrator":
+        if tenant_id and not db["tenants"].find_one({"tenant_id": tenant_id, "status": "Active"}, {"_id": 1}):
+            raise HTTPException(status_code=404, detail="The selected active tenant was not found.")
+        policy_tenant_id = tenant_id
+    else:
+        policy_tenant_id = _tenant_id_for_user(user)
+    collection = db["policies"]
+    if collection.find_one({"policy_number": payload.policy_number, "tenant_id": policy_tenant_id}):
         raise HTTPException(status_code=409, detail="A policy with this policy number already exists in the current workspace.")
     record = payload.model_dump(mode="json")
     record.update({
+        "tenant_id": policy_tenant_id,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "created_by": user["email"]
     })
@@ -1497,7 +1506,7 @@ def create_coverage_assessment(
         raise HTTPException(status_code=404, detail="Claim not found.")
     if not is_in_scope_claim(claim):
         raise HTTPException(status_code=422, detail="Coverage screening is limited to all Property and Commercial Casualty claims.")
-    policy = db["policies"].find_one({"policy_number": claim.get("policy_number")})
+    policy = db["policies"].find_one({"policy_number": claim.get("policy_number"), "tenant_id": claim.get("tenant_id")})
     result = assess_policy(policy, claim, payload)
     now = datetime.now(timezone.utc).isoformat()
     policy_snapshot = None
@@ -1544,7 +1553,7 @@ def list_coverage_assessments(
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     if not get_database()["claims"].find_one(_claim_filter(user, claim_id), {"_id": 1}):
         raise HTTPException(status_code=404, detail="Claim not found.")
-    rows = list(get_database()["coverage_assessments"].find({"claim_id": claim_id}).sort("created_at", DESCENDING).limit(100))
+    rows = list(get_database()["coverage_assessments"].find(_scoped_query(user, {"claim_id": claim_id})).sort("created_at", DESCENDING).limit(100))
     for row in rows:
         row["coverage_assessment_id"] = str(row.pop("_id"))
     return {"items": rows, "count": len(rows)}
