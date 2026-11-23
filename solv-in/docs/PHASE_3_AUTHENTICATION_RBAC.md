@@ -71,3 +71,32 @@ Security and rollout constraints:
 - Insurer accounts remain blocked by `tenant_access_enabled: false`. Do not enable accounts yet.
 - Email connector automation, email-intake record isolation, policy records, damage/financial/coverage child collections, GridFS evidence metadata, audit records, and any additional claim-related routers require a complete Phase 3B tenant-isolation review before insurer access is activated.
 - The implementation has been committed to the feature branch only. Backend tests and Angular build have not been executed in a live project environment; CI status must be checked before merge.
+
+
+## Phase 3B – Related claim data and email intake isolation (implementation in progress)
+
+Additional tenant controls committed to the feature branch:
+- Policy list and create operations now use tenant ownership. A tenant administrator can create policies only for their own active tenant. The global Super Administrator may optionally pass an active `tenant_id` query parameter when creating a tenant-specific policy; without it, the policy remains global/tenantless and is not returned to insurer users.
+- Coverage assessment policy lookup matches both policy number and the claim's tenant ID.
+- Damage assessments, financial estimates, coverage assessments, comparison comments, adjuster reports, and export queries are filtered by tenant metadata as well as their parent Claim ID.
+- Email intake list, detail, review, and claim-conversion operations are scoped to the authenticated tenant. Converted claims inherit the intake record's tenant ID.
+- Automated Gmail/Microsoft 365 intake now requires `EMAIL_CONNECTOR_TENANT_ID` to identify one existing Active tenant. The mailbox connector status reports whether this mapping is configured. Connector status, Gmail watch setup, and Microsoft subscription administration are restricted to the global Super Administrator because the current environment-variable connector configuration represents one shared mailbox, not separate insurer mailboxes.
+- If `EMAIL_CONNECTOR_TENANT_ID` is absent or points to an inactive tenant, automated email processing fails closed and does not store or convert the message.
+- Claim export includes only tenant-matched policies, related records, and GridFS evidence; comparison comments and adjuster reports are also tenant-filtered.
+- Added `scripts/migrate_claim_related_data.py` to backfill tenant IDs on claim-linked collections and GridFS metadata from each authoritative parent claim. It is dry-run by default and intentionally skips records with missing parent claims, tenantless parent claims, or conflicting existing tenant IDs.
+
+Automated mailbox setup:
+- Set `EMAIL_CONNECTOR_TENANT_ID=<active-tenant-id>` in the backend environment before enabling Gmail or Microsoft 365 notifications.
+- The current connector configuration supports one configured mailbox-to-tenant mapping per deployment. Do not use a shared mailbox for multiple insurers without implementing a mailbox-to-tenant registry and validating sender/mailbox routing.
+- Existing email intake records without a linked tenant-owned claim cannot be safely assigned automatically. They are intentionally skipped by the related-data migration and require manual ownership review.
+
+Related-data migration (run from `solv-in/backend`):
+```bash
+python -m scripts.migrate_claim_related_data
+```
+Review the dry-run collection counts first. Only then, after confirming the parent claim tenant assignments, run:
+```bash
+python -m scripts.migrate_claim_related_data --apply
+```
+
+These changes do not authorize enabling insurer accounts yet. Legacy policy records need tenant ownership review, and remaining app routers, role-based access rules, migration results, tests, and live integration behavior must be verified before any activation or merge.
