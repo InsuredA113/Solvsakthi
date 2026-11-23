@@ -112,7 +112,7 @@ def create_adjuster_report(
     now = datetime.now(timezone.utc).isoformat()
     record = {
         "claim_id": claim_id,
-        **({"tenant_id": user.get("tenant_id")} if user.get("role") != "Super Administrator" else {}),
+        "tenant_id": claim.get("tenant_id"),
         "report_title": payload.report_title,
         "report_reference": payload.report_reference,
         "report_date": payload.report_date,
