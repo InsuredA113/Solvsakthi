@@ -542,8 +542,11 @@ def dashboard_summary(user: dict = Depends(require_roles(*READ_ROLES))):
             {"claim_type": "Property"},
             {"claim_type": "Casualty", "casualty_segment": "Commercial"}
         ]}
+        tenant_id = _tenant_id_for_user(user)
         def scoped_count(status_query=None):
             filters = [scope_query]
+            if tenant_id is not None:
+                filters.append({"tenant_id": tenant_id})
             tenant_id = _tenant_id_for_user(user)
             if tenant_id is not None:
                 filters.append({"tenant_id": tenant_id})
@@ -902,7 +905,7 @@ async def upload_claim_document(
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
-    claim = get_database()["claims"].find_one({"claim_id": claim_id}, {"_id": 0, "claim_id": 1})
+    claim = get_database()["claims"].find_one(_claim_filter(user, claim_id), {"_id": 0, "claim_id": 1})
     if not claim:
         raise HTTPException(status_code=404, detail="Claim not found.")
     content_type = (file.content_type or "").lower()
@@ -950,7 +953,7 @@ def list_claim_documents(
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
-    if not get_database()["claims"].find_one({"claim_id": claim_id}, {"_id": 1}):
+    if not get_database()["claims"].find_one(_claim_filter(user, claim_id), {"_id": 1}):
         raise HTTPException(status_code=404, detail="Claim not found.")
     bucket = GridFSBucket(get_database(), bucket_name="claim_documents")
     rows = list(bucket.find({"metadata.claim_id": claim_id}).sort("uploadDate", DESCENDING).limit(200))
@@ -1025,7 +1028,7 @@ async def analyse_damage_image(
     if len(image_bytes) > MAX_DAMAGE_IMAGE_BYTES:
         raise HTTPException(status_code=413, detail="Image size must not exceed 10 MB.")
     if claim_id:
-        claim = get_database()["claims"].find_one({"claim_id": claim_id}, {
+        claim = get_database()["claims"].find_one(_claim_filter(user, claim_id), {
             "_id": 0, "claim_id": 1, "claim_type": 1, "casualty_segment": 1
         })
         if not claim:
@@ -1117,7 +1120,7 @@ def list_damage_assessments(
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
-    if not get_database()["claims"].find_one({"claim_id": claim_id}, {"_id": 0}):
+    if not get_database()["claims"].find_one(_claim_filter(user, claim_id), {"_id": 0}):
         raise HTTPException(status_code=404, detail="Claim not found.")
     rows = list(get_database()["damage_assessments"].find(
         {"claim_id": claim_id}
@@ -1179,7 +1182,7 @@ def create_financial_estimate(
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable. The estimate was not saved.")
     db = get_database()
-    claim = db["claims"].find_one({"claim_id": claim_id}, {
+    claim = db["claims"].find_one(_claim_filter(user, claim_id), {
         "_id": 0, "claim_id": 1, "currency": 1, "country_code": 1,
         "loss_location": 1, "region": 1, "locality": 1, "incident_date": 1,
         "claim_type": 1, "casualty_segment": 1
@@ -1476,7 +1479,7 @@ def create_coverage_assessment(
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     db = get_database()
-    claim = db["claims"].find_one({"claim_id": claim_id}, {"_id": 0})
+    claim = db["claims"].find_one(_claim_filter(user, claim_id), {"_id": 0})
     if not claim:
         raise HTTPException(status_code=404, detail="Claim not found.")
     if not is_in_scope_claim(claim):
@@ -1626,7 +1629,7 @@ def applicable_tax_rules(
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
-    claim = get_database()["claims"].find_one({"claim_id": claim_id}, {"_id": 0})
+    claim = get_database()["claims"].find_one(_claim_filter(user, claim_id), {"_id": 0})
     if not claim:
         raise HTTPException(status_code=404, detail="Claim not found.")
     try:
@@ -1766,7 +1769,7 @@ def applicable_repair_rates(
 ):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
-    claim = get_database()["claims"].find_one({"claim_id": claim_id}, {"_id": 0})
+    claim = get_database()["claims"].find_one(_claim_filter(user, claim_id), {"_id": 0})
     if not claim:
         raise HTTPException(status_code=404, detail="Claim not found.")
     if claim.get("claim_type") != "Property":
