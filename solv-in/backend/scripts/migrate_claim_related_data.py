@@ -71,6 +71,30 @@ def main() -> int:
             totals = {key: totals[key] + counts[key] for key in totals}
             print(f"{collection_name}: {counts}")
 
+        policy_counts = {"would_update": 0, "updated": 0, "already_assigned": 0, "skipped_unreferenced": 0, "skipped_ambiguous": 0, "skipped_conflict": 0}
+        for policy in db["policies"].find(
+            {"$or": [{"tenant_id": {"$exists": False}}, {"tenant_id": None}]},
+            {"_id": 1, "policy_number": 1, "tenant_id": 1},
+        ):
+            tenant_ids = db["claims"].distinct(
+                "tenant_id",
+                {"policy_number": policy.get("policy_number"), "tenant_id": {"$exists": True, "$nin": [None, ""]}},
+            )
+            if not tenant_ids:
+                policy_counts["skipped_unreferenced"] += 1
+                continue
+            if len(tenant_ids) != 1:
+                policy_counts["skipped_ambiguous"] += 1
+                continue
+            policy_counts["would_update"] += 1
+            if args.apply:
+                result = db["policies"].update_one(
+                    {"_id": policy["_id"], "$or": [{"tenant_id": {"$exists": False}}, {"tenant_id": None}]},
+                    {"$set": {"tenant_id": tenant_ids[0], "tenant_migrated_at": datetime.now(timezone.utc).isoformat()}},
+                )
+                policy_counts["updated"] += result.modified_count
+        print(f"policies: {policy_counts}")
+
         files = db["claim_documents.files"]
         file_counts = {"would_update": 0, "updated": 0, "already_assigned": 0,
                        "skipped_no_parent": 0, "skipped_parent_without_tenant": 0, "skipped_conflict": 0}
@@ -102,7 +126,7 @@ def main() -> int:
 
         print(f"TOTALS: {totals}")
         if not args.apply:
-            print("No records changed. Claims without a tenant and records with conflicting tenant IDs were intentionally skipped.")
+            print("No records changed. Claims without a tenant, policies referenced by multiple tenants, missing parent claims, and conflicting tenant IDs were intentionally skipped.")
             print("Review the counts before re-running with --apply.")
         return 0
     finally:
