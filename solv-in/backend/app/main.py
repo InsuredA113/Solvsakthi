@@ -12,7 +12,7 @@ from pymongo import DESCENDING, ReturnDocument
 from pymongo.errors import PyMongoError
 from .auth import (
     ROLES, create_access_token, get_current_user, hash_password,
-    normalize_email, require_roles, verify_password
+    normalize_email, require_roles, validate_tenant_user_access, verify_password
 )
 from .bootstrap import seed_initial_admin
 from .config import CORS_ORIGINS, ACCESS_TOKEN_MINUTES
@@ -131,8 +131,7 @@ def login(payload: LoginRequest):
     user = get_database()["users"].find_one({"email": email, "is_active": True})
     if not user or not verify_password(payload.password, user.get("password_hash", "")):
         raise HTTPException(status_code=401, detail="Email or password is incorrect.")
-    if user.get("role") != "Super Administrator" and user.get("tenant_id") and not user.get("tenant_access_enabled", False):
-        raise HTTPException(status_code=403, detail="Insurer user access is pending completion of tenant data-isolation controls.")
+    validate_tenant_user_access(user)
     safe_user = {
         "full_name": user["full_name"],
         "email": user["email"],
