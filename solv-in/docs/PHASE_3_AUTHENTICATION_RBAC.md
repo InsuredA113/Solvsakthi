@@ -83,7 +83,7 @@ Additional tenant controls committed to the feature branch:
 - Automated Gmail/Microsoft 365 intake now requires `EMAIL_CONNECTOR_TENANT_ID` to identify one existing Active tenant. The mailbox connector status reports whether this mapping is configured. Connector status, Gmail watch setup, and Microsoft subscription administration are restricted to the global Super Administrator because the current environment-variable connector configuration represents one shared mailbox, not separate insurer mailboxes.
 - If `EMAIL_CONNECTOR_TENANT_ID` is absent or points to an inactive tenant, automated email processing fails closed and does not store or convert the message.
 - Claim export includes only tenant-matched policies, related records, and GridFS evidence; comparison comments and adjuster reports are also tenant-filtered.
-- Added `scripts/migrate_claim_related_data.py` to backfill tenant IDs on claim-linked collections and GridFS metadata from each authoritative parent claim. It is dry-run by default and intentionally skips records with missing parent claims, tenantless parent claims, or conflicting existing tenant IDs.
+- Added `scripts/migrate_claim_related_data.py` to backfill tenant IDs on claim-linked collections and GridFS metadata from each authoritative parent claim. It also assigns a legacy policy only when all claims referencing its policy number resolve to exactly one tenant. It is dry-run by default and skips missing parent claims, tenantless parents, unreferenced policies, policies referenced by multiple tenants, and conflicting existing tenant IDs.
 
 Automated mailbox setup:
 - Set `EMAIL_CONNECTOR_TENANT_ID=<active-tenant-id>` in the backend environment before enabling Gmail or Microsoft 365 notifications.
