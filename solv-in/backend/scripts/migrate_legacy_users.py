@@ -41,7 +41,7 @@ def main() -> int:
 
         result = db["users"].update_many(
             legacy_filter,
-            {"$set": {"tenant_id": tenant["tenant_id"]}},
+            {"$set": {"tenant_id": tenant["tenant_id"], "tenant_access_enabled": False}},
         )
         print(f"Matched {result.matched_count}; assigned tenant to {result.modified_count} user(s).")
         return 0
