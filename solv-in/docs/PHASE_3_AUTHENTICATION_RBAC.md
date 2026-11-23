@@ -100,3 +100,9 @@ python -m scripts.migrate_claim_related_data --apply
 ```
 
 These changes do not authorize enabling insurer accounts yet. Legacy policy records need tenant ownership review, and remaining app routers, role-based access rules, migration results, tests, and live integration behavior must be verified before any activation or merge.
+
+
+Shared reference-data administration:
+- Tax rules and repair-rate catalogues are treated as platform-wide reference data in the current application. Insurer roles retain read access, but only the global Super Administrator may create or change their status. This prevents one insurer administrator from altering reference data used by other insurers.
+- Claim-specific policy schedules remain tenant-owned and are not part of the shared reference catalogues.
+- Claim deletion now removes the claim's linked financial estimates, damage assessments, coverage assessments, comparison comments, adjuster reports, export audit entries, email intake record, and GridFS evidence. The policy record itself is retained because it may be referenced elsewhere.
