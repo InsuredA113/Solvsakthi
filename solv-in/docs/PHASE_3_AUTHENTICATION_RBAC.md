@@ -37,7 +37,7 @@ Implemented on branch `feature/phase-3a-1-tenant-foundation`:
 - Added tenant assignment to Super Administrator user provisioning. Insurer users must be assigned to an existing active tenant; global Super Administrators remain tenantless.
 - Added the Angular Tenant Management screen and tenant selection in user provisioning. The user list now displays the assigned insurer.
 - Added an explicit legacy-user migration utility. It is dry-run by default and requires an explicit tenant ID; `--apply` is required to write changes.
-- Added an access activation gate: newly provisioned or migrated insurer users have `tenant_access_enabled: false` and cannot sign in until tenant data isolation is implemented and explicitly enabled in a later phase. Existing tenantless accounts and the global Super Administrator are not changed by this gate.
+- Added an access activation gate: newly provisioned or migrated insurer users have `tenant_access_enabled: false` and cannot sign in until tenant data isolation is implemented and explicitly enabled in a later phase. All non-Super-Administrator accounts, including legacy accounts without a tenant assignment, are blocked until they are mapped to an active tenant and explicitly enabled. The global Super Administrator remains tenantless and is exempt.
 - Tenant status values are `Active`, `Inactive`, and `Suspended`.
 
 Still outstanding:
@@ -99,7 +99,7 @@ Run this only after the legacy claim migration has been reviewed and applied, so
 python -m scripts.migrate_claim_related_data --apply
 ```
 
-These changes do not authorize enabling insurer accounts yet. Legacy policy records need tenant ownership review, and remaining app routers, role-based access rules, migration results, tests, and live integration behavior must be verified before any activation or merge.
+These changes do not authorize enabling insurer accounts yet. Unreferenced or ambiguously referenced legacy policies need manual tenant ownership review. Migration results, remaining role-based access rules, automated tests, and live integration behavior must be verified before any activation or merge.
 
 
 Shared reference-data administration:
