@@ -4,7 +4,7 @@ import { HttpClient, HttpClientModule, HttpHeaders, HttpParams } from '@angular/
 import { FormsModule } from '@angular/forms';
 import { environment } from '../environments/environment';
 
-interface User { full_name: string; email: string; role: string; tenant_id?: string | null; is_active?: boolean; }
+interface User { full_name: string; email: string; role: string; tenant_id?: string | null; tenant_access_enabled?: boolean; is_active?: boolean; }
 interface Tenant { tenant_id: string; company_name: string; tenant_slug: string; contact_email: string; status: 'Active' | 'Inactive' | 'Suspended'; created_at: string; }
 interface Adjuster { full_name: string; email: string; role: 'Property Adjuster' | 'Casualty Adjuster'; }
 interface Claim {
