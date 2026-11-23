@@ -166,23 +166,23 @@ def _load_claim_export(claim_id: str, user: dict) -> tuple[Any, list[tuple[str, 
     records: list[tuple[str, dict]] = [("Claim", claim)]
     policy_number = claim.get("policy_number")
     if policy_number:
-        policy = db["policies"].find_one({"policy_number": policy_number}, {"_id": 0})
+        policy = db["policies"].find_one({"policy_number": policy_number, "tenant_id": claim.get("tenant_id")}, {"_id": 0})
         if policy:
             records.append(("Policy", policy))
     for collection_name, label in RELATED_COLLECTIONS:
-        rows = list(db[collection_name].find({"claim_id": claim_id}, {"_id": 0}).sort("created_at", 1).limit(500))
+        rows = list(db[collection_name].find({"claim_id": claim_id, "tenant_id": claim.get("tenant_id")}, {"_id": 0}).sort("created_at", 1).limit(500))
         records.extend((f"{label} {index + 1}", row) for index, row in enumerate(rows))
     documents: list[tuple[str, bytes]] = []
     bucket = GridFSBucket(db, bucket_name="claim_documents")
     total_bytes = 0
-    for index, stored in enumerate(bucket.find({"metadata.claim_id": claim_id}).sort("uploadDate", 1).limit(MAX_EXPORT_DOCUMENTS)):
+    for index, stored in enumerate(bucket.find({"metadata.claim_id": claim_id, "metadata.tenant_id": claim.get("tenant_id")}).sort("uploadDate", 1).limit(MAX_EXPORT_DOCUMENTS)):
         if stored.length > MAX_EXPORT_DOCUMENT_BYTES or total_bytes + stored.length > MAX_EXPORT_DOCUMENT_BYTES:
             raise HTTPException(status_code=413, detail="Claim evidence exceeds the 100 MB ZIP export limit. Download large evidence files separately.")
         total_bytes += stored.length
         content = bucket.open_download_stream(stored._id).read()
         filename = re.sub(r"[^A-Za-z0-9._-]", "_", stored.filename or f"document-{index + 1}")
         documents.append((f"evidence/{index + 1:03d}_{filename}", content))
-    if db["claim_documents.files"].count_documents({"metadata.claim_id": claim_id}) > MAX_EXPORT_DOCUMENTS:
+    if db["claim_documents.files"].count_documents({"metadata.claim_id": claim_id, "metadata.tenant_id": claim.get("tenant_id")}) > MAX_EXPORT_DOCUMENTS:
         raise HTTPException(status_code=413, detail="This claim has more than 200 evidence files. Download evidence files separately.")
     return db, records, documents
 
