@@ -4,7 +4,8 @@ import { HttpClient, HttpClientModule, HttpHeaders, HttpParams } from '@angular/
 import { FormsModule } from '@angular/forms';
 import { environment } from '../environments/environment';
 
-interface User { full_name: string; email: string; role: string; is_active?: boolean; }
+interface User { full_name: string; email: string; role: string; tenant_id?: string | null; is_active?: boolean; }
+interface Tenant { tenant_id: string; company_name: string; tenant_slug: string; contact_email: string; status: 'Active' | 'Inactive' | 'Suspended'; created_at: string; }
 interface Adjuster { full_name: string; email: string; role: 'Property Adjuster' | 'Casualty Adjuster'; }
 interface Claim {
   claim_id: string; customer_name?: string | null; loss_cause?: string | null; email?: string | null; phone?: string | null;
@@ -103,6 +104,9 @@ export class AppComponent implements OnInit {
   documentUploadBusy = false;
   documentsLoading = false;
   users: User[] = [];
+  tenants: Tenant[] = [];
+  tenantBusy = false;
+  tenantDraft = { company_name: '', tenant_slug: '', contact_email: '' };
   roles: string[] = [];
   userBusy = false;
   selectedDamageImage: File | null = null;
@@ -149,7 +153,7 @@ export class AppComponent implements OnInit {
   selectedRepairRateId = '';
   repairRatesLookupBusy = false;
   estimateDraft: any = this.emptyEstimateDraft();
-  newUser = { full_name: '', email: '', password: '', role: 'Claims Manager' };
+  newUser = { full_name: '', email: '', password: '', role: 'Claims Manager', tenant_id: '' };
   totalClaims = 0;
   newClaims = 0;
   investigatingClaims = 0;
@@ -232,7 +236,7 @@ export class AppComponent implements OnInit {
     this.loadDashboardAnalytics();
     this.loadAdjusters();
     this.loadClaims();
-    if (this.isAdmin()) this.loadUsers();
+    if (this.isAdmin()) { this.loadUsers(); this.loadTenants(); }
   }
 
   logout(showMessage = true): void {
@@ -242,6 +246,7 @@ export class AppComponent implements OnInit {
     this.activePage = 'Dashboard';
     this.claims = [];
     this.users = [];
+    this.tenants = [];
     this.errorMessage = '';
     this.successMessage = showMessage ? 'You have signed out.' : '';
     this.checkApi();
@@ -521,7 +526,7 @@ export class AppComponent implements OnInit {
     this.activePage = page;
     if (page === 'Settings') {
       this.settingsSection = 'Company Profile';
-      if (this.isAdmin()) this.loadUsers();
+      if (this.isAdmin()) { this.loadUsers(); this.loadTenants(); }
       if (this.canManageEmailConnectors()) this.loadEmailConnectorStatus();
     }
     this.errorMessage = '';
@@ -1792,6 +1797,37 @@ export class AppComponent implements OnInit {
     this.damageClaimId = '';
   }
 
+  loadTenants(): void {
+    if (!this.isAdmin()) return;
+    this.http.get<{items: Tenant[]; count: number}>(`${environment.apiBaseUrl}/tenants`, { headers: this.authHeaders() }).subscribe({
+      next: result => this.tenants = result.items || [],
+      error: error => this.handleApiError(error)
+    });
+  }
+
+  createTenant(): void {
+    this.errorMessage = '';
+    this.successMessage = '';
+    this.tenantBusy = true;
+    this.http.post<Tenant>(`${environment.apiBaseUrl}/tenants`, this.tenantDraft, { headers: this.authHeaders() }).subscribe({
+      next: tenant => {
+        this.tenantBusy = false;
+        this.successMessage = `Insurer tenant ${tenant.company_name} created.`;
+        this.tenantDraft = { company_name: '', tenant_slug: '', contact_email: '' };
+        this.loadTenants();
+      },
+      error: error => { this.tenantBusy = false; this.handleApiError(error); }
+    });
+  }
+
+  updateTenantStatus(tenant: Tenant, status: 'Active' | 'Inactive' | 'Suspended'): void {
+    this.http.patch<Tenant>(`${environment.apiBaseUrl}/tenants/${encodeURIComponent(tenant.tenant_id)}/status`,
+      { status }, { headers: this.authHeaders() }).subscribe({
+        next: () => { this.successMessage = `${tenant.company_name} marked ${status.toLowerCase()}.`; this.loadTenants(); },
+        error: error => this.handleApiError(error)
+      });
+  }
+
   loadUsers(): void {
     if (!this.isAdmin()) return;
     this.http.get<{items: User[]; count: number}>(`${environment.apiBaseUrl}/users`, { headers: this.authHeaders() }).subscribe({
@@ -1812,7 +1848,7 @@ export class AppComponent implements OnInit {
       next: user => {
         this.userBusy = false;
         this.successMessage = `User ${user.email} created successfully.`;
-        this.newUser = { full_name: '', email: '', password: '', role: 'Claims Manager' };
+        this.newUser = { full_name: '', email: '', password: '', role: 'Claims Manager', tenant_id: '' };
         this.loadUsers();
       },
       error: error => { this.userBusy = false; this.handleApiError(error); }
