@@ -205,7 +205,7 @@ def _save_email(provider: str, provider_message_id: str, sender_email: str,
     collection = db["email_intake"]
     collection.create_index([("provider", 1), ("provider_message_id", 1)], unique=True)
     existing = collection.find_one(
-        {"provider": provider, "provider_message_id": provider_message_id},
+        {"tenant_id": tenant_id, "provider": provider, "provider_message_id": provider_message_id},
         {"_id": 0, "body_text": 0}
     )
     if existing:
@@ -280,10 +280,11 @@ def _save_email(provider: str, provider_message_id: str, sender_email: str,
         collection.insert_one(record)
     except DuplicateKeyError:
         existing = collection.find_one(
-            {"provider": provider, "provider_message_id": provider_message_id},
+            {"tenant_id": tenant_id, "provider": provider, "provider_message_id": provider_message_id},
             {"_id": 0, "body_text": 0}
         )
-        return {"duplicate": True, "intake_id": existing["intake_id"], "claim_id": existing.get("claim_id")}
+        return {"duplicate": True, "intake_id": existing.get("intake_id") if existing else None,
+                "claim_id": existing.get("claim_id") if existing else None}
 
     claim = None
     try:
