@@ -854,15 +854,16 @@ def delete_claim(
     if not existing:
         raise HTTPException(status_code=404, detail="Claim not found.")
     try:
-        tenant_query = {"claim_id": claim_id, "tenant_id": existing.get("tenant_id")}
+        # The parent claim has already been tenant-authorized. Claim IDs are globally sequenced;
+        # delete all linked legacy and current records, including records predating tenant metadata.
         bucket = GridFSBucket(db, bucket_name="claim_documents")
-        for stored_file in bucket.find({"metadata.claim_id": claim_id, "metadata.tenant_id": existing.get("tenant_id")}):
+        for stored_file in bucket.find({"metadata.claim_id": claim_id}):
             bucket.delete(stored_file._id)
         for collection_name in (
             "financial_estimates", "damage_assessments", "coverage_assessments",
             "comparison_comments", "adjuster_reports", "claim_export_audit", "email_intake",
         ):
-            db[collection_name].delete_many(tenant_query)
+            db[collection_name].delete_many({"claim_id": claim_id})
         db["claims"].delete_one(_claim_filter(user, claim_id))
         return {"deleted": True, "claim_id": claim_id}
     except PyMongoError as exc:
