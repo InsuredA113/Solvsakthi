@@ -857,7 +857,10 @@ def delete_claim(
         bucket = GridFSBucket(db, bucket_name="claim_documents")
         for stored_file in bucket.find({"metadata.claim_id": claim_id}):
             bucket.delete(stored_file._id)
-        for collection_name in ("financial_estimates", "damage_assessments", "coverage_assessments"):
+        for collection_name in (
+            "financial_estimates", "damage_assessments", "coverage_assessments",
+            "comparison_comments", "adjuster_reports", "claim_export_audit", "email_intake",
+        ):
             db[collection_name].delete_many({"claim_id": claim_id})
         db["claims"].delete_one(_claim_filter(user, claim_id))
         return {"deleted": True, "claim_id": claim_id}
@@ -1574,7 +1577,7 @@ TAX_RULE_READ_ROLES = (
     "Super Administrator", "Insurance Company Administrator", "Claims Manager",
     "Property Adjuster", "Casualty Adjuster", "Surveyor", "Actuarial Analyst", "Approver", "Auditor"
 )
-TAX_RULE_ADMIN_ROLES = ("Super Administrator", "Insurance Company Administrator")
+TAX_RULE_ADMIN_ROLES = ("Super Administrator",)
 
 @app.get("/api/tax-rules")
 def list_tax_rules(
@@ -1693,7 +1696,7 @@ REPAIR_RATE_READ_ROLES = (
     "Super Administrator", "Insurance Company Administrator", "Claims Manager",
     "Property Adjuster", "Surveyor", "Actuarial Analyst", "Approver", "Auditor"
 )
-REPAIR_RATE_ADMIN_ROLES = ("Super Administrator", "Insurance Company Administrator")
+REPAIR_RATE_ADMIN_ROLES = ("Super Administrator",)
 
 
 @app.get("/api/repair-rates")
