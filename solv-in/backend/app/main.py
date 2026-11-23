@@ -101,7 +101,8 @@ def login(payload: LoginRequest):
     safe_user = {
         "full_name": user["full_name"],
         "email": user["email"],
-        "role": user["role"]
+        "role": user["role"],
+        "tenant_id": user.get("tenant_id")
     }
     return {
         "access_token": create_access_token(safe_user),
@@ -133,18 +134,36 @@ def create_user(payload: UserCreate, actor: dict = Depends(require_roles(*ADMIN_
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     email = normalize_email(str(payload.email))
-    if payload.role == "Super Administrator" and actor["role"] != "Super Administrator":
-        raise HTTPException(status_code=403, detail="Only a Super Administrator can create another Super Administrator.")
+    if actor.get("role") != "Super Administrator":
+        raise HTTPException(status_code=403, detail="Only a Super Administrator can provision users.")
+    if payload.role == "Super Administrator" and payload.tenant_id:
+        raise HTTPException(status_code=422, detail="A global Super Administrator cannot be assigned to an insurer tenant.")
+
+    tenant_id = None
+    if payload.role != "Super Administrator":
+        if not payload.tenant_id:
+            raise HTTPException(status_code=422, detail="Select an active insurer tenant for this user.")
+        tenant = get_database()["tenants"].find_one(
+            {"tenant_id": payload.tenant_id, "status": "Active"},
+            {"_id": 0, "tenant_id": 1},
+        )
+        if not tenant:
+            raise HTTPException(status_code=422, detail="The selected insurer tenant does not exist or is not active.")
+        tenant_id = tenant["tenant_id"]
+
     users = get_database()["users"]
     if users.find_one({"email": email}):
         raise HTTPException(status_code=409, detail="A user with this email already exists.")
+    now = datetime.now(timezone.utc).isoformat()
     record = {
         "full_name": payload.full_name,
         "email": email,
         "password_hash": hash_password(payload.password),
         "role": payload.role,
+        "tenant_id": tenant_id,
         "is_active": True,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": now,
+        "updated_at": now,
         "created_by": actor["email"]
     }
     try:
