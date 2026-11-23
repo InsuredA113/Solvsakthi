@@ -671,7 +671,7 @@ def create_claim(payload: ClaimCreate, user: dict = Depends(require_roles(*CREAT
         now = datetime.now(timezone.utc).isoformat()
         record.update({
             "claim_id": claim_id,
-            **({"tenant_id": user["tenant_id"]} if user.get("role") != "Super Administrator" else {}),
+            **({"tenant_id": record["tenant_id"]} if record.get("tenant_id") else ( {"tenant_id": user["tenant_id"]} if user.get("role") != "Super Administrator" else {})),
             "status": "FNOL Received",
             "created_at": now,
             "updated_at": now,
@@ -1890,7 +1890,7 @@ def receive_email_intake(
     except Exception as exc:
         from pymongo.errors import DuplicateKeyError
         if isinstance(exc, DuplicateKeyError):
-            existing = collection.find_one({
+            existing = collection.find_one(_intake_filter(user) | {
                 "provider": payload.provider,
                 "provider_message_id": payload.provider_message_id
             }, {"_id": 0, "body_text": 0})
@@ -1987,7 +1987,7 @@ def create_claim_from_email_intake(
         db["claims"].create_index("source_intake_id", unique=True, sparse=True)
         existing_claim = db["claims"].find_one(_scoped_query(user, {"source_intake_id": intake_id}), {"_id": 0})
         if existing_claim:
-            collection.update_one({"intake_id": intake_id}, {"$set": {
+            collection.update_one(_intake_filter(user, intake_id), {"$set": {
                 "review_status": "Converted", "conversion_state": "Completed",
                 "claim_id": existing_claim["claim_id"]
             }})
@@ -2006,7 +2006,7 @@ def create_claim_from_email_intake(
     if ((confirmed_type == "Property" and payload.claim_type != "Property") or
         (confirmed_type == "Commercial Casualty" and
          (payload.claim_type != "Casualty" or payload.casualty_segment != "Commercial"))):
-        collection.update_one({"intake_id": intake_id}, {"$set": {"conversion_state": "Failed"}})
+        collection.update_one(_intake_filter(user, intake_id), {"$set": {"conversion_state": "Failed"}})
         raise HTTPException(status_code=422, detail="The claim type must match the reviewed email classification.")
     db = get_database()
     try:
@@ -2032,7 +2032,7 @@ def create_claim_from_email_intake(
         })
         db["claims"].insert_one(claim_record)
         collection.update_one(
-            {"intake_id": intake_id, "conversion_state": "Processing"},
+            _intake_filter(user, intake_id) | {"conversion_state": "Processing"},
             {"$set": {"review_status": "Converted", "conversion_state": "Completed",
                       "claim_id": claim_id, "converted_at": now,
                       "converted_by": user["email"]}}
@@ -2041,12 +2041,12 @@ def create_claim_from_email_intake(
     except PyMongoError as exc:
         existing_claim = db["claims"].find_one(_scoped_query(user, {"source_intake_id": intake_id}), {"_id": 0})
         if existing_claim:
-            collection.update_one({"intake_id": intake_id}, {"$set": {
+            collection.update_one(_intake_filter(user, intake_id), {"$set": {
                 "review_status": "Converted", "conversion_state": "Completed",
                 "claim_id": existing_claim["claim_id"]
             }})
             return existing_claim
-        collection.update_one({"intake_id": intake_id, "conversion_state": "Processing"},
+        collection.update_one(_intake_filter(user, intake_id) | {"conversion_state": "Processing"},
                               {"$set": {"conversion_state": "Failed"}})
         raise HTTPException(status_code=503, detail="Unable to create the claim from this email.") from exc
 
