@@ -976,6 +976,8 @@ def download_claim_document(
         object_id = ObjectId(file_id)
     except InvalidId as exc:
         raise HTTPException(status_code=400, detail="Invalid document ID.") from exc
+    if not get_database()["claims"].find_one(_claim_filter(user, claim_id), {"_id": 1}):
+        raise HTTPException(status_code=404, detail="Claim not found.")
     bucket = GridFSBucket(get_database(), bucket_name="claim_documents")
     try:
         stored = bucket.open_download_stream(object_id)
@@ -1145,9 +1147,15 @@ def review_damage_assessment(assessment_id: str, payload: DamageReviewUpdate, us
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     now = datetime.now(timezone.utc).isoformat()
     review_entry = {"status": payload.status, "notes": payload.notes.strip(), "reviewed_at": now, "reviewed_by": user["email"], "reviewer_role": user["role"]}
+    collection = get_database()["damage_assessments"]
+    assessment = collection.find_one({"_id": object_id}, {"claim_id": 1})
+    if not assessment or not assessment.get("claim_id"):
+        raise HTTPException(status_code=404, detail="Damage assessment not found.")
+    if not get_database()["claims"].find_one(_claim_filter(user, assessment["claim_id"]), {"_id": 1}):
+        raise HTTPException(status_code=404, detail="Damage assessment not found.")
     try:
-        updated = get_database()["damage_assessments"].find_one_and_update(
-            {"_id": object_id, "status": {"$nin": ["Approved", "Rejected"]}},
+        updated = collection.find_one_and_update(
+            {"_id": object_id, "claim_id": assessment["claim_id"], "status": {"$nin": ["Approved", "Rejected"]}},
             {"$set": {"status": payload.status, "updated_at": now, "updated_by": user["email"]}, "$push": {"review_history": review_entry}},
             return_document=ReturnDocument.AFTER, projection={"_id": 0}
         )
@@ -1397,6 +1405,8 @@ def review_financial_estimate(
         raise HTTPException(status_code=400, detail="Invalid financial estimate ID.") from exc
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    if not get_database()["claims"].find_one(_claim_filter(user, claim_id), {"_id": 1}):
+        raise HTTPException(status_code=404, detail="Claim not found.")
     collection = get_database()["financial_estimates"]
     existing = collection.find_one({"_id": object_id, "claim_id": claim_id})
     if not existing:
