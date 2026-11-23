@@ -886,9 +886,9 @@
         <section class="settings-layout">
           <aside class="panel settings-menu">
             <p class="eyebrow">WORKSPACE CONFIGURATION</p>
-            <button type="button" *ngFor="let section of ['Company Profile','User Management','Integrations','Email Configuration','AI Configuration','Currency & Regional Settings','Notifications','Security & Audit']"
+            <button type="button" *ngFor="let section of ['Company Profile','Tenant Management','User Management','Integrations','Email Configuration','AI Configuration','Currency & Regional Settings','Notifications','Security & Audit']"
               [class.active]="settingsSection === section" (click)="settingsSection = section; section === 'User Management' && isAdmin() ? loadUsers() : null; section === 'Email Configuration' && canManageEmailConnectors() ? loadEmailConnectorStatus() : null"
-              [disabled]="section === 'User Management' && !isAdmin() || ['Integrations','Email Configuration','AI Configuration','Currency & Regional Settings','Notifications','Security & Audit'].includes(section) && !canManageEmailConnectors()">
+              [disabled]="(section === 'User Management' || section === 'Tenant Management') && !isAdmin() || ['Integrations','Email Configuration','AI Configuration','Currency & Regional Settings','Notifications','Security & Audit'].includes(section) && !canManageEmailConnectors()">
               {{ section }}
             </button>
           </aside>
@@ -897,6 +897,29 @@
               <div class="panel-heading"><div><h2>Company Profile</h2><p class="muted">Workspace identity and insurer-level details.</p></div></div>
               <div class="settings-info"><b>Solv-In workspace</b><span>Property &amp; Casualty claims operations</span><small>Company profile editing and insurer-specific tenant configuration will be enabled in a later phase.</small></div>
             </section>
+
+            <ng-container *ngIf="settingsSection === 'Tenant Management' && isAdmin()">
+              <section class="panel form-panel">
+                <div class="panel-heading"><div><h2>Insurer tenant management</h2><p class="muted">Register insurance companies before provisioning their users.</p></div></div>
+                <form (ngSubmit)="createTenant()">
+                  <div class="form-grid">
+                    <label>Company name *<input name="tenant_company_name" [(ngModel)]="tenantDraft.company_name" required minlength="2" maxlength="160" placeholder="Insurance company name"></label>
+                    <label>Tenant slug *<input name="tenant_slug" [(ngModel)]="tenantDraft.tenant_slug" required pattern="[a-z0-9]+(?:-[a-z0-9]+)*" maxlength="64" placeholder="company-name"></label>
+                    <label>Contact email *<input type="email" name="tenant_contact_email" [(ngModel)]="tenantDraft.contact_email" required placeholder="admin@company.com"></label>
+                  </div>
+                  <div class="form-actions"><span class="muted">Only the global Super Administrator can create insurer tenants.</span><button class="primary-action" type="submit" [disabled]="tenantBusy">{{ tenantBusy ? 'Creating…' : 'Create tenant' }}</button></div>
+                </form>
+              </section>
+              <section class="panel claims-panel" style="margin-top:14px">
+                <div class="panel-heading"><h2>Registered insurer tenants</h2><span class="subtle">{{ tenants.length }} tenants</span></div>
+                <div class="table-scroll"><table><thead><tr><th>Company</th><th>Slug</th><th>Contact</th><th>Tenant ID</th><th>Status</th><th>Actions</th></tr></thead>
+                  <tbody><tr *ngFor="let tenant of tenants">
+                    <td>{{ tenant.company_name }}</td><td>{{ tenant.tenant_slug }}</td><td>{{ tenant.contact_email }}</td><td>{{ tenant.tenant_id }}</td>
+                    <td><span class="status">{{ tenant.status }}</span></td>
+                    <td><select [ngModel]="tenant.status" [ngModelOptions]="{standalone: true}" (ngModelChange)="updateTenantStatus(tenant, $event)"><option value="Active">Active</option><option value="Inactive">Inactive</option><option value="Suspended">Suspended</option></select></td>
+                  </tr><tr *ngIf="tenants.length === 0"><td colspan="6" class="empty">No insurer tenants registered yet.</td></tr></tbody></table></div>
+              </section>
+            </ng-container>
 
             <ng-container *ngIf="settingsSection === 'User Management' && isAdmin()">
               <section class="panel form-panel">
@@ -907,6 +930,7 @@
                     <label>Email address *<input type="email" name="new_email" [(ngModel)]="newUser.email" required placeholder="user@company.com"></label>
                     <label>Temporary password *<input type="password" name="new_password" [(ngModel)]="newUser.password" required minlength="12" placeholder="At least 12 characters with letters and numbers"></label>
                     <label>Role *<select name="new_role" [(ngModel)]="newUser.role"><option *ngFor="let role of roles" [value]="role">{{ role }}</option></select></label>
+                    <label *ngIf="newUser.role !== 'Super Administrator'">Insurer tenant *<select name="new_tenant_id" [(ngModel)]="newUser.tenant_id" required><option value="">Select an active insurer</option><option *ngFor="let tenant of tenants" [value]="tenant.tenant_id" [disabled]="tenant.status !== 'Active'">{{ tenant.company_name }} · {{ tenant.status }}</option></select></label>
                   </div>
                   <div class="form-actions"><span class="muted">User provisioning remains restricted to the Super Administrator.</span><button class="primary-action" type="submit" [disabled]="userBusy">{{ userBusy ? 'Creating…' : 'Create user' }}</button></div>
                 </form>
