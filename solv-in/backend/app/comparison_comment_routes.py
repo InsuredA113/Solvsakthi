@@ -79,7 +79,7 @@ def list_comparison_comments(
     db, claim = _get_scoped_claim(claim_id, user)
     try:
         rows = list(
-            db["comparison_comments"].find({"claim_id": claim_id})
+            db["comparison_comments"].find({"claim_id": claim_id, "tenant_id": claim.get("tenant_id")})
             .sort("created_at", DESCENDING).limit(200)
         )
         return {"items": [_serialise_comment(row) for row in rows], "count": len(rows)}
