@@ -147,11 +147,18 @@ def _safe_filename(claim_id: str) -> str:
     return re.sub(r"[^A-Za-z0-9_-]", "_", claim_id)
 
 
-def _load_claim_export(claim_id: str) -> tuple[Any, list[tuple[str, dict]], list[tuple[str, bytes]]]:
+def _load_claim_export(claim_id: str, user: dict) -> tuple[Any, list[tuple[str, dict]], list[tuple[str, bytes]]]:
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     db = get_database()
-    claim = db["claims"].find_one({"claim_id": claim_id}, {"_id": 0})
+    claim_query = {"claim_id": claim_id}
+    if user.get("role") != "Super Administrator":
+        tenant_id = user.get("tenant_id")
+        tenant = db["tenants"].find_one({"tenant_id": tenant_id, "status": "Active"}, {"_id": 1}) if tenant_id else None
+        if not tenant:
+            raise HTTPException(status_code=403, detail="Your insurer tenant is inactive or unavailable.")
+        claim_query["tenant_id"] = tenant_id
+    claim = db["claims"].find_one(claim_query, {"_id": 0})
     if not claim:
         raise HTTPException(status_code=404, detail="Claim not found.")
     if not is_in_scope_claim(claim) and claim.get("auto_intake_status") != "Provisional":
@@ -186,7 +193,7 @@ def export_claim(
     format: str = Query(default="pdf", pattern="^(pdf|xlsx|csv|zip)$"),
     user: dict = Depends(require_roles(*EXPORT_READ_ROLES))
 ):
-    db, records, documents = _load_claim_export(claim_id)
+    db, records, documents = _load_claim_export(claim_id, user)
     claim_name = _safe_filename(claim_id)
     pdf_content = _pdf_bytes(records, claim_id)
     xlsx_content = _xlsx_bytes(records)
