@@ -273,3 +273,9 @@ def test_claim_export_rejects_other_tenant_before_loading_related_data(monkeypat
     assert claims.queries == [{
         "claim_id": "CLM-2026-000099", "tenant_id": "ten_alpha",
     }]
+
+
+def test_automated_intake_update_filter_requires_matching_tenant():
+    query = email_connector_routes._intake_update_filter("intake-123", "ten_alpha")
+    assert query == {"intake_id": "intake-123", "tenant_id": "ten_alpha"}
+    assert query != {"intake_id": "intake-123", "tenant_id": "ten_beta"}
