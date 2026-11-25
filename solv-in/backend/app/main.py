@@ -374,7 +374,7 @@ def list_adjusters(user: dict = Depends(require_roles(*READ_ROLES))):
     try:
         rows = list(get_database()["users"].find(
             _scoped_query(user, {"is_active": True, "role": {"$in": ["Property Adjuster", "Casualty Adjuster"]}}),
-            {"_id": 0, "full_name": 1, "email": 1, "role": 1}
+            {"_id": 0, "full_name": 1, "email": 1, "role": 1, "tenant_id": 1}
         ).sort("full_name", 1))
         return {"items": rows, "count": len(rows)}
     except PyMongoError as exc:
