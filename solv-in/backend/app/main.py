@@ -292,10 +292,15 @@ def _load_claims_analytics(
         claim_ids = [claim.get("claim_id") for claim in claims if claim.get("claim_id")]
         estimates = []
         if claim_ids:
+            estimate_match = {"claim_id": {"$in": claim_ids}}
+            # Claim IDs are intended to be unique, but tenant-scope related
+            # financial records as defense in depth during legacy migration.
+            if tenant_id is not None:
+                estimate_match["tenant_id"] = tenant_id
             estimates = list(db["financial_estimates"].aggregate([
-                {"$match": {"claim_id": {"$in": claim_ids}}},
+                {"$match": estimate_match},
                 {"$sort": {"created_at": -1}},
-                {"$group": {"_id": "$claim_id", "latest": {"$first": "$$ROOT"}}},
+                {"$group": {"_id": "$claim_id", "latest": {"$first": "$ROOT"}}},
                 {"$replaceRoot": {"newRoot": "$latest"}}
             ]))
 
