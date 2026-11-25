@@ -367,3 +367,18 @@ def test_authorised_claim_approver_can_set_final_status(role, status):
 
 def test_adjuster_can_set_nonfinal_claim_status():
     main._enforce_claim_status_permission({"role": "Property Adjuster"}, "Assessment")
+
+
+def test_financial_estimate_analytics_filter_is_tenant_scoped():
+    query = main._financial_estimate_match(
+        ["CLM-2026-000001", "CLM-2026-000002"], "ten_alpha"
+    )
+    assert query == {
+        "claim_id": {"$in": ["CLM-2026-000001", "CLM-2026-000002"]},
+        "tenant_id": "ten_alpha",
+    }
+
+
+def test_super_admin_financial_estimate_analytics_remains_global():
+    query = main._financial_estimate_match(["CLM-2026-000001"], None)
+    assert query == {"claim_id": {"$in": ["CLM-2026-000001"]}}
