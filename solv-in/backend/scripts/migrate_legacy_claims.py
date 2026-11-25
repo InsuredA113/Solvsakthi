@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from pymongo import MongoClient
 
 from app.config import MONGODB_DATABASE, MONGODB_URI
+from scripts.tenant_migration_filters import unassigned_tenant_filter
 
 
 def main() -> int:
@@ -29,7 +30,7 @@ def main() -> int:
         if not tenant:
             parser.error("The target tenant does not exist or is not active.")
 
-        unassigned = {"$or": [{"tenant_id": {"$exists": False}}, {"tenant_id": None}]}
+        unassigned = unassigned_tenant_filter()
         count = db["claims"].count_documents(unassigned)
         print(f"{'APPLY' if args.apply else 'DRY RUN'}: {count} legacy claim(s) have no tenant assignment.")
         print(f"Target tenant: {tenant['company_name']} ({tenant['tenant_id']})")
