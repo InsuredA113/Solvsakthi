@@ -350,7 +350,7 @@ def test_super_admin_adjuster_lookup_is_constrained_to_claim_tenant(monkeypatch)
     }]
 
 
-@pytest.mark.parametrize("status", ["Approved", "Closed"]
+@pytest.mark.parametrize("status", ["Approved", "Closed"])
 def test_adjuster_cannot_approve_or_close_claim(status):
     with pytest.raises(HTTPException) as error:
         main._enforce_claim_status_permission({"role": "Property Adjuster"}, status)
