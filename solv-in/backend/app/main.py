@@ -59,6 +59,17 @@ STATUS_ROLES = (
     "Super Administrator", "Insurance Company Administrator", "Claims Manager",
     "Property Adjuster", "Casualty Adjuster", "Approver"
 )
+FINAL_CLAIM_STATUS_ROLES = (
+    "Super Administrator", "Insurance Company Administrator", "Claims Manager", "Approver"
+)
+
+
+def _enforce_claim_status_permission(user: dict, status: str) -> None:
+    """Keep final claim decisions behind the approval roles."""
+    if status in {"Approved", "Closed"} and user.get("role") not in FINAL_CLAIM_STATUS_ROLES:
+        raise HTTPException(status_code=403, detail="Only an authorised approver can approve or close a claim.")
+
+
 ADMIN_ROLES = ("Super Administrator",)
 
 def _tenant_id_for_user(user: dict) -> str | None:
@@ -738,7 +749,7 @@ def edit_claim(
     """Edit claim intake/business fields while preserving claim identity and audit metadata."""
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
-    unknown = set(payload) - EDITABLE_CLAIM_FIELDS - {"status"}
+    unknown = set(payload) - EDITABLE_CLAIM_FIELDS
     if unknown:
         raise HTTPException(status_code=422, detail=f"Fields cannot be edited: {', '.join(sorted(unknown))}.")
     if not payload:
@@ -754,11 +765,6 @@ def edit_claim(
     except Exception as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     changes = {key: validated.get(key) for key in EDITABLE_CLAIM_FIELDS}
-    if "status" in payload:
-        allowed_statuses = {"FNOL Received", "Under Review", "Investigation", "Assessment", "Pending Approval", "Approved", "Closed"}
-        if payload["status"] not in allowed_statuses:
-            raise HTTPException(status_code=422, detail="Invalid claim status.")
-        changes["status"] = payload["status"]
     now = datetime.now(timezone.utc).isoformat()
     changes.update({"updated_at": now, "updated_by": user["email"]})
     try:
@@ -813,6 +819,7 @@ def update_claim_field(
             value = ClaimStatusUpdate.model_validate({"status": value}).status
         except Exception as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+        _enforce_claim_status_permission(user, value)
     elif field_name == "estimated_loss":
         if value is not None:
             try:
@@ -908,6 +915,7 @@ def update_claim_status(
     payload: ClaimStatusUpdate,
     user: dict = Depends(require_roles(*STATUS_ROLES))
 ):
+    _enforce_claim_status_permission(user, payload.status)
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     try:
