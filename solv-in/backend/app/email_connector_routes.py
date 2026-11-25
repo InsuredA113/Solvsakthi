@@ -75,7 +75,7 @@ def _log_connector_failure(provider: str, stage: str, exc: Exception) -> None:
 
 def _intake_update_filter(intake_id: str, tenant_id: str) -> dict:
     """Keep automated intake mutations bound to the owning insurer."""
-    return _intake_update_filter(intake_id, tenant_id)
+    return {"intake_id": intake_id, "tenant_id": tenant_id}
 
 
 def _configured_ingest_tenant(db) -> dict:
