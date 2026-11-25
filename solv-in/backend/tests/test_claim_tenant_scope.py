@@ -149,3 +149,35 @@ def test_automated_email_intake_rejects_inactive_tenant(monkeypatch):
     with pytest.raises(HTTPException) as error:
         email_connector_routes._configured_ingest_tenant(db)
     assert error.value.status_code == 503
+
+
+class FakeClaims:
+    def __init__(self):
+        self.queries = []
+
+    def count_documents(self, query):
+        self.queries.append(query)
+        return 0
+
+
+def test_dashboard_summary_counts_are_tenant_scoped_without_duplicate_filter(monkeypatch):
+    claims = FakeClaims()
+    db = FakeDatabase(
+        tenants=FakeTenants([{"tenant_id": "ten_alpha", "status": "Active"}]),
+        claims=claims,
+    )
+    monkeypatch.setattr(main, "get_database", lambda: db)
+    monkeypatch.setattr(main, "database_is_available", lambda: True)
+
+    result = main.dashboard_summary({
+        "role": "Claims Manager", "tenant_id": "ten_alpha",
+    })
+
+    assert result["total_claims"] == 0
+    assert len(claims.queries) == 5
+    for query in claims.queries:
+        tenant_filters = [
+            clause for clause in query["$and"]
+            if clause == {"tenant_id": "ten_alpha"}
+        ]
+        assert len(tenant_filters) == 1
