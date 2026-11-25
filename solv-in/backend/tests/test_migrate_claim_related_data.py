@@ -1,4 +1,4 @@
-from scripts.migrate_claim_related_data import _build_claim_tenant_lookup
+from scripts.migrate_claim_related_data import _build_claim_tenant_lookup, _classify_document_parent
 
 
 def test_claim_tenant_lookup_returns_unique_claim_ownership():
@@ -39,3 +39,19 @@ def test_claim_tenant_lookup_keeps_claim_without_tenant_for_separate_skip_count(
 
     assert lookup == {"CLM-1": None}
     assert ambiguous == set()
+
+
+
+def test_document_parent_classification_prefers_claim_reference():
+    assert _classify_document_parent({
+        "claim_id": "CLM-1",
+        "source_intake_id": "INT-1",
+    }) == "claim"
+
+
+def test_document_parent_classification_marks_email_only_reference_for_manual_review():
+    assert _classify_document_parent({"source_intake_id": "INT-1"}) == "source_intake_only"
+
+
+def test_document_parent_classification_marks_missing_reference():
+    assert _classify_document_parent({}) == "no_parent"
