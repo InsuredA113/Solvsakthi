@@ -307,3 +307,42 @@ def test_insurer_cannot_request_claim_for_other_tenant(monkeypatch):
             {"role": "Claims Manager", "tenant_id": "ten_alpha"}, "ten_beta"
         )
     assert error.value.status_code == 403
+
+
+class FakeUsers:
+    def __init__(self):
+        self.queries = []
+
+    def find_one(self, query, projection=None):
+        self.queries.append(query)
+        return None
+
+
+def test_super_admin_adjuster_lookup_is_constrained_to_claim_tenant(monkeypatch):
+    claims = FakeClaimCollection([{
+        "claim_id": "CLM-2026-000101",
+        "tenant_id": "ten_alpha",
+        "claim_type": "Property",
+    }])
+    users = FakeUsers()
+    db = FakeDatabase(
+        tenants=FakeTenants([{"tenant_id": "ten_alpha", "status": "Active"}]),
+        claims=claims,
+        users=users,
+    )
+    monkeypatch.setattr(main, "get_database", lambda: db)
+    monkeypatch.setattr(main, "database_is_available", lambda: True)
+
+    with pytest.raises(HTTPException) as error:
+        main.assign_claim_adjuster(
+            "CLM-2026-000101",
+            main.AdjusterAssignment(adjuster_email="adjuster@beta.example"),
+            {"role": "Super Administrator", "email": "admin@solvin.example"},
+        )
+
+    assert error.value.status_code == 422
+    assert users.queries == [{
+        "email": "adjuster@beta.example",
+        "is_active": True,
+        "tenant_id": "ten_alpha",
+    }]
