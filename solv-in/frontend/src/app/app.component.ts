@@ -105,6 +105,7 @@ export class AppComponent implements OnInit {
   documentsLoading = false;
   users: User[] = [];
   tenants: Tenant[] = [];
+  selectedFnolTenantId = '';
   tenantBusy = false;
   tenantDraft = { company_name: '', tenant_slug: '', contact_email: '' };
   roles: string[] = [];
@@ -1292,15 +1293,23 @@ export class AppComponent implements OnInit {
       this.errorMessage = 'Complete all required fields before submitting the FNOL.';
       return;
     }
+    if (this.isAdmin() && !this.selectedEmailIntakeId && !this.selectedFnolTenantId) {
+      this.errorMessage = 'Select an active insurer tenant before creating a manual claim.';
+      return;
+    }
     this.savingClaim = true;
     const url = this.selectedEmailIntakeId
       ? `${environment.apiBaseUrl}/email-intake/${encodeURIComponent(this.selectedEmailIntakeId)}/create-claim`
       : `${environment.apiBaseUrl}/claims`;
-    this.http.post<Claim>(url, this.draft, { headers: this.authHeaders() }).subscribe({
+    const requestBody = this.isAdmin() && !this.selectedEmailIntakeId
+      ? { ...this.draft, tenant_id: this.selectedFnolTenantId }
+      : this.draft;
+    this.http.post<Claim>(url, requestBody, { headers: this.authHeaders() }).subscribe({
       next: claim => {
         const evidenceFile = this.selectedFnolDocument;
         this.draft = this.emptyDraft();
         this.selectedEmailIntakeId = '';
+        this.selectedFnolTenantId = '';
         this.selectedFnolDocument = null;
         this.loadClaims();
         this.loadDashboard();
