@@ -6,9 +6,9 @@ import { environment } from '../environments/environment';
 
 interface User { full_name: string; email: string; role: string; tenant_id?: string | null; tenant_access_enabled?: boolean; is_active?: boolean; }
 interface Tenant { tenant_id: string; company_name: string; tenant_slug: string; contact_email: string; status: 'Active' | 'Inactive' | 'Suspended'; created_at: string; }
-interface Adjuster { full_name: string; email: string; role: 'Property Adjuster' | 'Casualty Adjuster'; }
+interface Adjuster { full_name: string; email: string; role: 'Property Adjuster' | 'Casualty Adjuster'; tenant_id?: string | null; }
 interface Claim {
-  claim_id: string; customer_name?: string | null; loss_cause?: string | null; email?: string | null; phone?: string | null;
+  claim_id: string; tenant_id?: string | null; customer_name?: string | null; loss_cause?: string | null; email?: string | null; phone?: string | null;
   policy_number?: string | null; claim_type: 'Property' | 'Casualty' | 'Unclassified'; property_occupancy?: string | null;
   casualty_segment?: 'Commercial' | null; business_name?: string | null; industry?: string | null;
   commercial_liability_type?: string | null; incident_date?: string | null;
@@ -554,6 +554,11 @@ export class AppComponent implements OnInit {
     });
   }
 
+
+  adjustersForClaim(claim: Claim): Adjuster[] {
+    if (!claim.tenant_id) return [];
+    return this.adjusters.filter(adjuster => adjuster.tenant_id === claim.tenant_id);
+  }
 
   loadAdjusters(): void {
     this.http.get<{items: Adjuster[]; count: number}>(`${environment.apiBaseUrl}/adjusters`, { headers: this.authHeaders() }).subscribe({ next: result => this.adjusters = result.items || [], error: error => this.handleApiError(error) });
