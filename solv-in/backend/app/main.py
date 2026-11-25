@@ -1169,7 +1169,10 @@ def review_damage_assessment(assessment_id: str, payload: DamageReviewUpdate, us
         raise HTTPException(status_code=404, detail="Damage assessment not found.")
     try:
         updated = collection.find_one_and_update(
-            {"_id": object_id, "claim_id": assessment["claim_id"], "status": {"$nin": ["Approved", "Rejected"]}},
+            _scoped_query(user, {
+                "_id": object_id, "claim_id": assessment["claim_id"],
+                "status": {"$nin": ["Approved", "Rejected"]}
+            }),
             {"$set": {"status": payload.status, "updated_at": now, "updated_by": user["email"]}, "$push": {"review_history": review_entry}},
             return_document=ReturnDocument.AFTER, projection={"_id": 0}
         )
