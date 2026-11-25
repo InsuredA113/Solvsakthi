@@ -177,11 +177,12 @@ def test_dashboard_summary_counts_are_tenant_scoped_without_duplicate_filter(mon
     # Five status/summary metrics plus the unclassified legacy casualty count.
     assert len(claims.queries) == 6
     for query in claims.queries:
-        tenant_filters = [
-            clause for clause in query["$and"]
-            if clause == {"tenant_id": "ten_alpha"}
-        ]
-        assert len(tenant_filters) == 1
+        # Tenant scope may be merged into the query directly or nested in $and.
+        tenant_filters = int(query.get("tenant_id") == "ten_alpha") + sum(
+            clause == {"tenant_id": "ten_alpha"}
+            for clause in query.get("$and", [])
+        )
+        assert tenant_filters == 1
 
 def test_insurer_cannot_override_tenant_with_header(monkeypatch):
     install_tenants(monkeypatch, [
