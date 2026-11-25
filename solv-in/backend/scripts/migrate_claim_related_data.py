@@ -38,6 +38,16 @@ def _build_claim_tenant_lookup(claim_rows):
     return lookup, ambiguous
 
 
+def _classify_document_parent(metadata):
+    """Classify a GridFS file without inferring tenant ownership from email alone."""
+    metadata = metadata or {}
+    if metadata.get("claim_id"):
+        return "claim"
+    if metadata.get("source_intake_id"):
+        return "source_intake_only"
+    return "no_parent"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--apply", action="store_true", help="Write assignments; default is dry-run.")
@@ -85,7 +95,7 @@ def main() -> int:
                 counts["would_update"] += 1
                 if args.apply:
                     result = collection.update_one(
-                        {"_id": row["_id"], "$or": [{"tenant_id": {"$exists": False}}, {"tenant_id": None}]},
+                        {"_id": row["_id"], "$or": [{"tenant_id": {"$exists": False}}, {"tenant_id": None}, {"tenant_id": ""}]},
                         {"$set": {"tenant_id": parent_tenant, "tenant_migrated_at": datetime.now(timezone.utc).isoformat()}},
                     )
                     counts["updated"] += result.modified_count
@@ -114,7 +124,7 @@ def main() -> int:
             policy_counts["would_update"] += 1
             if args.apply:
                 result = db["policies"].update_one(
-                    {"_id": policy["_id"], "$or": [{"tenant_id": {"$exists": False}}, {"tenant_id": None}]},
+                    {"_id": policy["_id"], "$or": [{"tenant_id": {"$exists": False}}, {"tenant_id": None}, {"tenant_id": ""}]},
                     {"$set": {"tenant_id": tenant_ids[0], "tenant_migrated_at": datetime.now(timezone.utc).isoformat()}},
                 )
                 policy_counts["updated"] += result.modified_count
@@ -122,15 +132,25 @@ def main() -> int:
         unlinked_intake_count = db["email_intake"].count_documents({
             "$or": [{"claim_id": {"$exists": False}}, {"claim_id": None}, {"claim_id": ""}]
         })
-        print(f"email_intake without a linked claim (manual ownership review required): {unlinked_intake_count}")
+        print(f"email_intake without a top-level claim_id (manual ownership review required): {unlinked_intake_count}")
 
         files = db["claim_documents.files"]
         file_counts = {"would_update": 0, "updated": 0, "already_assigned": 0,
-                       "skipped_no_parent": 0, "skipped_ambiguous_parent": 0,
-                       "skipped_parent_without_tenant": 0, "skipped_conflict": 0}
-        for row in files.find({"metadata.claim_id": {"$exists": True}} , {"_id": 1, "metadata": 1}):
+                       "skipped_no_parent": 0, "skipped_source_intake_only": 0,
+                       "skipped_ambiguous_parent": 0, "skipped_parent_without_tenant": 0,
+                       "skipped_conflict": 0}
+        for row in files.find({}, {"_id": 1, "metadata": 1}):
             metadata = row.get("metadata") or {}
-            claim_id = metadata.get("claim_id")
+            parent_type = _classify_document_parent(metadata)
+            if parent_type == "source_intake_only":
+                # Email intake has no verified tenant owner in this legacy dataset.
+                # Never infer document tenancy from an unassigned intake record.
+                file_counts["skipped_source_intake_only"] += 1
+                continue
+            if parent_type == "no_parent":
+                file_counts["skipped_no_parent"] += 1
+                continue
+            claim_id = metadata["claim_id"]
             if claim_id in ambiguous_claim_ids:
                 file_counts["skipped_ambiguous_parent"] += 1
                 continue
@@ -151,7 +171,7 @@ def main() -> int:
             file_counts["would_update"] += 1
             if args.apply:
                 result = files.update_one(
-                    {"_id": row["_id"], "$or": [{"metadata.tenant_id": {"$exists": False}}, {"metadata.tenant_id": None}]},
+                    {"_id": row["_id"], "$or": [{"metadata.tenant_id": {"$exists": False}}, {"metadata.tenant_id": None}, {"metadata.tenant_id": ""}]},
                     {"$set": {"metadata.tenant_id": parent_tenant, "metadata.tenant_migrated_at": datetime.now(timezone.utc).isoformat()}},
                 )
                 file_counts["updated"] += result.modified_count
