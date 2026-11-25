@@ -348,3 +348,22 @@ def test_super_admin_adjuster_lookup_is_constrained_to_claim_tenant(monkeypatch)
         "is_active": True,
         "tenant_id": "ten_alpha",
     }]
+
+
+@pytest.mark.parametrize("status", ["Approved", "Closed"]
+def test_adjuster_cannot_approve_or_close_claim(status):
+    with pytest.raises(HTTPException) as error:
+        main._enforce_claim_status_permission({"role": "Property Adjuster"}, status)
+    assert error.value.status_code == 403
+
+
+@pytest.mark.parametrize("role", [
+    "Super Administrator", "Insurance Company Administrator", "Claims Manager", "Approver"
+])
+@pytest.mark.parametrize("status", ["Approved", "Closed"])
+def test_authorised_claim_approver_can_set_final_status(role, status):
+    main._enforce_claim_status_permission({"role": role}, status)
+
+
+def test_adjuster_can_set_nonfinal_claim_status():
+    main._enforce_claim_status_permission({"role": "Property Adjuster"}, "Assessment")
