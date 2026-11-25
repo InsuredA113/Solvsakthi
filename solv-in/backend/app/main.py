@@ -75,6 +75,23 @@ def _tenant_id_for_user(user: dict) -> str | None:
         raise HTTPException(status_code=403, detail="Your insurer tenant is inactive or unavailable.")
     return tenant_id
 
+def _resolve_claim_tenant(user: dict, requested_tenant_id: str | None) -> str:
+    """Resolve claim ownership; Super Admin must explicitly choose an active tenant."""
+    if user.get("role") == "Super Administrator":
+        if not requested_tenant_id:
+            raise HTTPException(status_code=422, detail="Select an active insurer tenant before creating a manual claim.")
+        tenant = get_database()["tenants"].find_one(
+            {"tenant_id": requested_tenant_id, "status": "Active"},
+            {"_id": 0, "tenant_id": 1},
+        )
+        if not tenant:
+            raise HTTPException(status_code=422, detail="The selected insurer tenant does not exist or is not active.")
+        return tenant["tenant_id"]
+    tenant_id = _tenant_id_for_user(user)
+    if requested_tenant_id and requested_tenant_id != tenant_id:
+        raise HTTPException(status_code=403, detail="You cannot create a claim for another insurer tenant.")
+    return tenant_id
+
 
 def _claim_filter(user: dict, claim_id: str | None = None) -> dict:
     query = {}
@@ -376,10 +393,18 @@ def assign_claim_adjuster(
     claim = db["claims"].find_one(_claim_filter(user, claim_id))
     if not claim or (not is_in_scope_claim(claim) and claim.get("auto_intake_status") != "Provisional"):
         raise HTTPException(status_code=404, detail="Claim not found.")
+    claim_tenant_id = claim.get("tenant_id")
+    if not claim_tenant_id:
+        raise HTTPException(status_code=422, detail="A tenant-owned claim is required before assigning an insurer adjuster.")
     adjuster_email = normalize_email(payload.adjuster_email)
-    adjuster = db["users"].find_one(_scoped_query(user, {"email": adjuster_email, "is_active": True}))
+    # Always match the adjuster to the claim's tenant, including for global Super Admin.
+    adjuster = db["users"].find_one({
+        "email": adjuster_email,
+        "is_active": True,
+        "tenant_id": claim_tenant_id,
+    })
     if not adjuster or adjuster.get("role") not in {"Property Adjuster", "Casualty Adjuster"}:
-        raise HTTPException(status_code=422, detail="Select an active Property or Casualty Adjuster.")
+        raise HTTPException(status_code=422, detail="Select an active Property or Casualty Adjuster from this claim's insurer tenant.")
     expected_role = "Property Adjuster" if claim.get("claim_type") == "Property" else "Casualty Adjuster" if claim.get("claim_type") == "Casualty" else None
     if expected_role and adjuster.get("role") != expected_role:
         raise HTTPException(status_code=422, detail=f"This claim must be assigned to a {expected_role}.")
@@ -665,10 +690,11 @@ def create_claim(payload: ClaimCreate, user: dict = Depends(require_roles(*CREAT
         )
         claim_id = f"CLM-{year}-{sequence['sequence']:06d}"
         record = payload.model_dump(mode="json")
+        claim_tenant_id = _resolve_claim_tenant(user, record.pop("tenant_id", None))
         now = datetime.now(timezone.utc).isoformat()
         record.update({
             "claim_id": claim_id,
-            **({"tenant_id": record["tenant_id"]} if record.get("tenant_id") else ( {"tenant_id": user["tenant_id"]} if user.get("role") != "Super Administrator" else {})),
+            "tenant_id": claim_tenant_id,
             "status": "FNOL Received",
             "created_at": now,
             "updated_at": now,
