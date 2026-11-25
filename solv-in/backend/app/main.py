@@ -470,7 +470,11 @@ def dashboard_analytics(
         tenant_id = _tenant_id_for_user(user)
         if tenant_id is not None:
             query_parts.append({"tenant_id": tenant_id})
-        claims = list(get_database()["claims"].find({"$and": query_parts}, {"_id": 0}).sort("created_at", 1).limit(50000))
+        claims_collection = get_database()["claims"]
+        matching_claims_count = claims_collection.count_documents({"$and": query_parts})
+        claims = list(claims_collection.find({"$and": query_parts}, {"_id": 0}).sort("created_at", 1).limit(50000))
+        claims_analyzed_count = len(claims)
+        data_complete = claims_analyzed_count == matching_claims_count
         by_month = {}
         by_status = {}
         by_month_status = {}
@@ -544,9 +548,14 @@ def dashboard_analytics(
                 available_years.add(int(created_value[:4]))
         return {
             "data_mode": "live",
+            "data_complete": data_complete,
+            "matching_claims_count": matching_claims_count,
+            "claims_analyzed_count": claims_analyzed_count,
+            "data_limit": 50000,
+            "data_warning": None if data_complete else "Dashboard breakdowns and handling-time metrics are based on the first 50,000 matching claims. Total claims is exact; narrow the filters for complete breakdowns.",
             "filters": {"year": year, "month": month, "status": status, "claim_type": claim_type, "adjuster_email": adjuster_email},
             "summary": {
-                "total_claims": len(claims),
+                "total_claims": matching_claims_count,
                 "open_claims": sum(1 for c in claims if c.get("status") != "Closed"),
                 "closed_claims": sum(1 for c in claims if c.get("status") == "Closed"),
                 "pending_claims": sum(1 for c in claims if c.get("status") == "Pending Approval"),
