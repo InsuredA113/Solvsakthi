@@ -211,3 +211,65 @@ def test_super_admin_may_select_only_an_active_tenant(monkeypatch):
             tenant_header="ten_beta",
         )
     assert error.value.status_code == 403
+
+
+class FakeClaimCollection:
+    def __init__(self, records):
+        self.records = records
+        self.queries = []
+
+    def find_one(self, query, projection=None):
+        self.queries.append(query)
+        return next(
+            (record for record in self.records
+             if all(record.get(key) == value for key, value in query.items())),
+            None,
+        )
+
+
+def test_claim_detail_endpoint_returns_not_found_for_other_tenant(monkeypatch):
+    claims = FakeClaimCollection([{
+        "claim_id": "CLM-2026-000099", "tenant_id": "ten_beta",
+        "claim_type": "Property",
+    }])
+    db = FakeDatabase(
+        tenants=FakeTenants([{"tenant_id": "ten_alpha", "status": "Active"}]),
+        claims=claims,
+    )
+    monkeypatch.setattr(main, "get_database", lambda: db)
+    monkeypatch.setattr(main, "database_is_available", lambda: True)
+
+    with pytest.raises(HTTPException) as error:
+        main.get_claim_details("CLM-2026-000099", {
+            "role": "Claims Manager", "tenant_id": "ten_alpha",
+        })
+
+    assert error.value.status_code == 404
+    assert claims.queries == [{
+        "claim_id": "CLM-2026-000099", "tenant_id": "ten_alpha",
+    }]
+
+
+def test_claim_export_rejects_other_tenant_before_loading_related_data(monkeypatch):
+    from app import claim_export_routes
+
+    claims = FakeClaimCollection([{
+        "claim_id": "CLM-2026-000099", "tenant_id": "ten_beta",
+        "claim_type": "Property",
+    }])
+    db = FakeDatabase(
+        tenants=FakeTenants([{"tenant_id": "ten_alpha", "status": "Active"}]),
+        claims=claims,
+    )
+    monkeypatch.setattr(claim_export_routes, "get_database", lambda: db)
+    monkeypatch.setattr(claim_export_routes, "database_is_available", lambda: True)
+
+    with pytest.raises(HTTPException) as error:
+        claim_export_routes._load_claim_export("CLM-2026-000099", {
+            "role": "Claims Manager", "tenant_id": "ten_alpha",
+        })
+
+    assert error.value.status_code == 404
+    assert claims.queries == [{
+        "claim_id": "CLM-2026-000099", "tenant_id": "ten_alpha",
+    }]
