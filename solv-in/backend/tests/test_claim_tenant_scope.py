@@ -181,3 +181,33 @@ def test_dashboard_summary_counts_are_tenant_scoped_without_duplicate_filter(mon
             if clause == {"tenant_id": "ten_alpha"}
         ]
         assert len(tenant_filters) == 1
+
+def test_insurer_cannot_override_tenant_with_header(monkeypatch):
+    install_tenants(monkeypatch, [
+        {"tenant_id": "ten_alpha", "status": "Active"},
+        {"tenant_id": "ten_beta", "status": "Active"},
+    ])
+    with pytest.raises(HTTPException) as error:
+        auth.get_current_tenant(
+            {"role": "Claims Manager", "tenant_id": "ten_alpha"},
+            tenant_header="ten_beta",
+        )
+    assert error.value.status_code == 403
+
+
+def test_super_admin_may_select_only_an_active_tenant(monkeypatch):
+    install_tenants(monkeypatch, [
+        {"tenant_id": "ten_alpha", "status": "Active"},
+        {"tenant_id": "ten_beta", "status": "Suspended"},
+    ])
+    selected = auth.get_current_tenant(
+        {"role": "Super Administrator"},
+        tenant_header="ten_alpha",
+    )
+    assert selected["tenant_id"] == "ten_alpha"
+    with pytest.raises(HTTPException) as error:
+        auth.get_current_tenant(
+            {"role": "Super Administrator"},
+            tenant_header="ten_beta",
+        )
+    assert error.value.status_code == 403
