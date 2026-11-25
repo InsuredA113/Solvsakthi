@@ -553,9 +553,6 @@ def dashboard_summary(user: dict = Depends(require_roles(*READ_ROLES))):
             filters = [scope_query]
             if tenant_id is not None:
                 filters.append({"tenant_id": tenant_id})
-            tenant_id = _tenant_id_for_user(user)
-            if tenant_id is not None:
-                filters.append({"tenant_id": tenant_id})
             if status_query:
                 filters.append(status_query)
             return claims.count_documents({"$and": filters})
