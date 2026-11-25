@@ -22,6 +22,22 @@ CLAIM_LINKED_COLLECTIONS = (
 )
 
 
+def _build_claim_tenant_lookup(claim_rows):
+    """Return unique Claim ID ownership and IDs that cannot be resolved safely."""
+    lookup = {}
+    ambiguous = set()
+    for claim in claim_rows:
+        claim_id = claim.get("claim_id")
+        if not claim_id:
+            continue
+        if claim_id in lookup:
+            ambiguous.add(claim_id)
+            lookup.pop(claim_id, None)
+        elif claim_id not in ambiguous:
+            lookup[claim_id] = claim.get("tenant_id")
+    return lookup, ambiguous
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--apply", action="store_true", help="Write assignments; default is dry-run.")
@@ -31,26 +47,31 @@ def main() -> int:
     try:
         client.admin.command("ping")
         db = client[MONGODB_DATABASE]
+        claim_tenant_lookup, ambiguous_claim_ids = _build_claim_tenant_lookup(
+            db["claims"].find({}, {"_id": 0, "claim_id": 1, "tenant_id": 1})
+        )
         totals = {"would_update": 0, "updated": 0, "already_assigned": 0, "skipped_no_parent": 0,
-                  "skipped_parent_without_tenant": 0, "skipped_conflict": 0}
+                  "skipped_ambiguous_parent": 0, "skipped_parent_without_tenant": 0, "skipped_conflict": 0}
         print("APPLY MODE" if args.apply else "DRY-RUN MODE (no records will be changed)")
+        print(f"Ambiguous duplicate Claim IDs: {len(ambiguous_claim_ids)} (linked records will be skipped)")
         for collection_name in CLAIM_LINKED_COLLECTIONS:
             collection = db[collection_name]
             counts = {"would_update": 0, "updated": 0, "already_assigned": 0,
-                      "skipped_no_parent": 0, "skipped_parent_without_tenant": 0, "skipped_conflict": 0}
+                      "skipped_no_parent": 0, "skipped_ambiguous_parent": 0,
+                      "skipped_parent_without_tenant": 0, "skipped_conflict": 0}
             cursor = collection.find(
                 {"claim_id": {"$exists": True, "$nin": [None, ""]}},
                 {"_id": 1, "claim_id": 1, "tenant_id": 1},
             )
             for row in cursor:
-                parent = db["claims"].find_one(
-                    {"claim_id": row["claim_id"]},
-                    {"_id": 0, "tenant_id": 1},
-                )
-                if not parent:
+                claim_id = row["claim_id"]
+                if claim_id in ambiguous_claim_ids:
+                    counts["skipped_ambiguous_parent"] += 1
+                    continue
+                if claim_id not in claim_tenant_lookup:
                     counts["skipped_no_parent"] += 1
                     continue
-                parent_tenant = parent.get("tenant_id")
+                parent_tenant = claim_tenant_lookup[claim_id]
                 if not parent_tenant:
                     counts["skipped_parent_without_tenant"] += 1
                     continue
@@ -105,14 +126,18 @@ def main() -> int:
 
         files = db["claim_documents.files"]
         file_counts = {"would_update": 0, "updated": 0, "already_assigned": 0,
-                       "skipped_no_parent": 0, "skipped_parent_without_tenant": 0, "skipped_conflict": 0}
+                       "skipped_no_parent": 0, "skipped_ambiguous_parent": 0,
+                       "skipped_parent_without_tenant": 0, "skipped_conflict": 0}
         for row in files.find({"metadata.claim_id": {"$exists": True}} , {"_id": 1, "metadata": 1}):
             metadata = row.get("metadata") or {}
-            parent = db["claims"].find_one({"claim_id": metadata.get("claim_id")}, {"_id": 0, "tenant_id": 1})
-            if not parent:
+            claim_id = metadata.get("claim_id")
+            if claim_id in ambiguous_claim_ids:
+                file_counts["skipped_ambiguous_parent"] += 1
+                continue
+            if claim_id not in claim_tenant_lookup:
                 file_counts["skipped_no_parent"] += 1
                 continue
-            parent_tenant = parent.get("tenant_id")
+            parent_tenant = claim_tenant_lookup[claim_id]
             if not parent_tenant:
                 file_counts["skipped_parent_without_tenant"] += 1
                 continue
@@ -133,8 +158,9 @@ def main() -> int:
         print(f"claim_documents.files: {file_counts}")
 
         print(f"TOTALS: {totals}")
+        print(f"Ambiguous duplicate Claim IDs skipped across linked records and documents: {len(ambiguous_claim_ids)}")
         if not args.apply:
-            print("No records changed. Claims without a tenant, policies referenced by multiple tenants, missing parent claims, and conflicting tenant IDs were intentionally skipped.")
+            print("No records changed. Claims without a tenant, duplicate/ambiguous parent Claim IDs, policies referenced by multiple tenants, missing parent claims, and conflicting tenant IDs were intentionally skipped.")
             print("Review the counts before re-running with --apply.")
         return 0
     finally:
