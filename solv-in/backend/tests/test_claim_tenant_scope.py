@@ -174,7 +174,8 @@ def test_dashboard_summary_counts_are_tenant_scoped_without_duplicate_filter(mon
     })
 
     assert result["total_claims"] == 0
-    assert len(claims.queries) == 5
+    # Five status/summary metrics plus the unclassified legacy casualty count.
+    assert len(claims.queries) == 6
     for query in claims.queries:
         tenant_filters = [
             clause for clause in query["$and"]
