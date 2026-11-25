@@ -242,6 +242,14 @@ def create_user(payload: UserCreate, actor: dict = Depends(require_roles(*ADMIN_
         raise HTTPException(status_code=503, detail="Unable to create user.") from exc
     return {key: value for key, value in record.items() if key != "password_hash"}
 
+def _financial_estimate_match(claim_ids: list[str], tenant_id: str | None) -> dict:
+    """Build a tenant-scoped lookup for claim-linked financial estimates."""
+    query = {"claim_id": {"$in": claim_ids}}
+    if tenant_id is not None:
+        query["tenant_id"] = tenant_id
+    return query
+
+
 def _load_claims_analytics(
     from_date: date | None,
     to_date: date | None,
@@ -292,11 +300,9 @@ def _load_claims_analytics(
         claim_ids = [claim.get("claim_id") for claim in claims if claim.get("claim_id")]
         estimates = []
         if claim_ids:
-            estimate_match = {"claim_id": {"$in": claim_ids}}
             # Claim IDs are intended to be unique, but tenant-scope related
             # financial records as defense in depth during legacy migration.
-            if tenant_id is not None:
-                estimate_match["tenant_id"] = tenant_id
+            estimate_match = _financial_estimate_match(claim_ids, tenant_id)
             estimates = list(db["financial_estimates"].aggregate([
                 {"$match": estimate_match},
                 {"$sort": {"created_at": -1}},
