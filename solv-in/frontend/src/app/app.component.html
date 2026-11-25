@@ -377,6 +377,8 @@
           <div class="panel-heading"><div><h2>First Notice of Loss (FNOL)</h2><p class="muted">Register any Property claim or a Commercial Casualty claim.</p></div><span class="required-note">* Required fields</span></div>
           <form (ngSubmit)="submitFnol()" #fnolForm="ngForm">
             <div class="form-grid">
+              <label class="full" *ngIf="isAdmin() && !selectedEmailIntakeId">Insurer tenant *<select name="fnol_tenant" [(ngModel)]="selectedFnolTenantId" required><option value="">Select an active insurer tenant</option><option *ngFor="let tenant of tenants" [value]="tenant.tenant_id" [disabled]="tenant.status !== 'Active'">{{ tenant.company_name }} · {{ tenant.status }}</option></select><small class="muted">This manual claim will be created inside the selected insurer workspace.</small></label>
+              <div class="full damage-disclaimer" *ngIf="isAdmin() && selectedEmailIntakeId">This email intake already belongs to its configured insurer tenant. The claim will inherit that tenant.</div>
               <label>Insured name *<input name="customer_name" [(ngModel)]="draft.customer_name" required minlength="2" maxlength="120" placeholder="Enter insured name"></label>
               <label>Policy number *<input name="policy_number" [(ngModel)]="draft.policy_number" required placeholder="Enter policy number"></label>
               <label>Email address<input type="email" name="email" [(ngModel)]="draft.email" placeholder="insured@example.com"></label>
