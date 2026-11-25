@@ -8,6 +8,7 @@ import argparse
 from pymongo import MongoClient
 
 from app.config import MONGODB_DATABASE, MONGODB_URI
+from scripts.tenant_migration_filters import unassigned_tenant_filter
 
 
 def main() -> int:
@@ -29,7 +30,7 @@ def main() -> int:
 
         legacy_filter = {
             "role": {"$ne": "Super Administrator"},
-            "$or": [{"tenant_id": {"$exists": False}}, {"tenant_id": None}],
+            **unassigned_tenant_filter(),
         }
         count = db["users"].count_documents(legacy_filter)
         mode = "APPLY" if args.apply else "DRY RUN"
