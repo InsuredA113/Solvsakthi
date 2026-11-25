@@ -279,3 +279,31 @@ def test_automated_intake_update_filter_requires_matching_tenant():
     query = email_connector_routes._intake_update_filter("intake-123", "ten_alpha")
     assert query == {"intake_id": "intake-123", "tenant_id": "ten_alpha"}
     assert query != {"intake_id": "intake-123", "tenant_id": "ten_beta"}
+
+
+def test_super_admin_manual_claim_requires_active_tenant(monkeypatch):
+    install_tenants(monkeypatch, [])
+    with pytest.raises(HTTPException) as error:
+        main._resolve_claim_tenant({"role": "Super Administrator"}, None)
+    assert error.value.status_code == 422
+
+
+def test_super_admin_manual_claim_resolves_selected_active_tenant(monkeypatch):
+    install_tenants(monkeypatch, [{"tenant_id": "ten_alpha", "status": "Active"}])
+    assert main._resolve_claim_tenant({"role": "Super Administrator"}, "ten_alpha") == "ten_alpha"
+
+
+def test_super_admin_manual_claim_rejects_inactive_tenant(monkeypatch):
+    install_tenants(monkeypatch, [{"tenant_id": "ten_alpha", "status": "Suspended"}])
+    with pytest.raises(HTTPException) as error:
+        main._resolve_claim_tenant({"role": "Super Administrator"}, "ten_alpha")
+    assert error.value.status_code == 422
+
+
+def test_insurer_cannot_request_claim_for_other_tenant(monkeypatch):
+    install_tenants(monkeypatch, [{"tenant_id": "ten_alpha", "status": "Active"}])
+    with pytest.raises(HTTPException) as error:
+        main._resolve_claim_tenant(
+            {"role": "Claims Manager", "tenant_id": "ten_alpha"}, "ten_beta"
+        )
+    assert error.value.status_code == 403
