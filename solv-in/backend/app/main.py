@@ -1979,7 +1979,7 @@ def receive_email_intake(
     collection = get_database()["email_intake"]
     try:
         tenant_id = _resolve_claim_tenant(user, payload.tenant_id)
-        collection.create_index([("tenant_id", 1), ("provider", 1), ("provider_message_id", 1)], unique=True, partialFilterExpression={"tenant_id": {"$type": "string"}})
+        collection.create_index([("tenant_id", 1), ("provider", 1), ("provider_message_id", 1)], name="tenant_provider_message_id_unique", unique=True, partialFilterExpression={"tenant_id": {"$type": "string"}}
         existing = collection.find_one({
             "tenant_id": tenant_id,
             "provider": payload.provider,
@@ -2019,7 +2019,9 @@ def receive_email_intake(
                 "provider": payload.provider,
                 "provider_message_id": payload.provider_message_id
             }, {"_id": 0, "body_text": 0})
-            return {"duplicate": True, "item": existing}
+            if existing:
+                return {"duplicate": True, "item": existing}
+            raise HTTPException(status_code=409, detail="This provider message ID is already reserved by a legacy global index; complete the email-intake index migration.")
         if isinstance(exc, PyMongoError):
             raise HTTPException(status_code=503, detail="Unable to store the incoming email.") from exc
         raise
