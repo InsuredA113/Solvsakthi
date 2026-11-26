@@ -346,6 +346,7 @@ def test_super_admin_adjuster_lookup_is_constrained_to_claim_tenant(monkeypatch)
     assert users.queries == [{
         "email": "adjuster@beta.example",
         "is_active": True,
+        "tenant_access_enabled": True,
         "tenant_id": "ten_alpha",
     }]
 
