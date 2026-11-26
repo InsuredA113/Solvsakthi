@@ -382,3 +382,92 @@ def test_financial_estimate_analytics_filter_is_tenant_scoped():
 def test_super_admin_financial_estimate_analytics_remains_global():
     query = main._financial_estimate_match(["CLM-2026-000001"], None)
     assert query == {"claim_id": {"$in": ["CLM-2026-000001"]}}
+
+
+class DeleteCaptureCollection:
+    def __init__(self, parent=None):
+        self.parent = parent
+        self.delete_queries = []
+        self.deleted = []
+
+    def find_one(self, query, projection=None):
+        if self.parent and query.get("claim_id") == self.parent["claim_id"] and query.get("tenant_id") == self.parent["tenant_id"]:
+            return self.parent
+        return None
+
+    def delete_many(self, query):
+        self.delete_queries.append(query)
+
+    def delete_one(self, query):
+        self.deleted.append(query)
+
+
+class DeleteCaptureBucket:
+    def __init__(self):
+        self.find_query = None
+        self.deleted = []
+
+    def find(self, query):
+        self.find_query = query
+        return []
+
+    def delete(self, file_id):
+        self.deleted.append(file_id)
+
+
+def test_claim_delete_scopes_every_child_record_to_parent_tenant(monkeypatch):
+    claim = {"claim_id": "CLM-2026-000099", "tenant_id": "ten_alpha"}
+    claims = DeleteCaptureCollection(parent=claim)
+    collections = {
+        name: DeleteCaptureCollection()
+        for name in (
+            "financial_estimates", "damage_assessments", "coverage_assessments",
+            "comparison_comments", "adjuster_reports", "claim_export_audit", "email_intake",
+        )
+    }
+    tenants = FakeTenants([{"tenant_id": "ten_alpha", "status": "Active"}])
+    db = FakeDatabase(tenants=tenants, claims=claims, **collections)
+    bucket = DeleteCaptureBucket()
+    monkeypatch.setattr(main, "get_database", lambda: db)
+    monkeypatch.setattr(main, "database_is_available", lambda: True)
+    monkeypatch.setattr(main, "GridFSBucket", lambda *args, **kwargs: bucket)
+
+    result = main.delete_claim(
+        "CLM-2026-000099",
+        {"role": "Claims Manager", "tenant_id": "ten_alpha"},
+    )
+
+    assert result == {"deleted": True, "claim_id": "CLM-2026-000099"}
+    assert bucket.find_query == {
+        "metadata.claim_id": "CLM-2026-000099",
+        "metadata.tenant_id": "ten_alpha",
+    }
+    for collection in collections.values():
+        assert collection.delete_queries == [{
+            "claim_id": "CLM-2026-000099",
+            "tenant_id": "ten_alpha",
+        }]
+    assert claims.deleted == [{
+        "claim_id": "CLM-2026-000099",
+        "tenant_id": "ten_alpha",
+    }]
+
+
+def test_claim_delete_refuses_tenantless_legacy_claim(monkeypatch):
+    claim = {"claim_id": "CLM-2026-000099", "tenant_id": None}
+    claims = DeleteCaptureCollection(parent=claim)
+    db = FakeDatabase(
+        tenants=FakeTenants([]),
+        claims=claims,
+    )
+    monkeypatch.setattr(main, "get_database", lambda: db)
+    monkeypatch.setattr(main, "database_is_available", lambda: True)
+
+    with pytest.raises(HTTPException) as error:
+        main.delete_claim(
+            "CLM-2026-000099",
+            {"role": "Super Administrator"},
+        )
+
+    assert error.value.status_code == 409
+    assert claims.deleted == []
