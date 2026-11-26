@@ -390,6 +390,10 @@ class DeleteCaptureCollection:
         self.parent = parent
         self.delete_queries = []
         self.deleted = []
+        self.updates = []
+
+    def update_one(self, query, update):
+        self.updates.append((query, update))
 
     def find_one(self, query, projection=None):
         if self.parent and query.get("claim_id") == self.parent["claim_id"] and query.get("tenant_id") == self.parent["tenant_id"]:
