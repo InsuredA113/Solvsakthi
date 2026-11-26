@@ -9,7 +9,7 @@ from email.utils import parseaddr, parsedate_to_datetime
 from bson import ObjectId
 from gridfs import GridFSBucket
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
-from pydantic import ValidationError
+from pydantic import BaseModel, Field, ValidationError
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 import httpx
@@ -201,11 +201,19 @@ def _create_provisional_claim(db, intake_id: str, tenant_id: str, sender_email: 
 
 def _save_email(provider: str, provider_message_id: str, sender_email: str,
                 subject: str, body_text: str, received_at: datetime | None,
-                attachments: list[dict] | None = None):
+                attachments: list[dict] | None = None, tenant_id_override: str | None = None):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     db = get_database()
-    tenant = _configured_ingest_tenant(db)
+    if tenant_id_override:
+        tenant = db["tenants"].find_one(
+            {"tenant_id": tenant_id_override, "status": "Active"},
+            {"_id": 0, "tenant_id": 1, "company_name": 1},
+        )
+        if not tenant:
+            raise HTTPException(status_code=404, detail="The selected demo insurer tenant is missing or inactive.")
+    else:
+        tenant = _configured_ingest_tenant(db)
     tenant_id = tenant["tenant_id"]
     collection = db["email_intake"]
     collection.create_index([("provider", 1), ("provider_message_id", 1)], unique=True)
@@ -370,6 +378,44 @@ def _fetch_gmail_attachments(message: dict, message_id: str, token: str) -> list
         except Exception:
             logger.exception("Unable to retrieve a supported Gmail attachment from message %s", message_id)
     return attachments
+
+
+
+class DemoEmailRequest(BaseModel):
+    mailbox: str = Field(..., min_length=5, max_length=254)
+    sender_email: str = Field(..., min_length=5, max_length=254)
+    subject: str = Field(default="Sample claim notification", max_length=300)
+    body_text: str = Field(..., min_length=10, max_length=30000)
+
+
+@router.post("/api/email-connectors/demo/intake", status_code=201)
+def ingest_demo_email(payload: DemoEmailRequest, user: dict = Depends(require_roles("Super Administrator"))):
+    """Ingest a simulated sample email without connecting to an external mailbox."""
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    mailbox = payload.mailbox.strip().lower()
+    demo_mailboxes = {
+        "abc@chatinsurance.com": ("chat-insurance", "Chat Insurance"),
+        "abc@gptinsurance.com": ("gpt-insurance", "GPT Insurance"),
+    }
+    expected = demo_mailboxes.get(mailbox)
+    if not expected:
+        raise HTTPException(status_code=422, detail="Only the two configured Solv-In demo mailboxes are accepted.")
+    slug, company_name = expected
+    tenant = get_database()["tenants"].find_one(
+        {"tenant_slug": slug, "company_name": company_name, "contact_email": mailbox, "status": "Active"},
+        {"_id": 0, "tenant_id": 1},
+    )
+    if not tenant:
+        raise HTTPException(status_code=404, detail="The matching demo insurer tenant must be created and active first.")
+    tenant_id = tenant["tenant_id"]
+    demo_message_id = f"demo:{tenant_id}:{ObjectId()}"
+    result = _save_email(
+        "demo", demo_message_id, payload.sender_email.strip().lower(),
+        payload.subject, payload.body_text, datetime.now(timezone.utc),
+        tenant_id_override=tenant_id,
+    )
+    return {"provider": "demo", "mailbox": mailbox, "tenant_id": tenant_id, **result}
 
 
 @router.get("/api/email-connectors/status")
