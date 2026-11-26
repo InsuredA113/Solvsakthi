@@ -471,3 +471,36 @@ def test_claim_delete_refuses_tenantless_legacy_claim(monkeypatch):
 
     assert error.value.status_code == 409
     assert claims.deleted == []
+
+
+def test_super_admin_manual_intake_requires_active_selected_tenant(monkeypatch):
+    install_tenants(monkeypatch, [{"tenant_id": "ten_alpha", "status": "Active"}])
+    with pytest.raises(HTTPException) as error:
+        main._resolve_claim_tenant({"role": "Super Administrator"}, None)
+    assert error.value.status_code == 422
+    assert main._resolve_claim_tenant(
+        {"role": "Super Administrator"}, "ten_alpha"
+    ) == "ten_alpha"
+
+
+def test_insurer_manual_intake_cannot_choose_another_tenant(monkeypatch):
+    install_tenants(monkeypatch, [
+        {"tenant_id": "ten_alpha", "status": "Active"},
+        {"tenant_id": "ten_beta", "status": "Active"},
+    ])
+    user = {"role": "Claims Manager", "tenant_id": "ten_alpha"}
+    assert main._resolve_claim_tenant(user, None) == "ten_alpha"
+    with pytest.raises(HTTPException) as error:
+        main._resolve_claim_tenant(user, "ten_beta")
+    assert error.value.status_code == 403
+
+
+def test_manual_email_intake_model_accepts_tenant_assignment():
+    from app.email_intake import EmailIntakeCreate
+
+    payload = EmailIntakeCreate(
+        tenant_id="ten_alpha", provider="manual",
+        provider_message_id="sample-1", sender_email="notice@example.com",
+        subject="Sample FNOL", body_text="Loss details",
+    )
+    assert payload.tenant_id == "ten_alpha"
