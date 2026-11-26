@@ -947,38 +947,63 @@ def delete_claim(
     claim_id: str,
     user: dict = Depends(require_roles(*CLAIM_DELETE_ROLES))
 ):
-    """Permanently delete a claim and its claim-linked evidence and derived assessments."""
+    """Run an idempotent, resumable tenant-scoped claim deletion cascade."""
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     db = get_database()
-    existing = db["claims"].find_one(_claim_filter(user, claim_id), {"_id": 0, "claim_id": 1, "tenant_id": 1})
+    claims = db["claims"]
+    existing = claims.find_one(_claim_filter(user, claim_id), {"_id": 0, "claim_id": 1, "tenant_id": 1})
     if not existing:
         raise HTTPException(status_code=404, detail="Claim not found.")
+
+    tenant_id = existing.get("tenant_id")
+    if not tenant_id:
+        raise HTTPException(
+            status_code=409,
+            detail="This claim has no tenant assignment. Complete tenant migration before deleting it.",
+        )
+
+    # Record the deletion intent first. Every subsequent operation is idempotent;
+    # if a database call fails, the parent remains marked and a retry resumes
+    # the cascade instead of leaving an unexplained partial deletion.
+    now = datetime.now(timezone.utc).isoformat()
+    claims.update_one(
+        {"claim_id": claim_id, "tenant_id": tenant_id},
+        {"$set": {
+            "deletion_state": "Pending",
+            "deletion_started_at": existing.get("deletion_started_at", now),
+            "deletion_requested_by": existing.get("deletion_requested_by", user["email"]),
+            "updated_at": now,
+        }},
+    )
+
     try:
-        # Scope every child deletion to the parent claim's tenant as defense in depth.
-        # Unmigrated child records without tenant metadata are deliberately left for
-        # the related-data migration/manual review rather than deleted ambiguously.
-        tenant_id = existing.get("tenant_id")
-        if not tenant_id:
-            raise HTTPException(
-                status_code=409,
-                detail="This claim has no tenant assignment. Complete tenant migration before deleting it.",
-            )
         bucket = GridFSBucket(db, bucket_name="claim_documents")
         for stored_file in bucket.find({
             "metadata.claim_id": claim_id,
             "metadata.tenant_id": tenant_id,
         }):
             bucket.delete(stored_file._id)
+
         for collection_name in (
             "financial_estimates", "damage_assessments", "coverage_assessments",
             "comparison_comments", "adjuster_reports", "claim_export_audit", "email_intake",
         ):
             db[collection_name].delete_many({"claim_id": claim_id, "tenant_id": tenant_id})
-        db["claims"].delete_one({"claim_id": claim_id, "tenant_id": tenant_id})
+
+        # Delete the parent last. If this fails, retrying safely repeats the
+        # child cleanup and attempts the parent deletion again.
+        deleted = claims.delete_one({"claim_id": claim_id, "tenant_id": tenant_id})
+        if getattr(deleted, "deleted_count", 1) != 1:
+            raise PyMongoError("Claim parent was not deleted; retry the pending cascade.")
         return {"deleted": True, "claim_id": claim_id}
+    except HTTPException:
+        raise
     except PyMongoError as exc:
-        raise HTTPException(status_code=503, detail="Unable to fully delete the claim and linked records.") from exc
+        raise HTTPException(
+            status_code=503,
+            detail="Claim deletion is pending because a cleanup step failed. Retry the delete request to resume safely.",
+        ) from exc
 
 
 @app.patch("/api/claims/{claim_id}/status")
