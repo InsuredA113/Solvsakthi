@@ -19,7 +19,7 @@ from .config import CORS_ORIGINS, ACCESS_TOKEN_MINUTES
 from .database import get_database, database_is_available
 from .models import ClaimCreate, ClaimStatusUpdate
 from .claims_analytics import build_claims_analytics, is_in_scope_claim, safe_csv_cell
-from .user_models import LoginRequest, UserCreate
+from .user_models import LoginRequest, UserCreate, UserTenantAccessUpdate
 from .repair_rate_models import RepairRateCreate, RepairRateStatusUpdate
 from .email_intake import EmailIntakeCreate, EmailIntakeReview, extract_email_intake
 from .email_connector_routes import router as email_connector_router
@@ -241,6 +241,56 @@ def create_user(payload: UserCreate, actor: dict = Depends(require_roles(*ADMIN_
     except PyMongoError as exc:
         raise HTTPException(status_code=503, detail="Unable to create user.") from exc
     return {key: value for key, value in record.items() if key != "password_hash"}
+
+
+@app.patch("/api/users/{user_email}/tenant-access")
+def update_user_tenant_access(
+    user_email: str,
+    payload: UserTenantAccessUpdate,
+    actor: dict = Depends(require_roles(*ADMIN_ROLES)),
+):
+    """Enable or disable an insurer user's tenant access with an audit trail."""
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    if actor.get("role") != "Super Administrator":
+        raise HTTPException(status_code=403, detail="Only a Super Administrator can change insurer user access.")
+
+    email = normalize_email(user_email)
+    users = get_database()["users"]
+    target = users.find_one({"email": email}, {"_id": 0, "password_hash": 0})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found.")
+    if target.get("role") == "Super Administrator":
+        raise HTTPException(status_code=422, detail="Global Super Administrator access cannot be managed as insurer tenant access.")
+    tenant_id = target.get("tenant_id")
+    if not tenant_id:
+        raise HTTPException(status_code=422, detail="The user must be assigned to an insurer tenant before access can be enabled.")
+    if payload.tenant_access_enabled:
+        tenant = get_database()["tenants"].find_one(
+            {"tenant_id": tenant_id, "status": "Active"}, {"_id": 1}
+        )
+        if not tenant:
+            raise HTTPException(status_code=422, detail="The user's insurer tenant must be active before access can be enabled.")
+
+    now = datetime.now(timezone.utc).isoformat()
+    try:
+        updated = users.find_one_and_update(
+            {"email": email, "role": {"$ne": "Super Administrator"}, "tenant_id": tenant_id},
+            {"$set": {
+                "tenant_access_enabled": payload.tenant_access_enabled,
+                "tenant_access_updated_at": now,
+                "tenant_access_updated_by": actor["email"],
+                "updated_at": now,
+                "updated_by": actor["email"],
+            }},
+            return_document=ReturnDocument.AFTER,
+            projection={"_id": 0, "password_hash": 0},
+        )
+    except PyMongoError as exc:
+        raise HTTPException(status_code=503, detail="Unable to update insurer user access.") from exc
+    if not updated:
+        raise HTTPException(status_code=409, detail="The user changed while access was being updated. Refresh and try again.")
+    return updated
 
 def _financial_estimate_match(claim_ids: list[str], tenant_id: str | None) -> dict:
     """Build a tenant-scoped lookup for claim-linked financial estimates."""
