@@ -449,8 +449,8 @@ def test_claim_delete_scopes_every_child_record_to_parent_tenant(monkeypatch):
         {"$set": {
             "deletion_state": "Pending",
             "deletion_started_at": ANY,
-            "deletion_requested_by": pytest.ANY,
-            "updated_at": pytest.ANY,
+            "deletion_requested_by": ANY,
+            "updated_at": ANY,
         }},
     )]
     assert bucket.find_query == {
