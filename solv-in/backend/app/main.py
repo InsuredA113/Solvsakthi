@@ -974,7 +974,7 @@ def delete_claim(
             "comparison_comments", "adjuster_reports", "claim_export_audit", "email_intake",
         ):
             db[collection_name].delete_many({"claim_id": claim_id, "tenant_id": tenant_id})
-        db["claims"].delete_one(_claim_filter(user, claim_id))
+        db["claims"].delete_one({"claim_id": claim_id, "tenant_id": tenant_id})
         return {"deleted": True, "claim_id": claim_id}
     except PyMongoError as exc:
         raise HTTPException(status_code=503, detail="Unable to fully delete the claim and linked records.") from exc
