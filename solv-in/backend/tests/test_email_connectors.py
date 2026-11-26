@@ -123,8 +123,9 @@ def test_demo_intake_passes_chat_tenant_to_email_pipeline(monkeypatch):
     assert result["claim_id"] == "CLM-2026-000188"
 
 
-def test_demo_intake_rejects_unknown_demo_mailbox():
+def test_demo_intake_rejects_unknown_demo_mailbox(monkeypatch):
     from fastapi import HTTPException
+    monkeypatch.setattr(email_connector_routes, "database_is_available", lambda: True)
     import pytest
 
     payload = DemoEmailRequest(
