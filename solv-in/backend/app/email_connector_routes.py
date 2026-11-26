@@ -381,6 +381,17 @@ def _fetch_gmail_attachments(message: dict, message_id: str, token: str) -> list
 
 
 
+DEMO_MAILBOX_TENANTS = {
+    "abc@chatinsurance.com": ("chat-insurance", "Chat Insurance"),
+    "abc@gptinsurance.com": ("gpt-insurance", "GPT Insurance"),
+}
+
+
+def demo_mailbox_tenant(mailbox: str):
+    """Return the fixed demo insurer mapping; never infer a tenant from sender data."""
+    return DEMO_MAILBOX_TENANTS.get((mailbox or "").strip().lower())
+
+
 class DemoEmailRequest(BaseModel):
     mailbox: str = Field(..., min_length=5, max_length=254)
     sender_email: str = Field(..., min_length=5, max_length=254)
@@ -394,11 +405,7 @@ def ingest_demo_email(payload: DemoEmailRequest, user: dict = Depends(require_ro
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     mailbox = payload.mailbox.strip().lower()
-    demo_mailboxes = {
-        "abc@chatinsurance.com": ("chat-insurance", "Chat Insurance"),
-        "abc@gptinsurance.com": ("gpt-insurance", "GPT Insurance"),
-    }
-    expected = demo_mailboxes.get(mailbox)
+    expected = demo_mailbox_tenant(mailbox)
     if not expected:
         raise HTTPException(status_code=422, detail="Only the two configured Solv-In demo mailboxes are accepted.")
     slug, company_name = expected
