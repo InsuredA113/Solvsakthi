@@ -9,7 +9,7 @@ from email.utils import parseaddr, parsedate_to_datetime
 from bson import ObjectId
 from gridfs import GridFSBucket
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
-from pydantic import ValidationError
+from pydantic import BaseModel, Field, ValidationError
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 import httpx
@@ -73,6 +73,31 @@ def _log_connector_failure(provider: str, stage: str, exc: Exception) -> None:
         )
 
 
+def _intake_update_filter(intake_id: str, tenant_id: str) -> dict:
+    """Keep automated intake mutations bound to the owning insurer."""
+    return {"intake_id": intake_id, "tenant_id": tenant_id}
+
+
+def _configured_ingest_tenant(db) -> dict:
+    """Resolve the single configured mailbox to an active insurer tenant."""
+    tenant_id = setting("EMAIL_CONNECTOR_TENANT_ID").strip()
+    if not tenant_id:
+        raise HTTPException(
+            status_code=503,
+            detail="Email intake is paused until EMAIL_CONNECTOR_TENANT_ID is configured for an active insurer tenant.",
+        )
+    tenant = db["tenants"].find_one(
+        {"tenant_id": tenant_id, "status": "Active"},
+        {"_id": 0, "tenant_id": 1, "company_name": 1},
+    )
+    if not tenant:
+        raise HTTPException(
+            status_code=503,
+            detail="The configured email intake tenant is missing or inactive. Email intake is paused.",
+        )
+    return tenant
+
+
 def _suggestions_for_missing(missing_fields: list[str]) -> dict[str, str]:
     guidance = {
         "customer_name": "Ask for the insured person's full legal name or the business contact name.",
@@ -90,7 +115,7 @@ def _suggestions_for_missing(missing_fields: list[str]) -> dict[str, str]:
     return {field: guidance.get(field, "Please confirm this information with the sender.") for field in missing_fields}
 
 
-def _create_provisional_claim(db, intake_id: str, sender_email: str, parsed: dict,
+def _create_provisional_claim(db, intake_id: str, tenant_id: str, sender_email: str, parsed: dict,
                               received_at: str) -> dict | None:
     classification = parsed.get("suggested_claim_type")
     if classification == "Out of Scope":
@@ -137,6 +162,7 @@ def _create_provisional_claim(db, intake_id: str, sender_email: str, parsed: dic
     claim_id = f"CLM-{datetime.now(timezone.utc).year}-{sequence['sequence']:06d}"
     claim = {
         "claim_id": claim_id,
+        "tenant_id": tenant_id,
         "customer_name": clean("customer_name"),
         "loss_cause": clean("loss_cause"),
         "email": clean("email") or sender_email,
@@ -175,14 +201,24 @@ def _create_provisional_claim(db, intake_id: str, sender_email: str, parsed: dic
 
 def _save_email(provider: str, provider_message_id: str, sender_email: str,
                 subject: str, body_text: str, received_at: datetime | None,
-                attachments: list[dict] | None = None):
+                attachments: list[dict] | None = None, tenant_id_override: str | None = None):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     db = get_database()
+    if tenant_id_override:
+        tenant = db["tenants"].find_one(
+            {"tenant_id": tenant_id_override, "status": "Active"},
+            {"_id": 0, "tenant_id": 1, "company_name": 1},
+        )
+        if not tenant:
+            raise HTTPException(status_code=404, detail="The selected demo insurer tenant is missing or inactive.")
+    else:
+        tenant = _configured_ingest_tenant(db)
+    tenant_id = tenant["tenant_id"]
     collection = db["email_intake"]
-    collection.create_index([("provider", 1), ("provider_message_id", 1)], unique=True)
+    collection.create_index([("tenant_id", 1), ("provider", 1), ("provider_message_id", 1)], name="tenant_provider_message_id_unique", unique=True, partialFilterExpression={"tenant_id": {"$type": "string"}})
     existing = collection.find_one(
-        {"provider": provider, "provider_message_id": provider_message_id},
+        {"tenant_id": tenant_id, "provider": provider, "provider_message_id": provider_message_id},
         {"_id": 0, "body_text": 0}
     )
     if existing:
@@ -242,7 +278,7 @@ def _save_email(provider: str, provider_message_id: str, sender_email: str,
     received = (payload.received_at or datetime.now(timezone.utc)).isoformat()
     intake_id = str(ObjectId())
     record = {
-        "intake_id": intake_id, "provider": provider,
+        "intake_id": intake_id, "tenant_id": tenant_id, "provider": provider,
         "provider_message_id": provider_message_id,
         "sender_email": str(payload.sender_email), "subject": payload.subject,
         "body_text": body_text or "(No readable message body)",
@@ -257,16 +293,17 @@ def _save_email(provider: str, provider_message_id: str, sender_email: str,
         collection.insert_one(record)
     except DuplicateKeyError:
         existing = collection.find_one(
-            {"provider": provider, "provider_message_id": provider_message_id},
+            {"tenant_id": tenant_id, "provider": provider, "provider_message_id": provider_message_id},
             {"_id": 0, "body_text": 0}
         )
-        return {"duplicate": True, "intake_id": existing["intake_id"], "claim_id": existing.get("claim_id")}
+        return {"duplicate": True, "intake_id": existing.get("intake_id") if existing else None,
+                "claim_id": existing.get("claim_id") if existing else None}
 
     claim = None
     try:
-        claim = _create_provisional_claim(db, intake_id, str(payload.sender_email), parsed, received)
+        claim = _create_provisional_claim(db, intake_id, tenant_id, str(payload.sender_email), parsed, received)
         if claim:
-            collection.update_one({"intake_id": intake_id}, {"$set": {
+            collection.update_one(_intake_update_filter(intake_id, tenant_id), {"$set": {
                 "claim_id": claim["claim_id"], "review_status": "Converted",
                 "conversion_state": "Completed", "auto_creation_status": claim["auto_intake_status"],
                 "missing_fields": claim["missing_fields"],
@@ -274,13 +311,13 @@ def _save_email(provider: str, provider_message_id: str, sender_email: str,
                 "converted_at": datetime.now(timezone.utc).isoformat(),
             }})
         else:
-            collection.update_one({"intake_id": intake_id}, {"$set": {
+            collection.update_one(_intake_update_filter(intake_id, tenant_id), {"$set": {
                 "auto_creation_status": "Out of Scope",
                 "auto_creation_note": "Personal-lines or unsupported claim indicators were detected; no in-scope claim record was created."
             }})
     except Exception:
         logger.exception("Automatic claim creation failed for email intake %s", intake_id)
-        collection.update_one({"intake_id": intake_id}, {"$set": {"auto_creation_status": "Failed"}})
+        collection.update_one(_intake_update_filter(intake_id, tenant_id), {"$set": {"auto_creation_status": "Failed"}})
         raise
 
     saved_documents = []
@@ -300,7 +337,7 @@ def _save_email(provider: str, provider_message_id: str, sender_email: str,
                 continue
             file_id = GridFSBucket(db, bucket_name="claim_documents").upload_from_stream(
                 filename, io.BytesIO(content),
-                metadata={"claim_id": claim["claim_id"], "content_type": content_type,
+                metadata={"claim_id": claim["claim_id"], "tenant_id": tenant_id, "content_type": content_type,
                           "size": len(content), "uploaded_at": datetime.now(timezone.utc).isoformat(),
                           "uploaded_by": "system:email-attachment", "source": "email_attachment",
                           "source_intake_id": intake_id}
@@ -308,7 +345,7 @@ def _save_email(provider: str, provider_message_id: str, sender_email: str,
             saved_documents.append({"file_id": str(file_id), "filename": filename})
         except Exception:
             logger.exception("Unable to store an email attachment for intake %s", intake_id)
-    collection.update_one({"intake_id": intake_id}, {"$set": {
+    collection.update_one(_intake_update_filter(intake_id, tenant_id), {"$set": {
         "attachment_count": len(saved_documents), "attachments_saved": saved_documents
     }})
     return {"duplicate": False, "intake_id": intake_id,
@@ -343,22 +380,74 @@ def _fetch_gmail_attachments(message: dict, message_id: str, token: str) -> list
     return attachments
 
 
+
+DEMO_MAILBOX_TENANTS = {
+    "abc@chatinsurance.com": ("chat-insurance", "Chat Insurance"),
+    "abc@gptinsurance.com": ("gpt-insurance", "GPT Insurance"),
+}
+
+
+def demo_mailbox_tenant(mailbox: str):
+    """Return the fixed demo insurer mapping; never infer a tenant from sender data."""
+    return DEMO_MAILBOX_TENANTS.get((mailbox or "").strip().lower())
+
+
+class DemoEmailRequest(BaseModel):
+    mailbox: str = Field(..., min_length=5, max_length=254)
+    sender_email: str = Field(..., min_length=5, max_length=254)
+    subject: str = Field(default="Sample claim notification", max_length=300)
+    body_text: str = Field(..., min_length=10, max_length=30000)
+
+
+@router.post("/api/email-connectors/demo/intake", status_code=201)
+def ingest_demo_email(payload: DemoEmailRequest, user: dict = Depends(require_roles("Super Administrator"))):
+    """Ingest a simulated sample email without connecting to an external mailbox."""
+    if not database_is_available():
+        raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
+    mailbox = payload.mailbox.strip().lower()
+    expected = demo_mailbox_tenant(mailbox)
+    if not expected:
+        raise HTTPException(status_code=422, detail="Only the two configured Solv-In demo mailboxes are accepted.")
+    slug, company_name = expected
+    tenant = get_database()["tenants"].find_one(
+        {"tenant_slug": slug, "company_name": company_name, "contact_email": mailbox, "status": "Active"},
+        {"_id": 0, "tenant_id": 1},
+    )
+    if not tenant:
+        raise HTTPException(status_code=404, detail="The matching demo insurer tenant must be created and active first.")
+    tenant_id = tenant["tenant_id"]
+    demo_message_id = f"demo:{tenant_id}:{ObjectId()}"
+    result = _save_email(
+        "demo", demo_message_id, payload.sender_email.strip().lower(),
+        payload.subject, payload.body_text, datetime.now(timezone.utc),
+        tenant_id_override=tenant_id,
+    )
+    return {"provider": "demo", "mailbox": mailbox, "tenant_id": tenant_id, **result}
+
+
 @router.get("/api/email-connectors/status")
-def connector_status(user: dict = Depends(require_roles(*READ_ROLES))):
+def connector_status(user: dict = Depends(require_roles("Super Administrator"))):
     db = get_database()
     gmail_mailbox = setting("GMAIL_MAILBOX").lower()
     ms_mailbox = setting("MS365_MAILBOX").lower()
-    gmail_state = db["email_connector_state"].find_one({"_id": "gmail:" + gmail_mailbox}, {"_id": 0}) if database_is_available() and gmail_mailbox else None
-    ms_state = db["email_connector_state"].find_one({"_id": "microsoft365:" + ms_mailbox}, {"_id": 0}) if database_is_available() and ms_mailbox else None
+    tenant_mapping_id = setting("EMAIL_CONNECTOR_TENANT_ID")
+    database_ready = database_is_available()
+    gmail_state = db["email_connector_state"].find_one({"_id": "gmail:" + gmail_mailbox}, {"_id": 0}) if database_ready and gmail_mailbox else None
+    ms_state = db["email_connector_state"].find_one({"_id": "microsoft365:" + ms_mailbox}, {"_id": 0}) if database_ready and ms_mailbox else None
+    tenant_mapping_active = bool(
+        database_ready and tenant_mapping_id and
+        db["tenants"].find_one({"tenant_id": tenant_mapping_id, "status": "Active"}, {"_id": 1})
+    )
     return {
         "gmail": {"configured": gmail_configured(), "watch_active": bool(gmail_state and gmail_state.get("watch_expiration")), "watch_expiration": gmail_state.get("watch_expiration") if gmail_state else None},
         "microsoft365": {"configured": microsoft_configured(), "subscription_active": bool(ms_state and ms_state.get("subscription_id")), "subscription_expiration": ms_state.get("subscription_expiration") if ms_state else None},
-        "note": "Connector credentials are held in backend environment variables and are never returned."
+        "tenant_mapping_configured": tenant_mapping_active,
+        "note": "Connector credentials and the single-mailbox tenant mapping are held in backend environment variables and are never returned."
     }
 
 
 @router.post("/api/email-connectors/gmail/watch")
-def start_gmail_watch(user: dict = Depends(require_roles(*ADMIN_ROLES))):
+def start_gmail_watch(user: dict = Depends(require_roles("Super Administrator"))):
     if not gmail_configured():
         raise HTTPException(status_code=409, detail="Configure all GMAIL environment variables before starting Gmail watch.")
     stage = "OAuth token refresh"
@@ -447,7 +536,7 @@ def gmail_pubsub(payload: dict, authorization: str | None = Header(default=None)
 
 
 @router.post("/api/email-connectors/microsoft365/subscribe")
-def create_microsoft_subscription(user: dict = Depends(require_roles(*ADMIN_ROLES))):
+def create_microsoft_subscription(user: dict = Depends(require_roles("Super Administrator"))):
     if not microsoft_configured():
         raise HTTPException(status_code=409, detail="Configure all MS365 environment variables before subscribing.")
     try:

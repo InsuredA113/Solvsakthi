@@ -109,7 +109,7 @@
           <div class="table-scroll" *ngIf="!loadingClaims"><table><thead><tr><th>Claim ID</th><th>Insured Name</th><th>Policy Number</th><th>Created Date</th><th>Incident Date</th><th>Loss Cause</th><th>Assigned Adjuster</th><th>Status</th><th>Mode of Upload</th><th>Actions</th></tr></thead>
             <tbody><tr *ngFor="let claim of filteredClaims()">
               <td><button class="text-button" type="button" (click)="openClaimDetails(claim)" [attr.aria-label]="'Open claim ' + claim.claim_id">{{ claim.claim_id }}</button></td><td>{{ claim.customer_name || "Not Found" }}</td><td>{{ claim.policy_number || "Not Found" }}</td><td>{{ claim.created_at ? (claim.created_at | date:"mediumDate") : "Not Found" }}</td><td>{{ claim.incident_date || "Not Found" }}</td><td>{{ claim.loss_cause || "Not Found" }}</td>
-              <td><select *ngIf="canAssignClaims()" class="status-select" [ngModel]="claim.assigned_adjuster_email || ''" (ngModelChange)="assignAdjuster(claim, $event)" [attr.aria-label]="'Assign adjuster for ' + claim.claim_id"><option value="">Unassigned</option><option *ngFor="let adjuster of adjusters" [value]="adjuster.email" [disabled]="(claim.claim_type === 'Property' && adjuster.role !== 'Property Adjuster') || (claim.claim_type === 'Casualty' && adjuster.role !== 'Casualty Adjuster')">{{ adjuster.full_name }} · {{ adjuster.role }}</option></select><span *ngIf="!canAssignClaims()">{{ claim.assigned_adjuster_name || 'Unassigned' }}</span></td>
+              <td><select *ngIf="canAssignClaims()" class="status-select" [ngModel]="claim.assigned_adjuster_email || ''" (ngModelChange)="assignAdjuster(claim, $event)" [attr.aria-label]="'Assign adjuster for ' + claim.claim_id"><option value="">Unassigned</option><option *ngFor="let adjuster of adjustersForClaim(claim)" [value]="adjuster.email" [disabled]="(claim.claim_type === 'Property' && adjuster.role !== 'Property Adjuster') || (claim.claim_type === 'Casualty' && adjuster.role !== 'Casualty Adjuster')">{{ adjuster.full_name }} · {{ adjuster.role }}</option></select><span *ngIf="!canAssignClaims()">{{ claim.assigned_adjuster_name || 'Unassigned' }}</span></td>
               <td><select class="status-select" [ngModel]="claim.status" (ngModelChange)="changeStatus(claim, $event)" [attr.aria-label]="'Update status for ' + claim.claim_id"><option *ngFor="let status of statuses" [value]="status">{{ status }}</option></select></td><td><span class="source-mode" [title]="createdByTooltip(claim)">{{ claim.source_mode === "email" || claim.source === "Email FNOL" ? "✉" : "⇧" }}</span></td>
               <td><div class="claim-row-actions"><select class="status-select" aria-label="Export claim" [disabled]="!!exportingClaimId" (change)="exportClaim(claim.claim_id, $any($event.target).value); $any($event.target).value = ''"><option value="">Export…</option><option value="pdf">PDF</option><option value="xlsx">Excel</option><option value="csv">CSV</option><option value="zip">ZIP + evidence</option></select><button class="text-button" type="button" *ngIf="canEditClaims()" (click)="openClaimForEdit(claim)">Edit</button><button class="text-button danger-text" type="button" *ngIf="canDeleteClaims()" (click)="deleteClaimFromRegister(claim)">Delete</button></div></td>
             </tr><tr *ngIf="filteredClaims().length === 0"><td colspan="10" class="empty">No claims match this filter. Clear the dashboard filter or adjust your search.</td></tr></tbody>
@@ -377,6 +377,8 @@
           <div class="panel-heading"><div><h2>First Notice of Loss (FNOL)</h2><p class="muted">Register any Property claim or a Commercial Casualty claim.</p></div><span class="required-note">* Required fields</span></div>
           <form (ngSubmit)="submitFnol()" #fnolForm="ngForm">
             <div class="form-grid">
+              <label class="full" *ngIf="isAdmin() && !selectedEmailIntakeId">Insurer tenant *<select name="fnol_tenant" [(ngModel)]="selectedFnolTenantId" required><option value="">Select an active insurer tenant</option><option *ngFor="let tenant of tenants" [value]="tenant.tenant_id" [disabled]="tenant.status !== 'Active'">{{ tenant.company_name }} · {{ tenant.status }}</option></select><small class="muted">This manual claim will be created inside the selected insurer workspace.</small></label>
+              <div class="full damage-disclaimer" *ngIf="isAdmin() && selectedEmailIntakeId">This email intake already belongs to its configured insurer tenant. The claim will inherit that tenant.</div>
               <label>Insured name *<input name="customer_name" [(ngModel)]="draft.customer_name" required minlength="2" maxlength="120" placeholder="Enter insured name"></label>
               <label>Policy number *<input name="policy_number" [(ngModel)]="draft.policy_number" required placeholder="Enter policy number"></label>
               <label>Email address<input type="email" name="email" [(ngModel)]="draft.email" placeholder="insured@example.com"></label>
@@ -886,9 +888,9 @@
         <section class="settings-layout">
           <aside class="panel settings-menu">
             <p class="eyebrow">WORKSPACE CONFIGURATION</p>
-            <button type="button" *ngFor="let section of ['Company Profile','User Management','Integrations','Email Configuration','AI Configuration','Currency & Regional Settings','Notifications','Security & Audit']"
+            <button type="button" *ngFor="let section of ['Company Profile','Tenant Management','User Management','Integrations','Email Configuration','AI Configuration','Currency & Regional Settings','Notifications','Security & Audit']"
               [class.active]="settingsSection === section" (click)="settingsSection = section; section === 'User Management' && isAdmin() ? loadUsers() : null; section === 'Email Configuration' && canManageEmailConnectors() ? loadEmailConnectorStatus() : null"
-              [disabled]="section === 'User Management' && !isAdmin() || ['Integrations','Email Configuration','AI Configuration','Currency & Regional Settings','Notifications','Security & Audit'].includes(section) && !canManageEmailConnectors()">
+              [disabled]="(section === 'User Management' || section === 'Tenant Management') && !isAdmin() || ['Integrations','Email Configuration','AI Configuration','Currency & Regional Settings','Notifications','Security & Audit'].includes(section) && !canManageEmailConnectors()">
               {{ section }}
             </button>
           </aside>
@@ -898,6 +900,29 @@
               <div class="settings-info"><b>Solv-In workspace</b><span>Property &amp; Casualty claims operations</span><small>Company profile editing and insurer-specific tenant configuration will be enabled in a later phase.</small></div>
             </section>
 
+            <ng-container *ngIf="settingsSection === 'Tenant Management' && isAdmin()">
+              <section class="panel form-panel">
+                <div class="panel-heading"><div><h2>Insurer tenant management</h2><p class="muted">Register insurance companies before provisioning their users.</p></div></div>
+                <form (ngSubmit)="createTenant()">
+                  <div class="form-grid">
+                    <label>Company name *<input name="tenant_company_name" [(ngModel)]="tenantDraft.company_name" required minlength="2" maxlength="160" placeholder="Insurance company name"></label>
+                    <label>Tenant slug *<input name="tenant_slug" [(ngModel)]="tenantDraft.tenant_slug" required pattern="[a-z0-9]+(?:-[a-z0-9]+)*" maxlength="64" placeholder="company-name"></label>
+                    <label>Contact email *<input type="email" name="tenant_contact_email" [(ngModel)]="tenantDraft.contact_email" required placeholder="admin@company.com"></label>
+                  </div>
+                  <div class="form-actions"><span class="muted">Only the global Super Administrator can create insurer tenants.</span><button class="primary-action" type="submit" [disabled]="tenantBusy">{{ tenantBusy ? 'Creating…' : 'Create tenant' }}</button></div>
+                </form>
+              </section>
+              <section class="panel claims-panel" style="margin-top:14px">
+                <div class="panel-heading"><h2>Registered insurer tenants</h2><span class="subtle">{{ tenants.length }} tenants</span></div>
+                <div class="table-scroll"><table><thead><tr><th>Company</th><th>Slug</th><th>Contact</th><th>Tenant ID</th><th>Status</th><th>Actions</th></tr></thead>
+                  <tbody><tr *ngFor="let tenant of tenants">
+                    <td>{{ tenant.company_name }}</td><td>{{ tenant.tenant_slug }}</td><td>{{ tenant.contact_email }}</td><td>{{ tenant.tenant_id }}</td>
+                    <td><span class="status">{{ tenant.status }}</span></td>
+                    <td><select [ngModel]="tenant.status" [ngModelOptions]="{standalone: true}" (ngModelChange)="updateTenantStatus(tenant, $event)"><option value="Active">Active</option><option value="Inactive">Inactive</option><option value="Suspended">Suspended</option></select></td>
+                  </tr><tr *ngIf="tenants.length === 0"><td colspan="6" class="empty">No insurer tenants registered yet.</td></tr></tbody></table></div>
+              </section>
+            </ng-container>
+
             <ng-container *ngIf="settingsSection === 'User Management' && isAdmin()">
               <section class="panel form-panel">
                 <div class="panel-heading"><div><h2>User Management</h2><p class="muted">Create workspace users and assign approved roles. Existing accounts and permissions are preserved.</p></div></div>
@@ -906,16 +931,17 @@
                     <label>Full name *<input name="new_full_name" [(ngModel)]="newUser.full_name" required minlength="2" maxlength="120" placeholder="Full name"></label>
                     <label>Email address *<input type="email" name="new_email" [(ngModel)]="newUser.email" required placeholder="user@company.com"></label>
                     <label>Temporary password *<input type="password" name="new_password" [(ngModel)]="newUser.password" required minlength="12" placeholder="At least 12 characters with letters and numbers"></label>
-                    <label>Role *<select name="new_role" [(ngModel)]="newUser.role"><option *ngFor="let role of roles" [value]="role">{{ role }}</option></select></label>
+                    <label>Role *<select name="new_role" [ngModel]="newUser.role" (ngModelChange)="onNewUserRoleChange($event)"><option *ngFor="let role of roles" [value]="role">{{ role }}</option></select></label>
+                    <label *ngIf="newUser.role !== 'Super Administrator'">Insurer tenant *<select name="new_tenant_id" [(ngModel)]="newUser.tenant_id" required><option value="">Select an active insurer</option><option *ngFor="let tenant of tenants" [value]="tenant.tenant_id" [disabled]="tenant.status !== 'Active'">{{ tenant.company_name }} · {{ tenant.status }}</option></select></label>
                   </div>
                   <div class="form-actions"><span class="muted">User provisioning remains restricted to the Super Administrator.</span><button class="primary-action" type="submit" [disabled]="userBusy">{{ userBusy ? 'Creating…' : 'Create user' }}</button></div>
                 </form>
               </section>
               <section class="panel claims-panel" style="margin-top:14px">
                 <div class="panel-heading"><h2>Workspace users</h2><span class="subtle">{{ users.length }} accounts</span></div>
-                <div class="table-scroll"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Account status</th></tr></thead>
-                  <tbody><tr *ngFor="let account of users"><td>{{ account.full_name }}</td><td>{{ account.email }}</td><td>{{ account.role }}</td><td><span class="status">{{ account.is_active ? 'Active' : 'Inactive' }}</span></td></tr>
-                    <tr *ngIf="users.length === 0"><td colspan="4" class="empty">No user accounts found.</td></tr></tbody></table></div>
+                <div class="table-scroll"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Insurer tenant</th><th>Account status</th></tr></thead>
+                  <tbody><tr *ngFor="let account of users"><td>{{ account.full_name }}</td><td>{{ account.email }}</td><td>{{ account.role }}</td><td>{{ tenantName(account.tenant_id) }}</td><td><span class="status">{{ account.tenant_id && !account.tenant_access_enabled ? 'Pending tenant isolation' : (account.is_active ? 'Active' : 'Inactive') }}</span></td></tr>
+                    <tr *ngIf="users.length === 0"><td colspan="5" class="empty">No user accounts found.</td></tr></tbody></table></div>
               </section>
             </ng-container>
 
@@ -944,6 +970,7 @@
             <section class="panel form-panel" *ngIf="settingsSection === 'Email Configuration' && canManageEmailConnectors()">
               <div class="panel-heading"><div><h2>Email Configuration</h2><p class="muted">Current mailbox connection status and subscription controls.</p></div><button class="secondary-action" type="button" (click)="loadEmailConnectorStatus()">Refresh status</button></div>
               <div class="bottom-grid" *ngIf="emailConnectorStatus">
+                <p class="damage-disclaimer full">Mailbox tenant mapping: {{ emailConnectorStatus.tenant_mapping_configured ? 'Configured' : 'Missing — automated intake is paused until EMAIL_CONNECTOR_TENANT_ID points to an active insurer tenant.' }}</p>
                 <article class="panel activity-panel"><h3>Gmail / Google Workspace</h3><p class="status">{{ emailConnectorStatus.gmail.configured ? 'Credentials configured' : 'Credentials missing' }}</p><p class="muted">{{ emailConnectorStatus.gmail.watch_active ? 'Watch active until ' + (emailConnectorStatus.gmail.watch_expiration | date:'medium') : 'Gmail watch not started' }}</p><button class="primary-action" *ngIf="canManageEmailConnectors()" [disabled]="emailConnectorBusy || !emailConnectorStatus.gmail.configured" (click)="startGmailConnector()">Start / renew Gmail watch</button></article>
                 <article class="panel activity-panel"><h3>Microsoft 365 / Outlook</h3><p class="status">{{ emailConnectorStatus.microsoft365.configured ? 'Credentials configured' : 'Credentials missing' }}</p><p class="muted">{{ emailConnectorStatus.microsoft365.subscription_active ? 'Subscription expires ' + (emailConnectorStatus.microsoft365.subscription_expiration | date:'medium') : 'Graph subscription not created' }}</p><button class="primary-action" *ngIf="canManageEmailConnectors()" [disabled]="emailConnectorBusy || !emailConnectorStatus.microsoft365.configured" (click)="startMicrosoftConnector()">Create / renew Microsoft subscription</button></article>
               </div>

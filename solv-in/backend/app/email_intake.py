@@ -20,6 +20,7 @@ class EmailIntakeCreate(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
     provider: str = Field(default="manual", min_length=1, max_length=40)
+    tenant_id: str | None = Field(default=None, min_length=4, max_length=100)
     provider_message_id: str = Field(min_length=1, max_length=250)
     sender_email: EmailStr
     subject: str = Field(default="", max_length=500)

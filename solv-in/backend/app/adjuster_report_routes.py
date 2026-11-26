@@ -69,13 +69,20 @@ def list_adjuster_reports(
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     db = get_database()
-    claim = db["claims"].find_one({"claim_id": claim_id}, {"_id": 0, "claim_id": 1, "claim_type": 1, "casualty_segment": 1})
+    claim_query = {"claim_id": claim_id}
+    if user.get("role") != "Super Administrator":
+        tenant_id = user.get("tenant_id")
+        tenant = db["tenants"].find_one({"tenant_id": tenant_id, "status": "Active"}, {"_id": 1}) if tenant_id else None
+        if not tenant:
+            raise HTTPException(status_code=403, detail="Your insurer tenant is inactive or unavailable.")
+        claim_query["tenant_id"] = tenant_id
+    claim = db["claims"].find_one(claim_query, {"_id": 0, "claim_id": 1, "claim_type": 1, "casualty_segment": 1, "tenant_id": 1})
     if not claim:
         raise HTTPException(status_code=404, detail="Claim not found.")
     if not is_in_scope_claim(claim):
         raise HTTPException(status_code=422, detail="Adjuster reports are limited to Property and Commercial Casualty claims.")
     try:
-        rows = list(db["adjuster_reports"].find({"claim_id": claim_id}).sort("created_at", DESCENDING).limit(100))
+        rows = list(db["adjuster_reports"].find({"claim_id": claim_id, "tenant_id": claim.get("tenant_id")}).sort("created_at", DESCENDING).limit(100))
         return {"items": [_serialise_report(row) for row in rows], "count": len(rows)}
     except PyMongoError as exc:
         raise HTTPException(status_code=503, detail="Unable to retrieve adjuster reports.") from exc
@@ -90,7 +97,14 @@ def create_adjuster_report(
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     db = get_database()
-    claim = db["claims"].find_one({"claim_id": claim_id}, {"_id": 0, "claim_id": 1, "claim_type": 1, "casualty_segment": 1})
+    claim_query = {"claim_id": claim_id}
+    if user.get("role") != "Super Administrator":
+        tenant_id = user.get("tenant_id")
+        tenant = db["tenants"].find_one({"tenant_id": tenant_id, "status": "Active"}, {"_id": 1}) if tenant_id else None
+        if not tenant:
+            raise HTTPException(status_code=403, detail="Your insurer tenant is inactive or unavailable.")
+        claim_query["tenant_id"] = tenant_id
+    claim = db["claims"].find_one(claim_query, {"_id": 0, "claim_id": 1, "claim_type": 1, "casualty_segment": 1, "tenant_id": 1})
     if not claim:
         raise HTTPException(status_code=404, detail="Claim not found.")
     if not is_in_scope_claim(claim):
@@ -98,6 +112,7 @@ def create_adjuster_report(
     now = datetime.now(timezone.utc).isoformat()
     record = {
         "claim_id": claim_id,
+        "tenant_id": claim.get("tenant_id"),
         "report_title": payload.report_title,
         "report_reference": payload.report_reference,
         "report_date": payload.report_date,

@@ -49,19 +49,26 @@ def _serialise_comment(row: dict) -> dict:
     return row
 
 
-def _get_scoped_claim(claim_id: str):
+def _get_scoped_claim(claim_id: str, user: dict):
     if not database_is_available():
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     db = get_database()
+    claim_query = {"claim_id": claim_id}
+    if user.get("role") != "Super Administrator":
+        tenant_id = user.get("tenant_id")
+        tenant = db["tenants"].find_one({"tenant_id": tenant_id, "status": "Active"}, {"_id": 1}) if tenant_id else None
+        if not tenant:
+            raise HTTPException(status_code=403, detail="Your insurer tenant is inactive or unavailable.")
+        claim_query["tenant_id"] = tenant_id
     claim = db["claims"].find_one(
-        {"claim_id": claim_id},
-        {"_id": 0, "claim_id": 1, "claim_type": 1, "casualty_segment": 1}
+        claim_query,
+        {"_id": 0, "claim_id": 1, "claim_type": 1, "casualty_segment": 1, "tenant_id": 1}
     )
     if not claim:
         raise HTTPException(status_code=404, detail="Claim not found.")
     if not is_in_scope_claim(claim):
         raise HTTPException(status_code=422, detail="Comparison comments are limited to Property and Commercial Casualty claims.")
-    return db
+    return db, claim
 
 
 @router.get("/api/claims/{claim_id}/comparison-comments")
@@ -69,10 +76,10 @@ def list_comparison_comments(
     claim_id: str,
     user: dict = Depends(require_roles(*COMMENT_READ_ROLES))
 ):
-    db = _get_scoped_claim(claim_id)
+    db, claim = _get_scoped_claim(claim_id, user)
     try:
         rows = list(
-            db["comparison_comments"].find({"claim_id": claim_id})
+            db["comparison_comments"].find({"claim_id": claim_id, "tenant_id": claim.get("tenant_id")})
             .sort("created_at", DESCENDING).limit(200)
         )
         return {"items": [_serialise_comment(row) for row in rows], "count": len(rows)}
@@ -86,9 +93,10 @@ def create_comparison_comment(
     payload: ComparisonCommentCreate,
     user: dict = Depends(require_roles(*COMMENT_WRITE_ROLES))
 ):
-    db = _get_scoped_claim(claim_id)
+    db, claim = _get_scoped_claim(claim_id, user)
     record = {
         "claim_id": claim_id,
+        "tenant_id": claim.get("tenant_id"),
         "comment": payload.comment,
         "field_key": payload.field_key,
         "field_label": payload.field_label,

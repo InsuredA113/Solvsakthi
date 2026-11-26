@@ -4,10 +4,11 @@ import { HttpClient, HttpClientModule, HttpHeaders, HttpParams } from '@angular/
 import { FormsModule } from '@angular/forms';
 import { environment } from '../environments/environment';
 
-interface User { full_name: string; email: string; role: string; is_active?: boolean; }
-interface Adjuster { full_name: string; email: string; role: 'Property Adjuster' | 'Casualty Adjuster'; }
+interface User { full_name: string; email: string; role: string; tenant_id?: string | null; tenant_access_enabled?: boolean; is_active?: boolean; }
+interface Tenant { tenant_id: string; company_name: string; tenant_slug: string; contact_email: string; status: 'Active' | 'Inactive' | 'Suspended'; created_at: string; }
+interface Adjuster { full_name: string; email: string; role: 'Property Adjuster' | 'Casualty Adjuster'; tenant_id?: string | null; }
 interface Claim {
-  claim_id: string; customer_name?: string | null; loss_cause?: string | null; email?: string | null; phone?: string | null;
+  claim_id: string; tenant_id?: string | null; customer_name?: string | null; loss_cause?: string | null; email?: string | null; phone?: string | null;
   policy_number?: string | null; claim_type: 'Property' | 'Casualty' | 'Unclassified'; property_occupancy?: string | null;
   casualty_segment?: 'Commercial' | null; business_name?: string | null; industry?: string | null;
   commercial_liability_type?: string | null; incident_date?: string | null;
@@ -28,7 +29,7 @@ interface DamageAssessment {
   review_history?: { status: string; notes: string; reviewed_at: string; reviewed_by: string; reviewer_role: string }[];
 }
 interface FinancialEstimate { estimate_id: string; claim_id: string; repair_rate_ids?: string[]; repair_rate_snapshots?: any[]; source_damage_assessment?: { assessment_id: string; status: string; damage_category: string; affected_areas: string[]; visible_observations: string[]; confidence?: string } | null; currency: string; gross_repair_cost: string; replacement_cost_value: string; depreciation: string; net_repair_cost: string; actual_cash_value: string; valuation_basis_note?: string; total_fees_and_charges: string; total_tax: string; interest: { amount: string }; deductible: string; total_before_deductible: string; preliminary_net_estimate: string; status: string; created_at: string; pricing_source: string; state_or_jurisdiction: string; taxes: any[]; line_items: any[]; tax_mode?: string; tax_profile_status?: string; tax_rule_warning?: string | null; tax_rule_ids?: string[]; review_status?: string; review_history?: any[]; }
-interface EmailConnectorStatus { gmail: { configured: boolean; watch_active: boolean; watch_expiration?: string | null }; microsoft365: { configured: boolean; subscription_active: boolean; subscription_expiration?: string | null }; note: string; }
+interface EmailConnectorStatus { tenant_mapping_configured: boolean; gmail: { configured: boolean; watch_active: boolean; watch_expiration?: string | null }; microsoft365: { configured: boolean; subscription_active: boolean; subscription_expiration?: string | null }; note: string; }
 interface EmailIntakeItem { intake_id: string; sender_email: string; subject: string; received_at: string; suggested_claim_type: string; confirmed_claim_type?: string; classification_reason: string; missing_fields: string[]; review_status: string; extracted_fields: Record<string, string | null>; claim_id?: string; }
 interface ClaimDraft {
   customer_name: string; loss_cause: string; email: string; phone: string; policy_number: string;
@@ -103,6 +104,10 @@ export class AppComponent implements OnInit {
   documentUploadBusy = false;
   documentsLoading = false;
   users: User[] = [];
+  tenants: Tenant[] = [];
+  selectedFnolTenantId = '';
+  tenantBusy = false;
+  tenantDraft = { company_name: '', tenant_slug: '', contact_email: '' };
   roles: string[] = [];
   userBusy = false;
   selectedDamageImage: File | null = null;
@@ -149,7 +154,7 @@ export class AppComponent implements OnInit {
   selectedRepairRateId = '';
   repairRatesLookupBusy = false;
   estimateDraft: any = this.emptyEstimateDraft();
-  newUser = { full_name: '', email: '', password: '', role: 'Claims Manager' };
+  newUser = { full_name: '', email: '', password: '', role: 'Claims Manager', tenant_id: '' };
   totalClaims = 0;
   newClaims = 0;
   investigatingClaims = 0;
@@ -232,7 +237,7 @@ export class AppComponent implements OnInit {
     this.loadDashboardAnalytics();
     this.loadAdjusters();
     this.loadClaims();
-    if (this.isAdmin()) this.loadUsers();
+    if (this.isAdmin()) { this.loadUsers(); this.loadTenants(); }
   }
 
   logout(showMessage = true): void {
@@ -242,6 +247,7 @@ export class AppComponent implements OnInit {
     this.activePage = 'Dashboard';
     this.claims = [];
     this.users = [];
+    this.tenants = [];
     this.errorMessage = '';
     this.successMessage = showMessage ? 'You have signed out.' : '';
     this.checkApi();
@@ -252,7 +258,7 @@ export class AppComponent implements OnInit {
   }
 
   canManageTaxRules(): boolean {
-    return ['Super Administrator', 'Insurance Company Administrator'].includes(this.currentUser?.role || '');
+    return this.currentUser?.role === 'Super Administrator';
   }
 
   canManagePolicies(): boolean {
@@ -521,7 +527,7 @@ export class AppComponent implements OnInit {
     this.activePage = page;
     if (page === 'Settings') {
       this.settingsSection = 'Company Profile';
-      if (this.isAdmin()) this.loadUsers();
+      if (this.isAdmin()) { this.loadUsers(); this.loadTenants(); }
       if (this.canManageEmailConnectors()) this.loadEmailConnectorStatus();
     }
     this.errorMessage = '';
@@ -548,6 +554,11 @@ export class AppComponent implements OnInit {
     });
   }
 
+
+  adjustersForClaim(claim: Claim): Adjuster[] {
+    if (!claim.tenant_id) return [];
+    return this.adjusters.filter(adjuster => adjuster.tenant_id === claim.tenant_id);
+  }
 
   loadAdjusters(): void {
     this.http.get<{items: Adjuster[]; count: number}>(`${environment.apiBaseUrl}/adjusters`, { headers: this.authHeaders() }).subscribe({ next: result => this.adjusters = result.items || [], error: error => this.handleApiError(error) });
@@ -1287,15 +1298,23 @@ export class AppComponent implements OnInit {
       this.errorMessage = 'Complete all required fields before submitting the FNOL.';
       return;
     }
+    if (this.isAdmin() && !this.selectedEmailIntakeId && !this.selectedFnolTenantId) {
+      this.errorMessage = 'Select an active insurer tenant before creating a manual claim.';
+      return;
+    }
     this.savingClaim = true;
     const url = this.selectedEmailIntakeId
       ? `${environment.apiBaseUrl}/email-intake/${encodeURIComponent(this.selectedEmailIntakeId)}/create-claim`
       : `${environment.apiBaseUrl}/claims`;
-    this.http.post<Claim>(url, this.draft, { headers: this.authHeaders() }).subscribe({
+    const requestBody = this.isAdmin() && !this.selectedEmailIntakeId
+      ? { ...this.draft, tenant_id: this.selectedFnolTenantId }
+      : this.draft;
+    this.http.post<Claim>(url, requestBody, { headers: this.authHeaders() }).subscribe({
       next: claim => {
         const evidenceFile = this.selectedFnolDocument;
         this.draft = this.emptyDraft();
         this.selectedEmailIntakeId = '';
+        this.selectedFnolTenantId = '';
         this.selectedFnolDocument = null;
         this.loadClaims();
         this.loadDashboard();
@@ -1329,7 +1348,7 @@ export class AppComponent implements OnInit {
   closeAIProviderSetup(): void { this.selectedAIProvider = ''; }
 
   canManageEmailConnectors(): boolean {
-    return ['Super Administrator', 'Insurance Company Administrator'].includes(this.currentUser?.role || '');
+    return this.currentUser?.role === 'Super Administrator';
   }
 
   loadEmailConnectorStatus(): void {
@@ -1792,6 +1811,37 @@ export class AppComponent implements OnInit {
     this.damageClaimId = '';
   }
 
+  loadTenants(): void {
+    if (!this.isAdmin()) return;
+    this.http.get<{items: Tenant[]; count: number}>(`${environment.apiBaseUrl}/tenants`, { headers: this.authHeaders() }).subscribe({
+      next: result => this.tenants = result.items || [],
+      error: error => this.handleApiError(error)
+    });
+  }
+
+  createTenant(): void {
+    this.errorMessage = '';
+    this.successMessage = '';
+    this.tenantBusy = true;
+    this.http.post<Tenant>(`${environment.apiBaseUrl}/tenants`, this.tenantDraft, { headers: this.authHeaders() }).subscribe({
+      next: tenant => {
+        this.tenantBusy = false;
+        this.successMessage = `Insurer tenant ${tenant.company_name} created.`;
+        this.tenantDraft = { company_name: '', tenant_slug: '', contact_email: '' };
+        this.loadTenants();
+      },
+      error: error => { this.tenantBusy = false; this.handleApiError(error); }
+    });
+  }
+
+  updateTenantStatus(tenant: Tenant, status: 'Active' | 'Inactive' | 'Suspended'): void {
+    this.http.patch<Tenant>(`${environment.apiBaseUrl}/tenants/${encodeURIComponent(tenant.tenant_id)}/status`,
+      { status }, { headers: this.authHeaders() }).subscribe({
+        next: () => { this.successMessage = `${tenant.company_name} marked ${status.toLowerCase()}.`; this.loadTenants(); },
+        error: error => this.handleApiError(error)
+      });
+  }
+
   loadUsers(): void {
     if (!this.isAdmin()) return;
     this.http.get<{items: User[]; count: number}>(`${environment.apiBaseUrl}/users`, { headers: this.authHeaders() }).subscribe({
@@ -1804,6 +1854,16 @@ export class AppComponent implements OnInit {
     });
   }
 
+  onNewUserRoleChange(role: string): void {
+    this.newUser.role = role;
+    if (role === 'Super Administrator') this.newUser.tenant_id = '';
+  }
+
+  tenantName(tenantId?: string | null): string {
+    if (!tenantId) return 'Global';
+    return this.tenants.find(tenant => tenant.tenant_id === tenantId)?.company_name || tenantId;
+  }
+
   createUser(): void {
     this.errorMessage = '';
     this.successMessage = '';
@@ -1812,7 +1872,7 @@ export class AppComponent implements OnInit {
       next: user => {
         this.userBusy = false;
         this.successMessage = `User ${user.email} created successfully.`;
-        this.newUser = { full_name: '', email: '', password: '', role: 'Claims Manager' };
+        this.newUser = { full_name: '', email: '', password: '', role: 'Claims Manager', tenant_id: '' };
         this.loadUsers();
       },
       error: error => { this.userBusy = false; this.handleApiError(error); }
