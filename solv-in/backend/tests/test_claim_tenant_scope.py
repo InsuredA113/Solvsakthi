@@ -443,6 +443,15 @@ def test_claim_delete_scopes_every_child_record_to_parent_tenant(monkeypatch):
     )
 
     assert result == {"deleted": True, "claim_id": "CLM-2026-000099"}
+    assert claims.updates == [(
+        {"claim_id": "CLM-2026-000099", "tenant_id": "ten_alpha"},
+        {"$set": {
+            "deletion_state": "Pending",
+            "deletion_started_at": pytest.ANY,
+            "deletion_requested_by": pytest.ANY,
+            "updated_at": pytest.ANY,
+        }},
+    )]
     assert bucket.find_query == {
         "metadata.claim_id": "CLM-2026-000099",
         "metadata.tenant_id": "ten_alpha",
