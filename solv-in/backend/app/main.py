@@ -967,17 +967,16 @@ def delete_claim(
     # if a database call fails, the parent remains marked and a retry resumes
     # the cascade instead of leaving an unexplained partial deletion.
     now = datetime.now(timezone.utc).isoformat()
-    claims.update_one(
-        {"claim_id": claim_id, "tenant_id": tenant_id},
-        {"$set": {
-            "deletion_state": "Pending",
-            "deletion_started_at": existing.get("deletion_started_at", now),
-            "deletion_requested_by": existing.get("deletion_requested_by", user["email"]),
-            "updated_at": now,
-        }},
-    )
-
     try:
+        claims.update_one(
+            {"claim_id": claim_id, "tenant_id": tenant_id},
+            {"$set": {
+                "deletion_state": "Pending",
+                "deletion_started_at": existing.get("deletion_started_at", now),
+                "deletion_requested_by": existing.get("deletion_requested_by", user["email"]),
+                "updated_at": now,
+            }},
+        )
         bucket = GridFSBucket(db, bucket_name="claim_documents")
         for stored_file in bucket.find({
             "metadata.claim_id": claim_id,
