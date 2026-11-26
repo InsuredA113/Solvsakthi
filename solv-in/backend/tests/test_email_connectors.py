@@ -1,7 +1,8 @@
 import base64
 from datetime import timezone
 
-from app.email_connector_routes import demo_mailbox_tenant
+from app import email_connector_routes
+from app.email_connector_routes import DemoEmailRequest, demo_mailbox_tenant, ingest_demo_email
 
 from app.email_connectors import (
     gmail_body, html_to_text, microsoft_body, parse_datetime,
@@ -80,3 +81,57 @@ def test_demo_mailbox_mapping_rejects_unknown_addresses():
     assert demo_mailbox_tenant("attacker@chatinsurance.com") is None
     assert demo_mailbox_tenant("abc@unknown.example") is None
     assert demo_mailbox_tenant("") is None
+
+
+
+def test_demo_intake_passes_chat_tenant_to_email_pipeline(monkeypatch):
+    class FakeTenants:
+        def find_one(self, query, projection):
+            assert query["tenant_slug"] == "chat-insurance"
+            assert query["company_name"] == "Chat Insurance"
+            assert query["contact_email"] == "abc@chatinsurance.com"
+            assert query["status"] == "Active"
+            return {"tenant_id": "ten_chat_test"}
+
+    class FakeDatabase:
+        def __getitem__(self, name):
+            assert name == "tenants"
+            return FakeTenants()
+
+    captured = {}
+    monkeypatch.setattr(email_connector_routes, "database_is_available", lambda: True)
+    monkeypatch.setattr(email_connector_routes, "get_database", lambda: FakeDatabase())
+
+    def fake_save(*args, **kwargs):
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+        return {"duplicate": False, "intake_id": "demo-intake-1", "claim_id": "CLM-2026-000188"}
+
+    monkeypatch.setattr(email_connector_routes, "_save_email", fake_save)
+    payload = DemoEmailRequest(
+        mailbox="abc@chatinsurance.com",
+        sender_email="customer@example.test",
+        subject="Sample water damage claim",
+        body_text="Water damage occurred at the insured property.",
+    )
+    result = ingest_demo_email(payload, user={"role": "Super Administrator"})
+
+    assert result["tenant_id"] == "ten_chat_test"
+    assert captured["args"][0] == "demo"
+    assert captured["args"][2] == "customer@example.test"
+    assert captured["kwargs"]["tenant_id_override"] == "ten_chat_test"
+    assert result["claim_id"] == "CLM-2026-000188"
+
+
+def test_demo_intake_rejects_unknown_demo_mailbox():
+    from fastapi import HTTPException
+    import pytest
+
+    payload = DemoEmailRequest(
+        mailbox="not-a-demo-mailbox@example.test",
+        sender_email="customer@example.test",
+        body_text="This is a sufficiently long sample claim email.",
+    )
+    with pytest.raises(HTTPException) as exc:
+        ingest_demo_email(payload, user={"role": "Super Administrator"})
+    assert exc.value.status_code == 422
