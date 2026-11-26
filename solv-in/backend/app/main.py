@@ -973,7 +973,7 @@ def delete_claim(
             {"$set": {
                 "deletion_state": "Pending",
                 "deletion_started_at": existing.get("deletion_started_at", now),
-                "deletion_requested_by": existing.get("deletion_requested_by", user["email"]),
+                "deletion_requested_by": existing.get("deletion_requested_by", user.get("email", "system")),
                 "updated_at": now,
             }},
         )
