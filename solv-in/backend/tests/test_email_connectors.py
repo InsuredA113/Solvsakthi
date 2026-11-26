@@ -1,6 +1,8 @@
 import base64
 from datetime import timezone
 
+from app.email_connector_routes import demo_mailbox_tenant
+
 from app.email_connectors import (
     gmail_body, html_to_text, microsoft_body, parse_datetime,
     parse_gmail_notification, microsoft_subscription_payload,
@@ -53,3 +55,28 @@ def test_microsoft_subscription_uses_public_notification_url(monkeypatch):
     assert payload["notificationUrl"].startswith("https://")
     assert payload["resource"] == "users/claims@example.com/mailFolders('Inbox')/messages"
     assert "lifecycleNotificationUrl" not in payload
+
+
+
+def test_demo_mailbox_maps_to_chat_insurance_tenant():
+    assert demo_mailbox_tenant("abc@chatinsurance.com") == (
+        "chat-insurance", "Chat Insurance"
+    )
+
+
+def test_demo_mailbox_maps_to_gpt_insurance_tenant():
+    assert demo_mailbox_tenant("abc@gptinsurance.com") == (
+        "gpt-insurance", "GPT Insurance"
+    )
+
+
+def test_demo_mailbox_mapping_normalizes_case_and_whitespace():
+    assert demo_mailbox_tenant("  ABC@GPTINSURANCE.COM ") == (
+        "gpt-insurance", "GPT Insurance"
+    )
+
+
+def test_demo_mailbox_mapping_rejects_unknown_addresses():
+    assert demo_mailbox_tenant("attacker@chatinsurance.com") is None
+    assert demo_mailbox_tenant("abc@unknown.example") is None
+    assert demo_mailbox_tenant("") is None
