@@ -18,3 +18,7 @@ class UserCreate(BaseModel):
     password: str = Field(min_length=12, max_length=128)
     role: Role
     tenant_id: str | None = Field(default=None, min_length=8, max_length=80)
+
+
+class UserTenantAccessUpdate(BaseModel):
+    tenant_access_enabled: bool
