@@ -3,6 +3,7 @@ import os
 os.environ.setdefault("JWT_SECRET_KEY", "test-only-secret-key-at-least-32-characters-long")
 
 import pytest
+from unittest.mock import ANY
 from fastapi import HTTPException
 
 from app import main, auth, email_connector_routes
@@ -447,7 +448,7 @@ def test_claim_delete_scopes_every_child_record_to_parent_tenant(monkeypatch):
         {"claim_id": "CLM-2026-000099", "tenant_id": "ten_alpha"},
         {"$set": {
             "deletion_state": "Pending",
-            "deletion_started_at": pytest.ANY,
+            "deletion_started_at": ANY,
             "deletion_requested_by": pytest.ANY,
             "updated_at": pytest.ANY,
         }},
