@@ -445,7 +445,7 @@ def list_adjusters(user: dict = Depends(require_roles(*READ_ROLES))):
         raise HTTPException(status_code=503, detail="MongoDB is unavailable.")
     try:
         rows = list(get_database()["users"].find(
-            _scoped_query(user, {"is_active": True, "role": {"$in": ["Property Adjuster", "Casualty Adjuster"]}}),
+            _scoped_query(user, {"is_active": True, "tenant_access_enabled": True, "role": {"$in": ["Property Adjuster", "Casualty Adjuster"]}}),
             {"_id": 0, "full_name": 1, "email": 1, "role": 1, "tenant_id": 1}
         ).sort("full_name", 1))
         return {"items": rows, "count": len(rows)}
@@ -473,6 +473,7 @@ def assign_claim_adjuster(
     adjuster = db["users"].find_one({
         "email": adjuster_email,
         "is_active": True,
+        "tenant_access_enabled": True,
         "tenant_id": claim_tenant_id,
     })
     if not adjuster or adjuster.get("role") not in {"Property Adjuster", "Casualty Adjuster"}:
@@ -1977,8 +1978,10 @@ def receive_email_intake(
         raise HTTPException(status_code=503, detail="MongoDB is unavailable. The email was not queued.")
     collection = get_database()["email_intake"]
     try:
-        collection.create_index([("provider", 1), ("provider_message_id", 1)], unique=True)
-        existing = collection.find_one(_intake_filter(user) | {
+        tenant_id = _resolve_claim_tenant(user, payload.tenant_id)
+        collection.create_index([("tenant_id", 1), ("provider", 1), ("provider_message_id", 1)], unique=True, partialFilterExpression={"tenant_id": {"$type": "string"}})
+        existing = collection.find_one({
+            "tenant_id": tenant_id,
             "provider": payload.provider,
             "provider_message_id": payload.provider_message_id
         }, {"_id": 0, "body_text": 0})
@@ -1988,7 +1991,7 @@ def receive_email_intake(
         received_at = (payload.received_at or datetime.now(timezone.utc)).isoformat()
         record = {
             "intake_id": str(ObjectId()),
-            **({"tenant_id": _tenant_id_for_user(user)} if user.get("role") != "Super Administrator" else {}),
+            "tenant_id": tenant_id,
             "provider": payload.provider,
             "provider_message_id": payload.provider_message_id,
             "sender_email": str(payload.sender_email),
@@ -2011,7 +2014,8 @@ def receive_email_intake(
     except Exception as exc:
         from pymongo.errors import DuplicateKeyError
         if isinstance(exc, DuplicateKeyError):
-            existing = collection.find_one(_intake_filter(user) | {
+            existing = collection.find_one({
+                "tenant_id": tenant_id,
                 "provider": payload.provider,
                 "provider_message_id": payload.provider_message_id
             }, {"_id": 0, "body_text": 0})
