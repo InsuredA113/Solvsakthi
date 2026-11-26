@@ -216,7 +216,7 @@ def _save_email(provider: str, provider_message_id: str, sender_email: str,
         tenant = _configured_ingest_tenant(db)
     tenant_id = tenant["tenant_id"]
     collection = db["email_intake"]
-    collection.create_index([("tenant_id", 1), ("provider", 1), ("provider_message_id", 1)], name="tenant_provider_message_id_unique", unique=True, partialFilterExpression={"tenant_id": {"$type": "string"}}
+    collection.create_index([("tenant_id", 1), ("provider", 1), ("provider_message_id", 1)], name="tenant_provider_message_id_unique", unique=True, partialFilterExpression={"tenant_id": {"$type": "string"}})
     existing = collection.find_one(
         {"tenant_id": tenant_id, "provider": provider, "provider_message_id": provider_message_id},
         {"_id": 0, "body_text": 0}
